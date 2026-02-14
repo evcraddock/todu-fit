@@ -131,6 +131,31 @@ export function useShoppingCart(weekStart: string) {
     })
   }
 
+  // Update a manual item by index
+  const updateManualItem = (index: number, updated: ManualShoppingItem) => {
+    changeDoc((d) => {
+      if (!d[weekStart]) return
+
+      const cart = d[weekStart]
+      if (!cart.manual_items || index < 0 || index >= cart.manual_items.length) return
+
+      const oldName = getString(cart.manual_items[index].name).toLowerCase()
+
+      cart.manual_items[index].name = imm(updated.name) as unknown as string
+      cart.manual_items[index].quantity = imm(updated.quantity) as unknown as string
+      cart.manual_items[index].unit = imm(updated.unit) as unknown as string
+
+      // Update checked list if name changed
+      const newName = updated.name.toLowerCase()
+      if (oldName !== newName && cart.checked) {
+        const checkedIndex = cart.checked.findIndex((item) => getString(item) === oldName)
+        if (checkedIndex >= 0) {
+          cart.checked[checkedIndex] = imm(newName) as unknown as string
+        }
+      }
+    })
+  }
+
   // Remove a manual item by name
   const removeManualItem = (name: string) => {
     const key = name.toLowerCase()
@@ -161,6 +186,7 @@ export function useShoppingCart(weekStart: string) {
     isChecked,
     toggleChecked,
     addManualItem,
+    updateManualItem,
     removeManualItem,
     isLoading: !doc && !timedOut,
   }

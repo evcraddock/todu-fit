@@ -3,11 +3,13 @@ import { useShoppingCart } from './useShoppingCart'
 import { useMealPlans } from './useMealPlans'
 import { useDishes } from '../dishes/useDishes'
 import { ManualShoppingItem } from './types'
+import { EditItemDialog } from './EditItemDialog'
 
 interface AggregatedIngredient {
   name: string
   quantities: { quantity: string; unit: string }[]
   isManual: boolean
+  manualIndex: number | null  // index into manual_items array, null if dish-sourced
 }
 
 interface ShoppingCartProps {
@@ -23,6 +25,7 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
     isChecked,
     toggleChecked,
     addManualItem,
+    updateManualItem,
     removeManualItem,
     isLoading,
   } = useShoppingCart(weekStart)
@@ -33,6 +36,7 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
   const [newItemUnit, setNewItemUnit] = useState('')
   const [addItemError, setAddItemError] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState(true)
+  const [editingItem, setEditingItem] = useState<{ index: number; item: ManualShoppingItem } | null>(null)
 
   // Get meal plans for this week
   const plans = useMemo(
@@ -57,6 +61,7 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
               name: ing.name,
               quantities: [],
               isManual: false,
+              manualIndex: null,
             })
           }
           const entry = ingredientMap.get(key)!
@@ -71,13 +76,15 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
     }
 
     // Add manual items
-    for (const item of manualItems) {
+    for (let i = 0; i < manualItems.length; i++) {
+      const item = manualItems[i]
       const key = item.name.toLowerCase().trim()
       if (!ingredientMap.has(key)) {
         ingredientMap.set(key, {
           name: item.name,
           quantities: [],
           isManual: true,
+          manualIndex: i,
         })
       }
       const entry = ingredientMap.get(key)!
@@ -87,9 +94,9 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
           unit: item.unit,
         })
       }
-      // Mark as manual if added manually
-      if (!entry.isManual) {
-        entry.isManual = false
+      // Track manual index (only for manual-only items)
+      if (entry.manualIndex === null) {
+        entry.manualIndex = i
       }
     }
 
@@ -225,25 +232,26 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
                   setNewItemName(e.target.value)
                   setAddItemError(null)
                 }}
-                className="flex-1 min-w-[150px] px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                className="flex-1 min-w-[120px] px-3 py-2 min-h-[44px] text-base border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500"
               />
               <input
                 type="text"
                 placeholder="Qty"
+                inputMode="decimal"
                 value={newItemQuantity}
                 onChange={(e) => setNewItemQuantity(e.target.value)}
-                className="w-16 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                className="w-16 px-3 py-2 min-h-[44px] text-base border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500"
               />
               <input
                 type="text"
                 placeholder="Unit"
                 value={newItemUnit}
                 onChange={(e) => setNewItemUnit(e.target.value)}
-                className="w-20 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                className="w-20 px-3 py-2 min-h-[44px] text-base border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500"
               />
               <button
                 type="submit"
-                className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 min-h-[44px] text-base bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Add
               </button>
@@ -267,31 +275,45 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
               {aggregatedIngredients.map((ing) => {
                 const checked = isChecked(ing.name)
                 const canRemove = isManualOnly(ing.name)
+                const canEdit = canRemove && ing.manualIndex !== null
 
                 return (
                   <li
                     key={ing.name}
-                    className={`px-4 py-2 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
+                    className={`px-4 py-2 flex items-center gap-3 min-h-[44px] transition-colors ${
                       checked ? 'bg-gray-50/50 dark:bg-gray-700/20' : ''
-                    }`}
+                    } ${canEdit ? 'active:bg-gray-100 dark:active:bg-gray-700' : ''}`}
                   >
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleChecked(ing.name)}
-                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 dark:focus:ring-offset-gray-800 cursor-pointer"
+                      className="w-5 h-5 rounded border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 dark:focus:ring-offset-gray-800 cursor-pointer flex-shrink-0"
                     />
-                    <div className="flex-1 flex justify-between items-center min-w-0">
-                      <span
-                        className={`text-sm transition-all ${
-                          checked
-                            ? 'line-through text-gray-400 dark:text-gray-500'
-                            : 'text-gray-900 dark:text-gray-100'
-                        }`}
-                      >
-                        {ing.name}
-                      </span>
-                      <div className="flex items-center gap-2">
+                    <div
+                      className={`flex-1 flex justify-between items-center min-w-0 ${canEdit ? 'cursor-pointer' : ''}`}
+                      onClick={canEdit ? () => setEditingItem({ index: ing.manualIndex!, item: manualItems[ing.manualIndex!] }) : undefined}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span
+                          className={`text-sm transition-all truncate ${
+                            checked
+                              ? 'line-through text-gray-400 dark:text-gray-500'
+                              : 'text-gray-900 dark:text-gray-100'
+                          }`}
+                        >
+                          {ing.name}
+                        </span>
+                        {!canRemove && (
+                          <span
+                            className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0"
+                            title="From meal plan"
+                          >
+                            🍽
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                         <span
                           className={`text-xs transition-all ${
                             checked
@@ -303,8 +325,11 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
                         </span>
                         {canRemove && (
                           <button
-                            onClick={() => removeManualItem(ing.name)}
-                            className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs ml-1"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              removeManualItem(ing.name)
+                            }}
+                            className="w-8 h-8 flex items-center justify-center text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs"
                             title="Remove item"
                           >
                             ✕
@@ -319,6 +344,18 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
           )}
         </>
       )}
+
+      <EditItemDialog
+        isOpen={editingItem !== null}
+        item={editingItem?.item ?? { name: '', quantity: '', unit: '' }}
+        onSave={(updated) => {
+          if (editingItem !== null) {
+            updateManualItem(editingItem.index, updated)
+            setEditingItem(null)
+          }
+        }}
+        onCancel={() => setEditingItem(null)}
+      />
     </div>
   )
 }
