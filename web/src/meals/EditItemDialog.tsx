@@ -4,14 +4,16 @@ import { ManualShoppingItem } from './types'
 interface EditItemDialogProps {
   isOpen: boolean
   item: ManualShoppingItem
+  existingNames: string[]  // lowercase names of all current ingredients
   onSave: (updated: ManualShoppingItem) => void
   onCancel: () => void
 }
 
-export function EditItemDialog({ isOpen, item, onSave, onCancel }: EditItemDialogProps) {
+export function EditItemDialog({ isOpen, item, existingNames, onSave, onCancel }: EditItemDialogProps) {
   const [name, setName] = useState(item.name)
   const [quantity, setQuantity] = useState(item.quantity)
   const [unit, setUnit] = useState(item.unit)
+  const [error, setError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
 
   // Reset form when item changes
@@ -20,6 +22,7 @@ export function EditItemDialog({ isOpen, item, onSave, onCancel }: EditItemDialo
       setName(item.name)
       setQuantity(item.quantity)
       setUnit(item.unit)
+      setError(null)
       // Focus name input after render
       const timer = setTimeout(() => nameRef.current?.focus(), 50)
       return () => clearTimeout(timer)
@@ -44,8 +47,21 @@ export function EditItemDialog({ isOpen, item, onSave, onCancel }: EditItemDialo
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
+
     const trimmedName = name.trim()
-    if (!trimmedName) return
+    if (!trimmedName) {
+      setError('Item name is required')
+      return
+    }
+
+    // Check for name collision (allow keeping the same name)
+    const newKey = trimmedName.toLowerCase()
+    const originalKey = item.name.toLowerCase()
+    if (newKey !== originalKey && existingNames.includes(newKey)) {
+      setError('An item with this name already exists')
+      return
+    }
 
     onSave({
       name: trimmedName,
@@ -85,9 +101,17 @@ export function EditItemDialog({ isOpen, item, onSave, onCancel }: EditItemDialo
               id="edit-item-name"
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-3 min-h-[44px] text-base border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-blue-500"
+              onChange={(e) => {
+                setName(e.target.value)
+                setError(null)
+              }}
+              className={`w-full px-3 py-3 min-h-[44px] text-base border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none ${
+                error ? 'border-red-500 focus:border-red-500' : 'border-gray-300 dark:border-gray-600 focus:border-blue-500'
+              }`}
             />
+            {error && (
+              <p className="mt-1 text-sm text-red-600 dark:text-red-400">{error}</p>
+            )}
           </div>
 
           <div className="flex gap-3">

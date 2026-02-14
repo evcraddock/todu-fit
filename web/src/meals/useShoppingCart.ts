@@ -131,15 +131,19 @@ export function useShoppingCart(weekStart: string) {
     })
   }
 
-  // Update a manual item by index
-  const updateManualItem = (index: number, updated: ManualShoppingItem) => {
+  // Update a manual item by original name (finds at mutation time to handle concurrent sync)
+  const updateManualItem = (originalName: string, updated: ManualShoppingItem) => {
+    const key = originalName.toLowerCase()
     changeDoc((d) => {
       if (!d[weekStart]) return
 
       const cart = d[weekStart]
-      if (!cart.manual_items || index < 0 || index >= cart.manual_items.length) return
+      if (!cart.manual_items) return
 
-      const oldName = getString(cart.manual_items[index].name).toLowerCase()
+      const index = cart.manual_items.findIndex(
+        (item) => getString(item.name).toLowerCase() === key
+      )
+      if (index < 0) return
 
       cart.manual_items[index].name = imm(updated.name) as unknown as string
       cart.manual_items[index].quantity = imm(updated.quantity) as unknown as string
@@ -147,8 +151,8 @@ export function useShoppingCart(weekStart: string) {
 
       // Update checked list if name changed
       const newName = updated.name.toLowerCase()
-      if (oldName !== newName && cart.checked) {
-        const checkedIndex = cart.checked.findIndex((item) => getString(item) === oldName)
+      if (key !== newName && cart.checked) {
+        const checkedIndex = cart.checked.findIndex((item) => getString(item) === key)
         if (checkedIndex >= 0) {
           cart.checked[checkedIndex] = imm(newName) as unknown as string
         }

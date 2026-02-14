@@ -9,7 +9,6 @@ interface AggregatedIngredient {
   name: string
   quantities: { quantity: string; unit: string }[]
   isManual: boolean
-  manualIndex: number | null  // index into manual_items array, null if dish-sourced
 }
 
 interface ShoppingCartProps {
@@ -36,7 +35,7 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
   const [newItemUnit, setNewItemUnit] = useState('')
   const [addItemError, setAddItemError] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState(true)
-  const [editingItem, setEditingItem] = useState<{ index: number; item: ManualShoppingItem } | null>(null)
+  const [editingItem, setEditingItem] = useState<ManualShoppingItem | null>(null)
 
   // Get meal plans for this week
   const plans = useMemo(
@@ -61,7 +60,6 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
               name: ing.name,
               quantities: [],
               isManual: false,
-              manualIndex: null,
             })
           }
           const entry = ingredientMap.get(key)!
@@ -76,15 +74,13 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
     }
 
     // Add manual items
-    for (let i = 0; i < manualItems.length; i++) {
-      const item = manualItems[i]
+    for (const item of manualItems) {
       const key = item.name.toLowerCase().trim()
       if (!ingredientMap.has(key)) {
         ingredientMap.set(key, {
           name: item.name,
           quantities: [],
           isManual: true,
-          manualIndex: i,
         })
       }
       const entry = ingredientMap.get(key)!
@@ -93,10 +89,6 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
           quantity: item.quantity,
           unit: item.unit,
         })
-      }
-      // Track manual index (only for manual-only items)
-      if (entry.manualIndex === null) {
-        entry.manualIndex = i
       }
     }
 
@@ -275,7 +267,7 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
               {aggregatedIngredients.map((ing) => {
                 const checked = isChecked(ing.name)
                 const canRemove = isManualOnly(ing.name)
-                const canEdit = canRemove && ing.manualIndex !== null
+                const canEdit = canRemove
 
                 return (
                   <li
@@ -292,7 +284,10 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
                     />
                     <div
                       className={`flex-1 flex justify-between items-center min-w-0 ${canEdit ? 'cursor-pointer' : ''}`}
-                      onClick={canEdit ? () => setEditingItem({ index: ing.manualIndex!, item: manualItems[ing.manualIndex!] }) : undefined}
+                      onClick={canEdit ? () => {
+                        const item = manualItems.find((m) => m.name.toLowerCase() === ing.name.toLowerCase())
+                        if (item) setEditingItem(item)
+                      } : undefined}
                     >
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span
@@ -347,10 +342,11 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
 
       <EditItemDialog
         isOpen={editingItem !== null}
-        item={editingItem?.item ?? { name: '', quantity: '', unit: '' }}
+        item={editingItem ?? { name: '', quantity: '', unit: '' }}
+        existingNames={aggregatedIngredients.map((ing) => ing.name.toLowerCase())}
         onSave={(updated) => {
           if (editingItem !== null) {
-            updateManualItem(editingItem.index, updated)
+            updateManualItem(editingItem.name, updated)
             setEditingItem(null)
           }
         }}
