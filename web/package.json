@@ -1,6 +1,6 @@
 {
   "name": "todu-fit-web",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "A meal planning and nutrition tracking web application.",
   "type": "module",
   "scripts": {
