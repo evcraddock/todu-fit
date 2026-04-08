@@ -14,6 +14,7 @@ Todufit is a local-first meal planning and nutrition tracking system with cross-
 | [IOS.md](./IOS.md) | iOS app - `todufit-ios` repo |
 | [SYNC-SERVER.md](./SYNC-SERVER.md) | Sync server changes - `todu-sync` repo |
 | [DATA-MODEL.md](./DATA-MODEL.md) | Entity schemas, Automerge structure |
+| [WATER-TRACKING.md](./WATER-TRACKING.md) | Private water-tracking product and architecture design |
 
 ## Design Principles
 
