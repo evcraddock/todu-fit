@@ -86,6 +86,7 @@ export interface MealPlanEntry {
   title: string
   cook: string
   dishIds: string[]
+  usesLeftovers: boolean
 }
 
 interface CliMealPlan {
@@ -95,6 +96,7 @@ interface CliMealPlan {
   title: string
   cook: string
   dish_ids: string[]
+  uses_leftovers?: boolean
 }
 
 /**
@@ -166,6 +168,7 @@ export async function loadGroupMealPlans(
         title: getString(plan.title) || '',
         cook: getString(plan.cook) || '',
         dishIds: (plan.dish_ids || []).map((d) => getString(d) || '').filter(Boolean),
+        usesLeftovers: plan.uses_leftovers ?? false,
       })
     }
 

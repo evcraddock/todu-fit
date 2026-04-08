@@ -44,6 +44,7 @@ function MealPlanFormContent() {
   const [title, setTitle] = useState('')
   const [cook, setCook] = useState('')
   const [selectedDishIds, setSelectedDishIds] = useState<string[]>([])
+  const [usesLeftovers, setUsesLeftovers] = useState(false)
 
   // Load existing plan data
   useEffect(() => {
@@ -53,6 +54,7 @@ function MealPlanFormContent() {
       setTitle(existingPlan.title)
       setCook(existingPlan.cook)
       setSelectedDishIds(existingPlan.dishIds)
+      setUsesLeftovers(existingPlan.usesLeftovers)
     }
   }, [id, isLoading])
 
@@ -79,6 +81,7 @@ function MealPlanFormContent() {
         title: finalTitle,
         cook: cook.trim(),
         dishIds: selectedDishIds,
+        usesLeftovers,
       })
       navigate(`/meals/${date}`)
     } else {
@@ -89,6 +92,7 @@ function MealPlanFormContent() {
         title: finalTitle,
         cook: cook.trim(),
         dishIds: selectedDishIds,
+        usesLeftovers,
         createdAt: now,
         updatedAt: now,
       }
@@ -183,6 +187,25 @@ function MealPlanFormContent() {
               className="w-full px-4 py-3 min-h-[44px] border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
           </div>
+        </div>
+
+        <div>
+          <label className="flex items-start gap-3 rounded-lg border border-gray-300 dark:border-gray-600 p-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={usesLeftovers}
+              onChange={(e) => setUsesLeftovers(e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-500 text-blue-600 focus:ring-blue-500"
+            />
+            <div>
+              <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                This meal uses leftovers
+              </span>
+              <span className="block text-sm text-gray-500 dark:text-gray-400">
+                Leftover meals stay on the plan, but their dishes won&apos;t add fresh ingredients to the shopping cart.
+              </span>
+            </div>
+          </label>
         </div>
 
         {/* Dish Selector */}

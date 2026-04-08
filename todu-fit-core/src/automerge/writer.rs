@@ -111,6 +111,8 @@ pub fn write_mealplan(doc: &mut AutoCommit, mealplan: &MealPlan) {
     .unwrap();
     doc.put(&plan_id, "title", mealplan.title.as_str()).unwrap();
     doc.put(&plan_id, "cook", mealplan.cook.as_str()).unwrap();
+    doc.put(&plan_id, "uses_leftovers", mealplan.uses_leftovers)
+        .unwrap();
     doc.put(&plan_id, "created_by", mealplan.created_by.as_str())
         .unwrap();
     doc.put(
@@ -331,12 +333,17 @@ mod tests {
     fn test_write_mealplan() {
         let mut doc = AutoCommit::new();
         let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
-        let mealplan = MealPlan::new(date, MealType::Dinner, "Sunday Dinner", "chef");
+        let mealplan = MealPlan::new(date, MealType::Dinner, "Sunday Dinner", "chef")
+            .with_uses_leftovers(true);
 
         write_mealplan(&mut doc, &mealplan);
 
         let id_str = mealplan.id.to_string();
         assert!(doc.get(ROOT, &id_str).unwrap().is_some());
+
+        let (_, plan_obj) = doc.get(ROOT, &id_str).unwrap().unwrap();
+        let (uses_leftovers, _) = doc.get(&plan_obj, "uses_leftovers").unwrap().unwrap();
+        assert_eq!(uses_leftovers.to_bool(), Some(true));
     }
 
     #[test]

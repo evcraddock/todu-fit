@@ -43,6 +43,10 @@ pub enum MealPlanSubcommand {
         /// Add dish by ID or name (can be repeated)
         #[arg(long = "dish", value_name = "DISH")]
         dishes: Vec<String>,
+
+        /// Mark this meal plan as using leftovers, so it won't add ingredients to shopping lists
+        #[arg(long)]
+        leftovers: bool,
     },
 
     /// List meal plans
@@ -98,6 +102,14 @@ pub enum MealPlanSubcommand {
         /// New cook
         #[arg(long)]
         cook: Option<String>,
+
+        /// Mark this meal plan as using leftovers
+        #[arg(long, conflicts_with = "no_leftovers")]
+        leftovers: bool,
+
+        /// Mark this meal plan as not using leftovers
+        #[arg(long, conflicts_with = "leftovers")]
+        no_leftovers: bool,
     },
 
     /// Delete a meal plan
@@ -143,6 +155,7 @@ impl MealPlanCommand {
                 title,
                 cook,
                 dishes,
+                leftovers,
             } => {
                 // Parse date
                 let date = NaiveDate::parse_from_str(date, "%Y-%m-%d")
@@ -163,7 +176,8 @@ impl MealPlanCommand {
 
                 // Create meal plan
                 let mut plan = MealPlan::new(date, meal_type, &title, &config.created_by.value)
-                    .with_cook(&cook);
+                    .with_cook(&cook)
+                    .with_uses_leftovers(*leftovers);
 
                 // Resolve and add dishes
                 let mut resolved_dish_ids = Vec::new();
@@ -248,7 +262,15 @@ impl MealPlanCommand {
                             } else {
                                 format!("{} dishes", dish_count)
                             };
-                            println!("  {:10} {} ({})", plan.meal_type, plan.title, dishes_str);
+                            let leftovers_str = if plan.uses_leftovers {
+                                ", leftovers"
+                            } else {
+                                ""
+                            };
+                            println!(
+                                "  {:10} {} ({}{})",
+                                plan.meal_type, plan.title, dishes_str, leftovers_str
+                            );
                         }
                         println!("\nTotal: {} meal plan(s)", plans.len());
                     }
@@ -335,10 +357,16 @@ impl MealPlanCommand {
                 meal_type,
                 title,
                 cook,
+                leftovers,
+                no_leftovers,
             } => {
                 // Check if any updates provided
-                let has_updates =
-                    date.is_some() || meal_type.is_some() || title.is_some() || cook.is_some();
+                let has_updates = date.is_some()
+                    || meal_type.is_some()
+                    || title.is_some()
+                    || cook.is_some()
+                    || *leftovers
+                    || *no_leftovers;
 
                 if !has_updates {
                     return Err("Nothing to update. Provide at least one option.".into());
@@ -365,6 +393,12 @@ impl MealPlanCommand {
                 }
                 if let Some(c) = cook {
                     plan.cook = c.clone();
+                }
+                if *leftovers {
+                    plan.uses_leftovers = true;
+                }
+                if *no_leftovers {
+                    plan.uses_leftovers = false;
                 }
 
                 let updated = mealplan_repo.update(&plan)?;

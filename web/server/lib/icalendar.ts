@@ -130,9 +130,16 @@ export function generateICalendar(
     // Build summary (event title)
     const mealTypeDisplay = plan.mealType.charAt(0).toUpperCase() + plan.mealType.slice(1)
     let summary = `${mealTypeDisplay}: ${plan.title}`
+    if (plan.usesLeftovers) {
+      summary += ' (Leftovers)'
+    }
 
     // Build description
     const descParts: string[] = []
+
+    if (plan.usesLeftovers) {
+      descParts.push('Uses leftovers: this meal does not contribute fresh ingredients to the shopping list.')
+    }
 
     if (plan.cook && plan.cook !== 'Unknown') {
       descParts.push(`Cook: ${plan.cook}`)

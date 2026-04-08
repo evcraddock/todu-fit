@@ -49,6 +49,8 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
 
     // Add ingredients from meal plans
     for (const plan of plans) {
+      if (plan.usesLeftovers) continue
+
       for (const dishId of plan.dishIds) {
         const dish = getDish(dishId)
         if (!dish) continue
@@ -101,8 +103,10 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
   // Check if item is manual-only (not from meal plans)
   const isManualOnly = (name: string): boolean => {
     const key = name.toLowerCase()
-    // Check if any meal plan dish has this ingredient
+    // Check if any non-leftover meal plan dish has this ingredient
     for (const plan of plans) {
+      if (plan.usesLeftovers) continue
+
       for (const dishId of plan.dishIds) {
         const dish = getDish(dishId)
         if (dish?.ingredients.some((i) => i.name.toLowerCase() === key)) {
@@ -259,7 +263,7 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
               {plans.length === 0 ? (
                 <p>No meal plans this week. Add items manually above.</p>
               ) : (
-                <p>No ingredients found in planned dishes.</p>
+                <p>No ingredients found in planned dishes. Meals marked as leftovers are excluded.</p>
               )}
             </div>
           ) : (

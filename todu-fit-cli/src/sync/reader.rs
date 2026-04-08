@@ -303,6 +303,7 @@ fn read_mealplan(
 
     let title = get_string(doc, obj_id, "title")?.unwrap_or_default();
     let cook = get_string(doc, obj_id, "cook")?.unwrap_or_default();
+    let uses_leftovers = get_bool(doc, obj_id, "uses_leftovers")?.unwrap_or(false);
     let created_by = get_string(doc, obj_id, "created_by")?.unwrap_or_default();
 
     let created_at = get_string(doc, obj_id, "created_at")?
@@ -324,6 +325,7 @@ fn read_mealplan(
         title,
         cook,
         dish_ids,
+        uses_leftovers,
         created_by,
         created_at,
         updated_at,
@@ -488,6 +490,17 @@ fn get_string(doc: &AutoCommit, obj_id: &ObjId, key: &str) -> Result<Option<Stri
         .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
     {
         Ok(value.into_string().ok())
+    } else {
+        Ok(None)
+    }
+}
+
+fn get_bool(doc: &AutoCommit, obj_id: &ObjId, key: &str) -> Result<Option<bool>, ReaderError> {
+    if let Some((value, _)) = doc
+        .get(obj_id, key)
+        .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
+    {
+        Ok(value.to_bool())
     } else {
         Ok(None)
     }
@@ -826,6 +839,7 @@ mod tests {
 
         assert_eq!(plans.len(), 1);
         assert_eq!(plans[0].title, "Test Dinner");
+        assert!(!plans[0].uses_leftovers);
     }
 
     #[test]
@@ -846,6 +860,18 @@ mod tests {
         let plan = get_mealplan_by_date_and_type(&doc, date, MealType::Dinner).unwrap();
         assert!(plan.is_some());
         assert_eq!(plan.unwrap().title, "Test Dinner");
+    }
+
+    #[test]
+    fn test_read_mealplan_with_uses_leftovers() {
+        let mut doc = create_test_mealplan_doc();
+        let plan_id = "550e8400-e29b-41d4-a716-446655440002";
+        let (_, plan_obj) = doc.get(ROOT, plan_id).unwrap().unwrap();
+        doc.put(&plan_obj, "uses_leftovers", true).unwrap();
+
+        let plans = read_all_mealplans(&doc).unwrap();
+        assert_eq!(plans.len(), 1);
+        assert!(plans[0].uses_leftovers);
     }
 
     fn create_test_meallog_doc() -> AutoCommit {
