@@ -5,13 +5,17 @@
 // Re-export core writer functions
 #[allow(unused_imports)]
 pub use todu_fit_core::automerge::{
-    delete_dish, delete_meallog, delete_mealplan, write_dish, write_meallog, write_mealplan,
+    delete_dish, delete_meallog, delete_mealplan, delete_water_entry, write_dish,
+    write_hydration_settings, write_meallog, write_mealplan, write_water_entry,
 };
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Dish, Ingredient, MealLog, MealPlan, MealType, Nutrient};
+    use crate::models::{
+        Dish, HydrationSettings, HydrationUnit, Ingredient, MealLog, MealPlan, MealType, Nutrient,
+        WaterEntry,
+    };
     use automerge::{AutoCommit, ReadDoc, ROOT};
     use chrono::NaiveDate;
 
@@ -95,6 +99,22 @@ mod tests {
 
         let id_str = log.id.to_string();
         assert!(doc.get(ROOT, &id_str).unwrap().is_some());
+    }
+
+    #[test]
+    fn test_write_water_entry_and_settings() {
+        let mut doc = AutoCommit::new();
+        let entry = WaterEntry::new(500, chrono::Utc::now()).unwrap();
+        let settings = HydrationSettings::new(2000, HydrationUnit::Ml);
+
+        write_water_entry(&mut doc, &entry);
+        write_hydration_settings(&mut doc, &settings);
+
+        assert!(doc.get(ROOT, entry.id.to_string()).unwrap().is_some());
+        assert!(doc.get(ROOT, "settings").unwrap().is_some());
+
+        delete_water_entry(&mut doc, entry.id);
+        assert!(doc.get(ROOT, entry.id.to_string()).unwrap().is_none());
     }
 
     #[test]

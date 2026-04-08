@@ -18,6 +18,7 @@
 //! ├── root_doc_id                    # text file with identity doc ID
 //! ├── <identity-id>.automerge        # IdentityDocument
 //! ├── <meallogs-id>.automerge        # personal meal logs
+//! ├── <hydration-id>.automerge       # personal hydration data
 //! ├── <group-id>.automerge           # GroupDocument
 //! ├── <dishes-id>.automerge          # group's dishes
 //! └── <mealplans-id>.automerge       # group's meal plans
@@ -90,8 +91,8 @@ impl Identity {
     /// Initialize a new identity.
     ///
     /// Creates:
-    /// 1. A new identity document with a generated meallogs_doc_id
-    /// 2. An empty meallogs document
+    /// 1. A new identity document with generated personal document IDs
+    /// 2. Empty meallogs and hydration documents
     /// 3. Saves the root_doc_id file
     ///
     /// Returns an error if already initialized.
@@ -110,18 +111,9 @@ impl Identity {
             .save(&identity_doc_id, &identity_bytes)
             .map_err(IdentityError::StorageError)?;
 
-        // Create empty meallogs document
-        // We put and delete a key to ensure at least one change is recorded,
-        // otherwise useDocument returns null for truly empty docs
-        let mut meallogs_doc = AutoCommit::new();
-        meallogs_doc
-            .put(automerge::ROOT, "_", true)
-            .map_err(|e| IdentityError::AutomergeError(e.to_string()))?;
-        meallogs_doc.delete(automerge::ROOT, "_").ok();
-        let meallogs_bytes = meallogs_doc.save();
-        self.storage
-            .save(&identity_doc.meallogs_doc_id, &meallogs_bytes)
-            .map_err(IdentityError::StorageError)?;
+        // Create empty personal documents
+        self.create_empty_personal_doc(&identity_doc.meallogs_doc_id)?;
+        self.create_empty_personal_doc(&identity_doc.hydration_doc_id)?;
 
         // Save root document ID
         self.storage
@@ -316,12 +308,30 @@ impl Identity {
         Ok(identity.meallogs_doc_id)
     }
 
+    /// Get the hydration document ID for the current identity.
+    pub fn hydration_doc_id(&self) -> Result<DocumentId, IdentityError> {
+        let identity = self.load_identity()?;
+        Ok(identity.hydration_doc_id)
+    }
+
     /// Get a reference to the storage.
     pub fn storage(&self) -> &MultiDocStorage {
         &self.storage
     }
 
     // ==================== Internal Helpers ====================
+
+    fn create_empty_personal_doc(&self, doc_id: &DocumentId) -> Result<(), IdentityError> {
+        let mut doc = AutoCommit::new();
+        doc.put(automerge::ROOT, "_", true)
+            .map_err(|e| IdentityError::AutomergeError(e.to_string()))?;
+        doc.delete(automerge::ROOT, "_").ok();
+        let bytes = doc.save();
+        self.storage
+            .save(doc_id, &bytes)
+            .map_err(IdentityError::StorageError)?;
+        Ok(())
+    }
 
     fn serialize_identity_document(
         &self,
@@ -490,8 +500,9 @@ mod tests {
         let identity_doc = identity.load_identity().unwrap();
         assert!(identity_doc.groups.is_empty());
 
-        // Should have meallogs document
+        // Should have meallogs and hydration documents
         assert!(identity.storage.exists(&identity_doc.meallogs_doc_id));
+        assert!(identity.storage.exists(&identity_doc.hydration_doc_id));
     }
 
     #[test]
@@ -622,7 +633,7 @@ mod tests {
         assert!(identity.storage.exists(&group_id));
     }
 
-    // ==================== Meallogs Tests ====================
+    // ==================== Personal Document Tests ====================
 
     #[test]
     fn test_meallogs_doc_id() {
@@ -640,6 +651,19 @@ mod tests {
     }
 
     // ==================== Serialization Tests ====================
+
+    #[test]
+    fn test_hydration_doc_id() {
+        let (identity, _temp) = test_identity();
+        identity.initialize_new().unwrap();
+
+        let hydration_id = identity.hydration_doc_id().unwrap();
+
+        assert!(identity.storage.exists(&hydration_id));
+
+        let identity_doc = identity.load_identity().unwrap();
+        assert_eq!(hydration_id, identity_doc.hydration_doc_id);
+    }
 
     #[test]
     fn test_identity_document_roundtrip() {

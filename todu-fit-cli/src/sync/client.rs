@@ -116,6 +116,7 @@ impl SyncClient {
     /// - All group documents
     /// - All dishes and mealplans documents for each group
     /// - The personal meallogs document
+    /// - The personal hydration document
     pub async fn sync_all(&mut self) -> Result<SyncResult, SyncClientError> {
         let identity = Identity::new(self.storage.clone());
 
@@ -162,14 +163,18 @@ impl SyncClient {
         // Reload identity after sync (it may have been updated)
         let identity = Identity::new(self.storage.clone());
 
-        // 2. Get identity document for meallogs doc ID
+        // 2. Get identity document for personal document IDs
         let identity_doc = identity
             .load_identity()
             .map_err(|e| SyncClientError::IdentityError(e.to_string()))?;
 
-        // 3. Sync personal meallogs
+        // 3. Sync personal documents
         results.push(
             self.sync_document(&identity_doc.meallogs_doc_id, "meallogs")
+                .await?,
+        );
+        results.push(
+            self.sync_document(&identity_doc.hydration_doc_id, "hydration")
                 .await?,
         );
 
