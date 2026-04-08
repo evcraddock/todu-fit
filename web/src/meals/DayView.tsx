@@ -173,9 +173,16 @@ function DayViewContent() {
                       >
                         <div className="flex flex-col sm:flex-row justify-between items-start gap-2 mb-2">
                           <div>
-                            <h3 className="font-medium text-gray-900 dark:text-gray-100">
-                              {plan.title}
-                            </h3>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-medium text-gray-900 dark:text-gray-100">
+                                {plan.title}
+                              </h3>
+                              {plan.usesLeftovers && (
+                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                  Leftovers
+                                </span>
+                              )}
+                            </div>
                             {plan.cook && (
                               <p className="text-sm text-gray-500 dark:text-gray-400">
                                 Cook: {plan.cook}

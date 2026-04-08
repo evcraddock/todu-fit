@@ -12,4 +12,7 @@ pub use meal_log::MealLog;
 pub use meal_plan::MealPlan;
 pub use meal_type::MealType;
 pub use nutrient::Nutrient;
-pub use shopping_cart::{ManualItem, ShoppingCart, ShoppingItem};
+pub use shopping_cart::{
+    aggregate_ingredients, collect_ingredients_from_mealplans, ManualItem, ShoppingCart,
+    ShoppingItem,
+};

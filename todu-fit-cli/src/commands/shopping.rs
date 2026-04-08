@@ -7,7 +7,9 @@ use clap::{Args, Subcommand, ValueEnum};
 
 use crate::config::Config;
 use crate::sync::{SyncDishRepository, SyncMealPlanRepository, SyncShoppingRepository};
-use todu_fit_core::{Ingredient, ManualItem, ShoppingItem};
+use todu_fit_core::{
+    aggregate_ingredients, collect_ingredients_from_mealplans, Ingredient, ManualItem, ShoppingItem,
+};
 
 #[derive(Clone, ValueEnum, Default)]
 pub enum OutputFormat {
@@ -379,51 +381,11 @@ fn collect_ingredients_for_week(
     from: NaiveDate,
     to: NaiveDate,
 ) -> Result<Vec<Ingredient>, Box<dyn std::error::Error>> {
-    let mut all_ingredients = Vec::new();
-
     let plans = mealplan_repo.list_range(from, to)?;
 
-    for plan in plans {
-        for dish_id in &plan.dish_ids {
-            if let Some(dish) = dish_repo.get_by_id(*dish_id)? {
-                all_ingredients.extend(dish.ingredients.clone());
-            }
-        }
-    }
-
-    Ok(all_ingredients)
-}
-
-/// Aggregate ingredients by name (case-insensitive), combining quantities where units match.
-fn aggregate_ingredients(ingredients: &[Ingredient]) -> Vec<Ingredient> {
-    use std::collections::HashMap;
-
-    // Group by (lowercase name, lowercase unit)
-    let mut grouped: HashMap<(String, String), f64> = HashMap::new();
-
-    for ing in ingredients {
-        let key = (ing.name.to_lowercase(), ing.unit.to_lowercase());
-        *grouped.entry(key).or_insert(0.0) += ing.quantity;
-    }
-
-    // Convert back to Ingredient, preserving original case from first occurrence
-    let mut result: Vec<Ingredient> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    for ing in ingredients {
-        let key = ing.name.to_lowercase();
-        if seen.contains(&key) {
-            continue;
-        }
-        seen.insert(key.clone());
-
-        let unit_key = ing.unit.to_lowercase();
-        if let Some(&qty) = grouped.get(&(key, unit_key)) {
-            result.push(Ingredient::new(&ing.name, qty, &ing.unit));
-        }
-    }
-
-    result
+    Ok(collect_ingredients_from_mealplans(&plans, |dish_id| {
+        dish_repo.get_by_id(dish_id).ok().flatten()
+    }))
 }
 
 #[cfg(test)]
@@ -448,18 +410,6 @@ mod tests {
         let saturday = NaiveDate::from_ymd_opt(2026, 1, 17).unwrap();
         let sunday = NaiveDate::from_ymd_opt(2026, 1, 11).unwrap();
         assert_eq!(get_week_start(saturday), sunday);
-    }
-
-    #[test]
-    fn test_aggregate_ingredients_same_unit() {
-        let ingredients = vec![
-            Ingredient::new("eggs", 6.0, ""),
-            Ingredient::new("Eggs", 6.0, ""),
-        ];
-
-        let aggregated = aggregate_ingredients(&ingredients);
-        assert_eq!(aggregated.len(), 1);
-        assert_eq!(aggregated[0].quantity, 12.0);
     }
 
     #[test]

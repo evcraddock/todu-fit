@@ -7,6 +7,7 @@ export interface MealPlan {
   title: string
   cook: string
   dishIds: string[]
+  usesLeftovers: boolean
   createdAt: string
   updatedAt: string
 }
@@ -19,6 +20,7 @@ export interface CliMealPlan {
   title: string
   cook: string
   dish_ids: string[] // dish UUIDs
+  uses_leftovers?: boolean
   created_by?: string
   created_at: string
   updated_at: string

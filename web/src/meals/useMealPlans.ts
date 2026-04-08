@@ -34,6 +34,7 @@ function convertCliMealPlan(id: string, cliPlan: CliMealPlan): MealPlan {
     title: getString(cliPlan.title),
     cook: getString(cliPlan.cook),
     dishIds: (cliPlan.dish_ids ?? []).map((d) => getString(d)),
+    usesLeftovers: cliPlan.uses_leftovers ?? false,
     createdAt: getString(cliPlan.created_at),
     updatedAt: getString(cliPlan.updated_at),
   }
@@ -117,6 +118,7 @@ export function useMealPlans() {
         title: imm(plan.title),
         cook: imm(plan.cook),
         dish_ids: plan.dishIds.map((id) => imm(id)),
+        uses_leftovers: plan.usesLeftovers,
         created_at: imm(plan.createdAt),
         updated_at: imm(plan.updatedAt),
       } as unknown as CliMealPlan
@@ -134,6 +136,7 @@ export function useMealPlans() {
         if (updates.cook !== undefined) d[id].cook = imm(updates.cook) as unknown as string
         if (updates.dishIds !== undefined)
           d[id].dish_ids = updates.dishIds.map((did) => imm(did)) as unknown as string[]
+        if (updates.usesLeftovers !== undefined) d[id].uses_leftovers = updates.usesLeftovers
         d[id].updated_at = imm(new Date().toISOString()) as unknown as string
       }
     })

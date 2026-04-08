@@ -5,9 +5,11 @@
 //! as they are purchased.
 
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
+use uuid::Uuid;
 
-use super::Ingredient;
+use super::{Dish, Ingredient, MealPlan};
 
 /// A manual item added to the shopping cart (not from a recipe).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -156,6 +158,63 @@ pub struct ShoppingItem {
     pub is_manual: bool,
 }
 
+/// Collect ingredients from meal plans using a dish resolver.
+///
+/// Meal plans marked as using leftovers do not contribute ingredients.
+pub fn collect_ingredients_from_mealplans<F>(
+    plans: &[MealPlan],
+    mut resolve_dish: F,
+) -> Vec<Ingredient>
+where
+    F: FnMut(Uuid) -> Option<Dish>,
+{
+    let mut all_ingredients = Vec::new();
+
+    for plan in plans {
+        if plan.uses_leftovers {
+            continue;
+        }
+
+        for dish_id in &plan.dish_ids {
+            if let Some(dish) = resolve_dish(*dish_id) {
+                all_ingredients.extend(dish.ingredients);
+            }
+        }
+    }
+
+    all_ingredients
+}
+
+/// Aggregate ingredients by name (case-insensitive), combining quantities where units match.
+///
+/// If the same ingredient name appears with different units, the first unit encountered is kept.
+pub fn aggregate_ingredients(ingredients: &[Ingredient]) -> Vec<Ingredient> {
+    let mut grouped: HashMap<(String, String), f64> = HashMap::new();
+
+    for ing in ingredients {
+        let key = (ing.name.to_lowercase(), ing.unit.to_lowercase());
+        *grouped.entry(key).or_insert(0.0) += ing.quantity;
+    }
+
+    let mut result: Vec<Ingredient> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    for ing in ingredients {
+        let key = ing.name.to_lowercase();
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.insert(key.clone());
+
+        let unit_key = ing.unit.to_lowercase();
+        if let Some(&qty) = grouped.get(&(key, unit_key)) {
+            result.push(Ingredient::new(&ing.name, qty, &ing.unit));
+        }
+    }
+
+    result
+}
+
 impl ShoppingItem {
     /// Create a shopping item from an ingredient.
     pub fn from_ingredient(ingredient: &Ingredient, checked: bool) -> Self {
@@ -202,6 +261,8 @@ impl fmt::Display for ShoppingItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::MealType;
+    use chrono::NaiveDate;
 
     #[test]
     fn test_manual_item_new() {
@@ -290,6 +351,63 @@ mod tests {
         assert_eq!(parsed.week, cart.week);
         assert_eq!(parsed.checked, cart.checked);
         assert_eq!(parsed.manual_items.len(), 1);
+    }
+
+    #[test]
+    fn test_collect_ingredients_from_mealplans_skips_leftovers() {
+        let date = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let included_dish_id = Uuid::new_v4();
+        let skipped_dish_id = Uuid::new_v4();
+
+        let included_plan = MealPlan::new(date, MealType::Dinner, "Fresh Dinner", "user1")
+            .with_dish_ids(vec![included_dish_id]);
+        let leftover_plan = MealPlan::new(date, MealType::Lunch, "Leftovers", "user1")
+            .with_dish_ids(vec![skipped_dish_id])
+            .with_uses_leftovers(true);
+
+        let ingredients =
+            collect_ingredients_from_mealplans(&[included_plan, leftover_plan], |dish_id| {
+                if dish_id == included_dish_id {
+                    Some(
+                        Dish::new("Soup", "chef")
+                            .with_ingredients(vec![Ingredient::new("carrots", 2.0, "cups")]),
+                    )
+                } else if dish_id == skipped_dish_id {
+                    Some(
+                        Dish::new("Chili", "chef")
+                            .with_ingredients(vec![Ingredient::new("beans", 1.0, "can")]),
+                    )
+                } else {
+                    None
+                }
+            });
+
+        assert_eq!(ingredients.len(), 1);
+        assert_eq!(ingredients[0].name, "carrots");
+    }
+
+    #[test]
+    fn test_aggregate_ingredients_same_unit() {
+        let ingredients = vec![
+            Ingredient::new("eggs", 6.0, ""),
+            Ingredient::new("Eggs", 6.0, ""),
+        ];
+
+        let aggregated = aggregate_ingredients(&ingredients);
+        assert_eq!(aggregated.len(), 1);
+        assert_eq!(aggregated[0].quantity, 12.0);
+    }
+
+    #[test]
+    fn test_aggregate_ingredients_same_name_different_units_keeps_first_unit() {
+        let ingredients = vec![
+            Ingredient::new("chicken", 1.0, "lb"),
+            Ingredient::new("chicken", 500.0, "g"),
+        ];
+
+        let aggregated = aggregate_ingredients(&ingredients);
+        assert_eq!(aggregated.len(), 1);
+        assert_eq!(aggregated[0].unit, "lb");
     }
 
     #[test]

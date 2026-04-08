@@ -386,6 +386,11 @@ function WeeklyMealsTab({ weekPlans, getDish }: WeeklyMealsTabProps) {
                   <div className="ml-4 space-y-1">
                     {plans.map((plan) => (
                       <div key={plan.id}>
+                        {plan.usesLeftovers && (
+                          <div className="mb-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                            Leftovers
+                          </div>
+                        )}
                         {plan.dishIds.length > 0 ? (
                           <ul className="text-sm">
                             {plan.dishIds.map((dishId) => {

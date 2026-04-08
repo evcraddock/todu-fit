@@ -18,7 +18,8 @@ pub use document_id::{DocumentId, DocumentIdError};
 pub use documents::{GroupDocument, GroupRef, IdentityDocument};
 pub use identity::{Identity, IdentityError, IdentityState};
 pub use models::{
-    Dish, Ingredient, ManualItem, MealLog, MealPlan, MealType, Nutrient, ShoppingCart, ShoppingItem,
+    aggregate_ingredients, collect_ingredients_from_mealplans, Dish, Ingredient, ManualItem,
+    MealLog, MealPlan, MealType, Nutrient, ShoppingCart, ShoppingItem,
 };
 pub use sync::{check_server, SyncClient, SyncError, SyncResult};
 
