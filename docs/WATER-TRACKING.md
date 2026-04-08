@@ -34,8 +34,8 @@ These decisions are considered settled inputs for the design:
   - fast entry for today
   - per-entry logging
   - daily total plus goal progress
-  - simple history views
   - support for both oz and mL
+- Web should focus on **today-only tracking** and should not include history/reporting.
 - Water should be stored as **entries**, not just a single daily total.
 - The canonical internal unit should be **mL**, with conversion at input/output boundaries.
 - The feature should **not** be modeled as a shared household/group feature.
@@ -45,14 +45,14 @@ These decisions are considered settled inputs for the design:
 
 ## Product Recommendation
 
-The recommended v1 is a **private hydration tracker** focused on fast entry and daily visibility.
+The recommended feature is a **private hydration tracker** focused on fast entry and daily visibility.
 
 Why this shape is recommended:
 - Water logging is a high-frequency action and needs low-friction input.
 - Water is not a meal, so reusing meal logging would add friction and create the wrong mental model.
-- Daily totals and history are naturally derived from timestamped entries.
+- Daily totals are naturally derived from timestamped entries.
 - A private feature maps well to current `todu-fit` concepts where some data is personal rather than group-shared.
-- Entry-based logging keeps the design extensible for future edits, deletes, streaks, averages, and time-of-day reporting.
+- Entry-based logging keeps the design extensible for future edits, deletes, and better correction workflows without forcing daily-total storage.
 
 ## V1 Experience Summary
 
@@ -62,7 +62,7 @@ Users should be able to:
 - see how much water they have had today
 - compare today against a daily goal
 - review recent entries for correction and confidence
-- view simple history such as recent daily totals, streaks, and average intake
+- review recent entries for correction and confidence without adding separate reporting UI to the web feature
 
 ## User Experience
 
@@ -115,18 +115,6 @@ Guidance:
 - custom entry is for amounts not covered by presets
 - validation should reject zero or negative values
 - if editing is supported, the same amount + unit pattern should be reused
-
-### History View
-
-History is a primary use case for v1 and should not be deferred entirely.
-
-Recommended history views:
-- 7-day daily totals
-- 30-day summary list or equivalent recent-history range
-- streak count for goal-met days
-- average daily intake over a recent window
-
-The history UX can begin as a simple list if charting is too expensive for the first pass.
 
 ### Settings
 
@@ -199,9 +187,8 @@ Derived values should be computed from entries rather than stored independently 
 Recommended derived values:
 - daily total for a selected date
 - goal progress for a selected date
-- streak count for days meeting goal
-- average daily intake over 7-day and/or 30-day windows
-- recent-history summaries grouped by local day
+- today's recent-entry view ordered by timestamp
+- optional non-web date summaries if later needed
 
 ## Architecture Fit
 
@@ -243,7 +230,6 @@ Shared/core should define:
 - unit conversion helpers between oz and mL
 - day-bucketing rules based on local date derived from timestamps
 - daily aggregation helpers
-- streak and average calculations
 - validation rules for entry creation and settings
 
 Suggested validation rules:
@@ -258,27 +244,27 @@ The web app is the recommended first implementation surface in this repo.
 
 Why web-first is recommended over CLI-first:
 - daily water logging is interaction-heavy and benefits from one-tap controls
-- progress bars, recent entries, and history are much more legible in web UI
+- progress bars and recent entries are much more legible in web UI
 - quick-add flows are substantially more natural on web than in CLI
 - the product value for v1 is primarily behavioral tracking, not automation or scripting
 
-Recommended web MVP surfaces:
+Recommended web surfaces:
 - dedicated Water page or Water card leading to a dedicated page
 - today summary
 - quick-add buttons
 - custom entry form/dialog
 - recent entries list with delete action
-- history list for recent days
 - settings for goal and preferred unit
+
+Web should not include history/reporting for this feature.
 
 ## CLI Implications
 
-CLI should still support the feature, but it is a secondary surface for v1.
+CLI should still support the feature, but it is a secondary surface relative to web for frequent logging.
 
 Recommended CLI capabilities:
 - add a water entry for now or for a specified timestamp/date
 - list today's water entries and total
-- show history for a date range
 - show goal progress
 - manage hydration settings
 
@@ -286,7 +272,6 @@ Possible command shape:
 - `fit water add --amount 16 --unit oz`
 - `fit water add --amount 500 --unit ml`
 - `fit water today`
-- `fit water history --from 2026-04-01 --to 2026-04-07`
 - `fit water settings --goal 80 --unit oz`
 
 CLI should use the same conversion and aggregation rules as web via shared/core.
@@ -300,9 +285,7 @@ Recommended durable model:
 Recommended query helpers:
 - list entries for a local day
 - summarize a local day
-- summarize a date range
 - compute goal status for a day
-- compute streaks and averages
 
 ## Rollout Plan
 
@@ -319,7 +302,7 @@ Deliverables:
 Success criteria:
 - shared/core can represent and summarize water data consistently for CLI and web
 
-### Phase 2: Web MVP
+### Phase 2: Web Water Tracking
 
 Deliverables:
 - today view
@@ -328,7 +311,6 @@ Deliverables:
 - recent entries
 - delete action
 - settings for goal and preferred unit
-- basic recent-history view
 
 Success criteria:
 - a user can use the web app as the primary daily water tracker
@@ -337,21 +319,11 @@ Success criteria:
 
 Deliverables:
 - commands to add entries
-- commands to inspect today's total and recent history
+- commands to inspect today's total
 - settings management
 
 Success criteria:
 - CLI can create and inspect hydration data using the same shared model
-
-### Phase 4: History and Reporting Polish
-
-Deliverables:
-- better summaries for recent windows
-- streak and average presentation improvements
-- any additional reporting polish shared across clients where practical
-
-Success criteria:
-- history is useful, not just technically present
 
 ## Non-Goals for V1
 
@@ -373,8 +345,8 @@ Tradeoff:
 
 Why this is still preferred:
 - preserves correctness and flexibility
-- supports delete/edit/history cleanly
-- aligns with future reporting needs
+- supports delete/edit cleanly
+- avoids baking lossy daily totals into the storage model
 
 ### Local-Day Aggregation Requires Clear Time Semantics
 
@@ -398,16 +370,14 @@ Recommendation:
 These remain open enough to document, but they should not reopen the settled product decisions above:
 - Should `amount_ml` be stored as integer mL or floating-point mL?
 - Should hydration settings live in the same private hydration document as entries or in a separate personal settings document?
-- Should web history v1 be a list, a chart, or a list first with charting deferred?
-- Should edit support ship in the first entry-management pass, or should v1 support add + delete and defer edit?
+- Should edit support ship in the first entry-management pass, or should the first implementation support add + delete and defer edit?
 
 ## Follow-Up Implementation Task Shape
 
 This design is intended to support follow-up tasks in this repo for:
 - shared/core hydration models and document plumbing
-- web hydration MVP
+- web water tracking
 - CLI hydration support
-- history/reporting polish
 
 These tasks should reference this document directly instead of reconstructing requirements from chat history.
 
