@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth, ProtectedRoute, Login, PasskeyRegister, AllowlistAdmin, InviteSuccess, InviteError } from './auth'
 import { RepoProvider, useRepoState } from './repo'
@@ -6,7 +6,7 @@ import { ThemeProvider, useTheme } from './theme'
 import { deletePasskey, setRootDocId, sendGroupInvite } from './auth/api'
 import { DishList, DishDetail, DishForm } from './dishes'
 import { MealCalendar, DayView, MealPlanForm, MealLogList, MealLogForm } from './meals'
-import { WaterPage } from './hydration'
+import { WaterPage, useHydration } from './hydration'
 import { ConfirmDialog } from './components'
 import { CalendarSubscription } from './calendar'
 
@@ -362,14 +362,39 @@ function Home() {
   )
 }
 
+function hydrationGoalAmountForUnit(dailyGoalMl: number, unit: 'ml' | 'oz', ozFromMl: (ml: number) => number): string {
+  if (unit === 'ml') {
+    return String(dailyGoalMl)
+  }
+
+  const ounces = Math.round(ozFromMl(dailyGoalMl) * 10) / 10
+  return Number.isInteger(ounces) ? String(ounces.toFixed(0)) : String(ounces.toFixed(1))
+}
+
+function hydrationPresetEditorValue(presetsMl: number[], unit: 'ml' | 'oz', ozFromMl: (ml: number) => number): string {
+  return presetsMl
+    .map((preset) => {
+      if (unit === 'ml') {
+        return String(preset)
+      }
+      const ounces = Math.round(ozFromMl(preset) * 10) / 10
+      return Number.isInteger(ounces) ? ounces.toFixed(0) : ounces.toFixed(1)
+    })
+    .join(', ')
+}
+
 function Settings() {
   const { auth, refreshAuth } = useAuth()
   const { currentGroupName, groups } = useRepoState()
   const { theme, setTheme } = useTheme()
+  const { settings: hydrationSettings, saveSettings: saveHydrationSettings, helpers: hydrationHelpers } = useHydration()
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [isEditingRootDocId, setIsEditingRootDocId] = useState(false)
   const [newRootDocId, setNewRootDocId] = useState('')
   const [isUpdatingRootDocId, setIsUpdatingRootDocId] = useState(false)
+  const [waterSettingsUnit, setWaterSettingsUnit] = useState<'ml' | 'oz'>(hydrationSettings.preferredUnit)
+  const [waterGoalInput, setWaterGoalInput] = useState(() => hydrationGoalAmountForUnit(hydrationSettings.dailyGoalMl, hydrationSettings.preferredUnit, hydrationHelpers.ozFromMl))
+  const [waterPresetInput, setWaterPresetInput] = useState(() => hydrationPresetEditorValue(hydrationSettings.quickAddPresetsMl, hydrationSettings.preferredUnit, hydrationHelpers.ozFromMl))
 
   // Group invite state
   const [inviteModalGroup, setInviteModalGroup] = useState<{ id: string; name: string; doc_id: string } | null>(null)
@@ -380,6 +405,8 @@ function Settings() {
   const [deletePasskeyTarget, setDeletePasskeyTarget] = useState<{ id: string; name: string | null } | null>(null)
 
   const passkeys = auth?.passkeys || []
+
+  const hydrationPresetKey = hydrationSettings.quickAddPresetsMl.join(',')
 
   // Get sync URL from environment or compute it
   const syncUrl = import.meta.env.VITE_SYNC_URL ||
@@ -404,6 +431,47 @@ function Settings() {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to update Root Doc ID' })
     } finally {
       setIsUpdatingRootDocId(false)
+    }
+  }
+
+  useEffect(() => {
+    setWaterSettingsUnit(hydrationSettings.preferredUnit)
+    setWaterGoalInput(hydrationGoalAmountForUnit(hydrationSettings.dailyGoalMl, hydrationSettings.preferredUnit, hydrationHelpers.ozFromMl))
+    setWaterPresetInput(hydrationPresetEditorValue(hydrationSettings.quickAddPresetsMl, hydrationSettings.preferredUnit, hydrationHelpers.ozFromMl))
+  }, [hydrationHelpers.ozFromMl, hydrationPresetKey, hydrationSettings.dailyGoalMl, hydrationSettings.preferredUnit])
+
+  const handleSaveWaterSettings = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const goalValue = Number(waterGoalInput)
+    if (!Number.isFinite(goalValue) || goalValue <= 0) {
+      setMessage({ type: 'error', text: 'Water goal must be positive' })
+      return
+    }
+
+    const quickAddValues = waterPresetInput
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map(Number)
+
+    if (quickAddValues.length === 0 || quickAddValues.some((value) => !Number.isFinite(value) || value <= 0)) {
+      setMessage({ type: 'error', text: 'Water presets must be a comma-separated list of positive numbers' })
+      return
+    }
+
+    const dailyGoalMl = waterSettingsUnit === 'ml' ? Math.round(goalValue) : hydrationHelpers.mlFromOz(goalValue)
+    const quickAddPresetsMl = quickAddValues.map((value) => waterSettingsUnit === 'ml' ? Math.round(value) : hydrationHelpers.mlFromOz(value))
+
+    try {
+      saveHydrationSettings({
+        dailyGoalMl,
+        preferredUnit: waterSettingsUnit,
+        quickAddPresetsMl,
+      })
+      setMessage({ type: 'success', text: 'Water settings saved' })
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to save water settings' })
     }
   }
 
@@ -586,6 +654,67 @@ function Settings() {
             </div>
           )}
         </div>
+      </div>
+
+      <div id="water-settings" className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6 transition-colors scroll-mt-24">
+        <h3 className="text-lg font-medium mb-4 text-gray-900 dark:text-gray-100">Water Settings</h3>
+        <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">Preferred unit changes display only. Storage stays canonical in mL.</p>
+        <form className="space-y-4" onSubmit={handleSaveWaterSettings}>
+          <div>
+            <label htmlFor="water-settings-unit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Preferred display unit
+            </label>
+            <select
+              id="water-settings-unit"
+              value={waterSettingsUnit}
+              onChange={(event) => {
+                const nextUnit = event.target.value as 'ml' | 'oz'
+                setWaterSettingsUnit(nextUnit)
+                setWaterGoalInput(hydrationGoalAmountForUnit(hydrationSettings.dailyGoalMl, nextUnit, hydrationHelpers.ozFromMl))
+                setWaterPresetInput(hydrationPresetEditorValue(hydrationSettings.quickAddPresetsMl, nextUnit, hydrationHelpers.ozFromMl))
+              }}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+            >
+              <option value="oz">oz</option>
+              <option value="ml">mL</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="water-goal" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Daily goal ({waterSettingsUnit === 'ml' ? 'mL' : 'oz'})
+            </label>
+            <input
+              id="water-goal"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.1"
+              value={waterGoalInput}
+              onChange={(event) => setWaterGoalInput(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+            />
+          </div>
+          <div>
+            <label htmlFor="water-presets" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Quick-add presets ({waterSettingsUnit === 'ml' ? 'mL' : 'oz'})
+            </label>
+            <input
+              id="water-presets"
+              type="text"
+              value={waterPresetInput}
+              onChange={(event) => setWaterPresetInput(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              placeholder={waterSettingsUnit === 'ml' ? '237, 355, 473, 710' : '8, 12, 16, 24'}
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Enter a comma-separated list of positive numbers.</p>
+          </div>
+          <button
+            type="submit"
+            className="w-full rounded-lg bg-gray-900 px-4 py-3 font-medium text-white transition-colors hover:bg-black dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+          >
+            Save water settings
+          </button>
+        </form>
       </div>
 
       {/* Groups */}

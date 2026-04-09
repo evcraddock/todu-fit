@@ -1,7 +1,8 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useRepoState, RepoLoading } from '../repo'
 import { ConfirmDialog } from '../components'
-import { HydrationSettings, HydrationUnit, WaterEntry } from './types'
+import { HydrationUnit, WaterEntry } from './types'
 import { formatHydrationAmount, useHydration } from './useHydration'
 
 function formatTimestamp(value: string): string {
@@ -20,27 +21,6 @@ function formatGoalProgress(progress: number): string {
   return `${Math.min(Math.round(progress * 100), 999)}%`
 }
 
-function goalAmountForUnit(settings: HydrationSettings, unit: HydrationUnit, ozFromMl: (ml: number) => number): string {
-  if (unit === 'ml') {
-    return String(settings.dailyGoalMl)
-  }
-
-  const ounces = Math.round(ozFromMl(settings.dailyGoalMl) * 10) / 10
-  return Number.isInteger(ounces) ? String(ounces.toFixed(0)) : String(ounces.toFixed(1))
-}
-
-function presetEditorValue(settings: HydrationSettings, unit: HydrationUnit, ozFromMl: (ml: number) => number): string {
-  return settings.quickAddPresetsMl
-    .map((preset) => {
-      if (unit === 'ml') {
-        return String(preset)
-      }
-      const ounces = Math.round(ozFromMl(preset) * 10) / 10
-      return Number.isInteger(ounces) ? ounces.toFixed(0) : ounces.toFixed(1)
-    })
-    .join(', ')
-}
-
 export function WaterPage() {
   const { isReady, currentGroupName } = useRepoState()
 
@@ -52,24 +32,12 @@ export function WaterPage() {
 }
 
 function WaterPageContent({ currentGroupName }: { currentGroupName: string | null }) {
-  const { todayEntries, todayTotalMl, goalProgress, settings, addEntry, deleteEntry, saveSettings, isLoading, helpers } = useHydration()
+  const { todayEntries, todayTotalMl, goalProgress, settings, addEntry, deleteEntry, isLoading, helpers } = useHydration()
   const [customAmount, setCustomAmount] = useState('')
   const [customUnit, setCustomUnit] = useState<HydrationUnit>(settings.preferredUnit)
-  const [goalInput, setGoalInput] = useState(() => goalAmountForUnit(settings, settings.preferredUnit, helpers.ozFromMl))
-  const [settingsUnit, setSettingsUnit] = useState<HydrationUnit>(settings.preferredUnit)
-  const [presetInput, setPresetInput] = useState(() => presetEditorValue(settings, settings.preferredUnit, helpers.ozFromMl))
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<WaterEntry | null>(null)
-
-  const settingsPresetKey = settings.quickAddPresetsMl.join(',')
-
-  useEffect(() => {
-    setCustomUnit(settings.preferredUnit)
-    setSettingsUnit(settings.preferredUnit)
-    setGoalInput(goalAmountForUnit(settings, settings.preferredUnit, helpers.ozFromMl))
-    setPresetInput(presetEditorValue(settings, settings.preferredUnit, helpers.ozFromMl))
-  }, [helpers.ozFromMl, settings.dailyGoalMl, settings.preferredUnit, settingsPresetKey])
 
   const totalLabel = helpers.formatHydrationAmount(todayTotalMl, settings.preferredUnit)
   const goalLabel = helpers.formatHydrationAmount(settings.dailyGoalMl, settings.preferredUnit)
@@ -106,45 +74,6 @@ function WaterPageContent({ currentGroupName }: { currentGroupName: string | nul
     } catch (err) {
       setSuccess(null)
       setError(err instanceof Error ? err.message : 'Failed to add water entry')
-    }
-  }
-
-  const handleSaveSettings = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    const goalValue = Number(goalInput)
-    if (!Number.isFinite(goalValue) || goalValue <= 0) {
-      setSuccess(null)
-      setError('Daily goal must be positive')
-      return
-    }
-
-    const quickAddValues = presetInput
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .map(Number)
-
-    if (quickAddValues.length === 0 || quickAddValues.some((value) => !Number.isFinite(value) || value <= 0)) {
-      setSuccess(null)
-      setError('Quick-add presets must be a comma-separated list of positive numbers')
-      return
-    }
-
-    const dailyGoalMl = settingsUnit === 'ml' ? Math.round(goalValue) : helpers.mlFromOz(goalValue)
-    const quickAddPresetsMl = quickAddValues.map((value) => settingsUnit === 'ml' ? Math.round(value) : helpers.mlFromOz(value))
-
-    try {
-      saveSettings({
-        dailyGoalMl,
-        preferredUnit: settingsUnit,
-        quickAddPresetsMl,
-      })
-      setError(null)
-      setSuccess('Water settings saved')
-    } catch (err) {
-      setSuccess(null)
-      setError(err instanceof Error ? err.message : 'Failed to save settings')
     }
   }
 
@@ -218,7 +147,7 @@ function WaterPageContent({ currentGroupName }: { currentGroupName: string | nul
       <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-colors">
         <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">Quick add</h2>
         <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">One tap adds a timestamped private water entry for right now.</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {settings.quickAddPresetsMl.map((preset) => (
             <button
               key={preset}
@@ -231,110 +160,58 @@ function WaterPageContent({ currentGroupName }: { currentGroupName: string | nul
         </div>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-colors">
-          <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">Custom entry</h2>
-          <form className="mt-4 space-y-4" onSubmit={handleCustomSubmit}>
-            <div>
-              <label htmlFor="water-amount" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Amount
-              </label>
-              <input
-                id="water-amount"
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="0.1"
-                value={customAmount}
-                onChange={(event) => setCustomAmount(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                placeholder={customUnit === 'ml' ? '500' : '16'}
-              />
-            </div>
-            <div>
-              <label htmlFor="water-unit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Unit
-              </label>
-              <select
-                id="water-unit"
-                value={customUnit}
-                onChange={(event) => setCustomUnit(event.target.value as HydrationUnit)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-              >
-                <option value="oz">oz</option>
-                <option value="ml">mL</option>
-              </select>
-            </div>
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-green-600 px-4 py-3 font-medium text-white transition-colors hover:bg-green-700"
+      <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-colors">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">Custom entry</h2>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Need to change your goal, unit, or quick-add presets? Use Water settings.</p>
+          </div>
+          <Link
+            to="/settings#water-settings"
+            className="rounded-lg bg-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
+          >
+            Water settings
+          </Link>
+        </div>
+        <form className="mt-4 space-y-4" onSubmit={handleCustomSubmit}>
+          <div>
+            <label htmlFor="water-amount" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Amount
+            </label>
+            <input
+              id="water-amount"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.1"
+              value={customAmount}
+              onChange={(event) => setCustomAmount(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              placeholder={customUnit === 'ml' ? '500' : '16'}
+            />
+          </div>
+          <div>
+            <label htmlFor="water-unit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Unit
+            </label>
+            <select
+              id="water-unit"
+              value={customUnit}
+              onChange={(event) => setCustomUnit(event.target.value as HydrationUnit)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
             >
-              Add water
-            </button>
-          </form>
-        </section>
-
-        <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-colors">
-          <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">Settings</h2>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Preferred unit changes display only. Storage stays canonical in mL.</p>
-          <form className="mt-4 space-y-4" onSubmit={handleSaveSettings}>
-            <div>
-              <label htmlFor="water-settings-unit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Preferred display unit
-              </label>
-              <select
-                id="water-settings-unit"
-                value={settingsUnit}
-                onChange={(event) => {
-                  const nextUnit = event.target.value as HydrationUnit
-                  setSettingsUnit(nextUnit)
-                  setGoalInput(goalAmountForUnit(settings, nextUnit, helpers.ozFromMl))
-                  setPresetInput(presetEditorValue(settings, nextUnit, helpers.ozFromMl))
-                }}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-              >
-                <option value="oz">oz</option>
-                <option value="ml">mL</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="water-goal" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Daily goal ({settingsUnit === 'ml' ? 'mL' : 'oz'})
-              </label>
-              <input
-                id="water-goal"
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="0.1"
-                value={goalInput}
-                onChange={(event) => setGoalInput(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-              />
-            </div>
-            <div>
-              <label htmlFor="water-presets" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Quick-add presets ({settingsUnit === 'ml' ? 'mL' : 'oz'})
-              </label>
-              <input
-                id="water-presets"
-                type="text"
-                value={presetInput}
-                onChange={(event) => setPresetInput(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                placeholder={settingsUnit === 'ml' ? '250, 500, 750' : '8, 12, 16'}
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Enter a comma-separated list of positive numbers.</p>
-            </div>
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-gray-900 px-4 py-3 font-medium text-white transition-colors hover:bg-black dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
-            >
-              Save settings
-            </button>
-          </form>
-        </section>
-      </div>
+              <option value="oz">oz</option>
+              <option value="ml">mL</option>
+            </select>
+          </div>
+          <button
+            type="submit"
+            className="w-full rounded-lg bg-green-600 px-4 py-3 font-medium text-white transition-colors hover:bg-green-700"
+          >
+            Add water
+          </button>
+        </form>
+      </section>
 
       <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-colors">
         <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">Recent entries</h2>

@@ -137,6 +137,13 @@ function createDoc<T>(repo: Repo, initialValue?: T): DocHandle<T> {
   return repo.create<T>(initialValue)
 }
 
+async function waitForDocument(handle: DocHandle<unknown>, timeoutMs = 1000): Promise<void> {
+  await Promise.race([
+    handle.whenReady(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs)),
+  ])
+}
+
 // ============================================================================
 // Provider Component
 // ============================================================================
@@ -563,13 +570,8 @@ export function RepoProvider({ children }: { children: ReactNode }) {
           const existingUrl = `automerge:${docId}` as AutomergeUrl
           try {
             const handle = await repo.find(existingUrl)
-            const doc = await Promise.race([
-              handle.doc(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000)),
-            ])
-            if (doc) {
-              return existingUrl
-            }
+            await waitForDocument(handle)
+            return existingUrl
           } catch {
             console.warn('[repo] Hydration document missing, creating a replacement')
           }
@@ -603,12 +605,7 @@ export function RepoProvider({ children }: { children: ReactNode }) {
         const existingUrl = `automerge:${groupData.shopping_carts_doc_id}` as AutomergeUrl
         try {
           const handle = await repo.find(existingUrl)
-          // Wait briefly for the document to load
-          const doc = await Promise.race([
-            handle.doc(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
-          ])
-          if (!doc) throw new Error('doc is null')
+          await waitForDocument(handle)
           shoppingCartsUrl = existingUrl
         } catch {
           // Document doesn't exist or can't be found - create a new one

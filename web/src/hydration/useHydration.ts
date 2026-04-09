@@ -33,7 +33,7 @@ function ozFromMl(ml: number): number {
 }
 
 function defaultQuickAddPresetsMl(): number[] {
-  return [mlFromOz(8), mlFromOz(12), mlFromOz(16), 500, 750]
+  return [mlFromOz(8), mlFromOz(12), mlFromOz(16), mlFromOz(24)]
 }
 
 function defaultSettings(): HydrationSettings {
