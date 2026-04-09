@@ -77,6 +77,9 @@ pub struct GroupContext {
 pub struct UserContext {
     /// Personal meal logs document ID
     pub meallogs_doc_id: DocumentId,
+    /// Personal hydration document ID
+    #[allow(dead_code)]
+    pub hydration_doc_id: DocumentId,
 }
 
 /// Resolve the current group context.
@@ -130,7 +133,7 @@ pub fn resolve_group_context(
 
 /// Resolve the user context for personal documents.
 ///
-/// Returns document IDs for the user's personal meal logs.
+/// Returns document IDs for the user's personal meal logs and hydration data.
 pub fn resolve_user_context(data_dir: &Path) -> Result<UserContext, GroupContextError> {
     let storage = MultiDocStorage::new(data_dir.to_path_buf());
     let identity = Identity::new(storage);
@@ -146,6 +149,7 @@ pub fn resolve_user_context(data_dir: &Path) -> Result<UserContext, GroupContext
 
     Ok(UserContext {
         meallogs_doc_id: identity_doc.meallogs_doc_id,
+        hydration_doc_id: identity_doc.hydration_doc_id,
     })
 }
 

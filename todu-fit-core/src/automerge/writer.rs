@@ -5,7 +5,7 @@
 use automerge::{transaction::Transactable, AutoCommit, ObjType, ROOT};
 use uuid::Uuid;
 
-use crate::models::{Dish, MealLog, MealPlan, ShoppingCart};
+use crate::models::{Dish, HydrationSettings, MealLog, MealPlan, ShoppingCart, WaterEntry};
 
 /// Writes a dish to an Automerge document.
 ///
@@ -224,6 +224,68 @@ pub fn delete_meallog(doc: &mut AutoCommit, id: Uuid) {
     let _ = doc.delete(ROOT, &id_str);
 }
 
+/// Writes a water entry to an Automerge document.
+pub fn write_water_entry(doc: &mut AutoCommit, entry: &WaterEntry) {
+    let id_str = entry.id.to_string();
+
+    let entry_id = doc
+        .put_object(ROOT, &id_str, ObjType::Map)
+        .expect("Failed to create water entry object");
+
+    doc.put(
+        &entry_id,
+        "consumed_at",
+        entry.consumed_at.to_rfc3339().as_str(),
+    )
+    .unwrap();
+    doc.put(&entry_id, "amount_ml", entry.amount_ml as i64)
+        .unwrap();
+    doc.put(
+        &entry_id,
+        "created_at",
+        entry.created_at.to_rfc3339().as_str(),
+    )
+    .unwrap();
+    doc.put(
+        &entry_id,
+        "updated_at",
+        entry.updated_at.to_rfc3339().as_str(),
+    )
+    .unwrap();
+}
+
+/// Writes hydration settings to an Automerge document.
+pub fn write_hydration_settings(doc: &mut AutoCommit, settings: &HydrationSettings) {
+    let settings_id = doc
+        .put_object(ROOT, "settings", ObjType::Map)
+        .expect("Failed to create hydration settings object");
+
+    doc.put(&settings_id, "daily_goal_ml", settings.daily_goal_ml as i64)
+        .unwrap();
+    doc.put(
+        &settings_id,
+        "preferred_unit",
+        match settings.preferred_unit {
+            crate::models::HydrationUnit::Ml => "ml",
+            crate::models::HydrationUnit::Oz => "oz",
+        },
+    )
+    .unwrap();
+
+    let presets_id = doc
+        .put_object(&settings_id, "quick_add_presets_ml", ObjType::List)
+        .unwrap();
+    for (i, preset) in settings.quick_add_presets_ml.iter().enumerate() {
+        doc.insert(&presets_id, i, *preset as i64).unwrap();
+    }
+}
+
+/// Deletes a water entry from an Automerge document.
+pub fn delete_water_entry(doc: &mut AutoCommit, id: Uuid) {
+    let id_str = id.to_string();
+    let _ = doc.delete(ROOT, &id_str);
+}
+
 /// Writes a shopping cart to an Automerge document.
 ///
 /// The shopping cart is stored at root[week_date_string].
@@ -267,7 +329,7 @@ pub fn delete_shopping_cart(doc: &mut AutoCommit, week: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Ingredient, MealType, Nutrient};
+    use crate::models::{HydrationSettings, HydrationUnit, Ingredient, MealType, Nutrient};
     use automerge::ReadDoc;
     use chrono::NaiveDate;
 
@@ -371,6 +433,39 @@ mod tests {
         let (_, log_obj) = doc.get(ROOT, &id_str).unwrap().unwrap();
         let (val, _) = doc.get(&log_obj, "mealplan_id").unwrap().unwrap();
         assert_eq!(val.into_string().unwrap(), mealplan_id.to_string());
+    }
+
+    #[test]
+    fn test_write_water_entry_and_settings() {
+        let mut doc = AutoCommit::new();
+        let consumed_at = chrono::DateTime::parse_from_rfc3339("2026-04-08T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let entry = WaterEntry::new(500, consumed_at).unwrap();
+        let settings = HydrationSettings::new(2000, HydrationUnit::Ml);
+
+        write_water_entry(&mut doc, &entry);
+        write_hydration_settings(&mut doc, &settings);
+
+        let (_, entry_obj) = doc.get(ROOT, entry.id.to_string()).unwrap().unwrap();
+        let (amount, _) = doc.get(&entry_obj, "amount_ml").unwrap().unwrap();
+        assert_eq!(amount.to_i64(), Some(500));
+
+        let (_, settings_obj) = doc.get(ROOT, "settings").unwrap().unwrap();
+        let (goal, _) = doc.get(&settings_obj, "daily_goal_ml").unwrap().unwrap();
+        assert_eq!(goal.to_i64(), Some(2000));
+    }
+
+    #[test]
+    fn test_delete_water_entry() {
+        let mut doc = AutoCommit::new();
+        let entry = WaterEntry::new(500, chrono::Utc::now()).unwrap();
+
+        write_water_entry(&mut doc, &entry);
+        assert!(doc.get(ROOT, entry.id.to_string()).unwrap().is_some());
+
+        delete_water_entry(&mut doc, entry.id);
+        assert!(doc.get(ROOT, entry.id.to_string()).unwrap().is_none());
     }
 
     #[test]

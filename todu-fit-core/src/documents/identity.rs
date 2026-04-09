@@ -2,6 +2,7 @@
 //!
 //! The identity document is personal to each user and contains:
 //! - Reference to their personal meal logs document
+//! - Reference to their personal hydration document
 //! - List of groups they belong to
 
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,7 @@ use super::GroupRef;
 /// Personal identity document.
 ///
 /// Each user has one identity document that references their personal
-/// meal logs and the groups they belong to.
+/// meal logs, personal hydration data, and the groups they belong to.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentityDocument {
     /// Schema version for migration support
@@ -22,19 +23,24 @@ pub struct IdentityDocument {
     /// Reference to the user's personal meal logs document
     pub meallogs_doc_id: DocumentId,
 
+    /// Reference to the user's personal hydration document
+    #[serde(default)]
+    pub hydration_doc_id: DocumentId,
+
     /// Groups this user belongs to
     pub groups: Vec<GroupRef>,
 }
 
 impl IdentityDocument {
     /// Current schema version
-    pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+    pub const CURRENT_SCHEMA_VERSION: u32 = 2;
 
     /// Create a new identity document with a new meal logs document ID.
     pub fn new() -> Self {
         Self {
             schema_version: Self::CURRENT_SCHEMA_VERSION,
             meallogs_doc_id: DocumentId::new(),
+            hydration_doc_id: DocumentId::new(),
             groups: Vec::new(),
         }
     }
@@ -44,6 +50,7 @@ impl IdentityDocument {
         Self {
             schema_version: Self::CURRENT_SCHEMA_VERSION,
             meallogs_doc_id,
+            hydration_doc_id: DocumentId::new(),
             groups: Vec::new(),
         }
     }
@@ -90,6 +97,7 @@ mod tests {
             IdentityDocument::CURRENT_SCHEMA_VERSION
         );
         assert!(identity.groups.is_empty());
+        assert_ne!(identity.meallogs_doc_id, identity.hydration_doc_id);
     }
 
     #[test]
@@ -151,7 +159,19 @@ mod tests {
 
         assert_eq!(parsed.schema_version, identity.schema_version);
         assert_eq!(parsed.meallogs_doc_id, identity.meallogs_doc_id);
+        assert_eq!(parsed.hydration_doc_id, identity.hydration_doc_id);
         assert_eq!(parsed.groups.len(), 1);
         assert_eq!(parsed.groups[0].name, "Family");
+    }
+
+    #[test]
+    fn test_deserialization_defaults_hydration_doc_id() {
+        let json = format!(
+            r#"{{"schema_version":1,"meallogs_doc_id":"{}","groups":[]}}"#,
+            DocumentId::new()
+        );
+
+        let parsed: IdentityDocument = serde_json::from_str(&json).unwrap();
+        assert_ne!(parsed.meallogs_doc_id, parsed.hydration_doc_id);
     }
 }

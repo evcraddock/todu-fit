@@ -1,2 +1,5 @@
 // Re-export models from todu-fit-core
-pub use todu_fit_core::{Dish, Ingredient, MealLog, MealPlan, MealType, Nutrient};
+pub use todu_fit_core::{
+    Dish, HydrationSettings, HydrationUnit, Ingredient, MealLog, MealPlan, MealType, Nutrient,
+    WaterEntry,
+};

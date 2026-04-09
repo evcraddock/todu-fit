@@ -65,6 +65,23 @@
 //!   ...
 //! }
 //! ```
+//!
+//! ## HydrationDoc
+//! ```text
+//! {
+//!   "settings": {
+//!     "daily_goal_ml": 2366,
+//!     "preferred_unit": "oz",
+//!     "quick_add_presets_ml": [237, 355, 473, 500, 750]
+//!   },
+//!   "<uuid>": {
+//!     "consumed_at": "iso8601",
+//!     "amount_ml": 500,
+//!     "created_at": "iso8601",
+//!     "updated_at": "iso8601"
+//!   }
+//! }
+//! ```
 
 #![cfg_attr(not(test), allow(dead_code))]
 
@@ -223,6 +240,41 @@ impl Default for MealLogsDoc {
     }
 }
 
+/// Automerge document for storing personal hydration data.
+pub struct HydrationDoc {
+    doc: AutoCommit,
+}
+
+impl HydrationDoc {
+    pub fn new() -> Self {
+        Self {
+            doc: AutoCommit::new(),
+        }
+    }
+
+    pub fn doc(&self) -> &AutoCommit {
+        &self.doc
+    }
+
+    pub fn doc_mut(&mut self) -> &mut AutoCommit {
+        &mut self.doc
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.doc.length(automerge::ROOT) == 0
+    }
+
+    pub fn len(&self) -> usize {
+        self.doc.length(automerge::ROOT)
+    }
+}
+
+impl Default for HydrationDoc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +315,19 @@ mod tests {
     #[test]
     fn test_meallogs_doc_default() {
         let doc = MealLogsDoc::default();
+        assert!(doc.is_empty());
+    }
+
+    #[test]
+    fn test_hydration_doc_new() {
+        let doc = HydrationDoc::new();
+        assert!(doc.is_empty());
+        assert_eq!(doc.len(), 0);
+    }
+
+    #[test]
+    fn test_hydration_doc_default() {
+        let doc = HydrationDoc::default();
         assert!(doc.is_empty());
     }
 }

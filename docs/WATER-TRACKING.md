@@ -157,15 +157,14 @@ Why:
 Suggested fields:
 - `id: Uuid`
 - `consumed_at: DateTime<Utc>`
-- `amount_ml: i32` or `f64`
+- `amount_ml: i32`
 - `created_at: DateTime<Utc>`
 - `updated_at: DateTime<Utc>`
 
 Notes:
 - `consumed_at` should be the business timestamp used for day grouping and history.
 - `created_at` and `updated_at` support editing/debugging consistency.
-- Integer milliliters are preferable if all supported UI inputs can be rounded cleanly.
-- If conversion precision becomes awkward, `f64` remains acceptable, but integer mL is preferred for simplicity.
+- Shared/core now uses integer milliliters for canonical storage.
 
 #### `HydrationSettings`
 
@@ -368,7 +367,6 @@ Recommendation:
 ## Open Questions
 
 These remain open enough to document, but they should not reopen the settled product decisions above:
-- Should `amount_ml` be stored as integer mL or floating-point mL?
 - Should hydration settings live in the same private hydration document as entries or in a separate personal settings document?
 - Should edit support ship in the first entry-management pass, or should the first implementation support add + delete and defer edit?
 

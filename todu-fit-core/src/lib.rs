@@ -10,16 +10,18 @@ pub mod models;
 pub mod sync;
 
 pub use automerge::{
-    delete_dish, delete_meallog, delete_mealplan, delete_shopping_cart, write_dish, write_meallog,
-    write_mealplan, write_shopping_cart, DocType, DocumentStorage, MultiDocStorage,
-    MultiStorageError, StorageError,
+    delete_dish, delete_meallog, delete_mealplan, delete_shopping_cart, delete_water_entry,
+    write_dish, write_hydration_settings, write_meallog, write_mealplan, write_shopping_cart,
+    write_water_entry, DocType, DocumentStorage, MultiDocStorage, MultiStorageError, StorageError,
 };
 pub use document_id::{DocumentId, DocumentIdError};
 pub use documents::{GroupDocument, GroupRef, IdentityDocument};
 pub use identity::{Identity, IdentityError, IdentityState};
 pub use models::{
-    aggregate_ingredients, collect_ingredients_from_mealplans, Dish, Ingredient, ManualItem,
-    MealLog, MealPlan, MealType, Nutrient, ShoppingCart, ShoppingItem,
+    aggregate_ingredients, average_daily_ml, collect_ingredients_from_mealplans, daily_total_ml,
+    default_quick_add_presets_ml, entries_for_date, goal_progress, ml_from_oz, oz_from_ml,
+    streak_days, Dish, HydrationSettings, HydrationUnit, Ingredient, ManualItem, MealLog, MealPlan,
+    MealType, Nutrient, ShoppingCart, ShoppingItem, WaterEntry,
 };
 pub use sync::{check_server, SyncClient, SyncError, SyncResult};
 
