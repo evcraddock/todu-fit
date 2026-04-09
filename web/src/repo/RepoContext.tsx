@@ -13,6 +13,7 @@ interface DocUrls {
   dishes: AutomergeUrl
   mealPlans: AutomergeUrl
   mealLogs: AutomergeUrl
+  hydration: AutomergeUrl
   shoppingCarts: AutomergeUrl
 }
 
@@ -25,6 +26,7 @@ interface GroupRef {
 interface IdentityDocData {
   schema_version?: number
   meallogs_doc_id: string
+  hydration_doc_id?: string
   groups: GroupRef[]
 }
 
@@ -135,6 +137,13 @@ function createDoc<T>(repo: Repo, initialValue?: T): DocHandle<T> {
   return repo.create<T>(initialValue)
 }
 
+async function waitForDocument(handle: DocHandle<unknown>, timeoutMs = 1000): Promise<void> {
+  await Promise.race([
+    handle.whenReady(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs)),
+  ])
+}
+
 // ============================================================================
 // Provider Component
 // ============================================================================
@@ -195,14 +204,17 @@ export function RepoProvider({ children }: { children: ReactNode }) {
       if (pendingInviteGroupDocId && pendingInviteGroupName && pendingInviteGroupRefId) {
         console.log('[repo] Creating new identity with invited group')
 
-        // Create only private documents - meal logs (empty object, CLI uses flat root-level structure)
+        // Create only private documents - meal logs and hydration (empty object, CLI uses flat root-level structure)
         const meallogsHandle = createDoc<Record<string, unknown>>(repo, {})
+        const hydrationHandle = createDoc<Record<string, unknown>>(repo, {})
         const meallogsDocId = getDocIdFromUrl(meallogsHandle.url)
+        const hydrationDocId = getDocIdFromUrl(hydrationHandle.url)
 
         // Create the identity document with reference to the invited group
         const identityHandle = createDoc<RawDoc>(repo, {
           data: {
             meallogs_doc_id: meallogsDocId,
+            hydration_doc_id: hydrationDocId,
             groups: [
               {
                 id: pendingInviteGroupRefId,
@@ -218,6 +230,7 @@ export function RepoProvider({ children }: { children: ReactNode }) {
           identity: identityDocId,
           group: pendingInviteGroupDocId,
           meallogs: meallogsDocId,
+          hydration: hydrationDocId,
         })
 
         // Update the rootDocId in the database to match the created document
@@ -275,6 +288,7 @@ export function RepoProvider({ children }: { children: ReactNode }) {
           dishes: dishesUrl,
           mealPlans: mealPlansUrl,
           mealLogs: meallogsHandle.url,
+          hydration: hydrationHandle.url,
           shoppingCarts: shoppingCartsUrl,
         })
         setGroups([{
@@ -299,12 +313,14 @@ export function RepoProvider({ children }: { children: ReactNode }) {
         const dishesHandle = createDoc<Record<string, unknown>>(repo, {})
         const mealplansHandle = createDoc<Record<string, unknown>>(repo, {})
         const meallogsHandle = createDoc<Record<string, unknown>>(repo, {})
+        const hydrationHandle = createDoc<Record<string, unknown>>(repo, {})
         const shoppingcartsHandle = createDoc<Record<string, unknown>>(repo, {})
 
         // Get the generated doc IDs from the URLs
         const dishesDocId = getDocIdFromUrl(dishesHandle.url)
         const mealplansDocId = getDocIdFromUrl(mealplansHandle.url)
         const meallogsDocId = getDocIdFromUrl(meallogsHandle.url)
+        const hydrationDocId = getDocIdFromUrl(hydrationHandle.url)
         const shoppingcartsDocId = getDocIdFromUrl(shoppingcartsHandle.url)
 
         // Create the group document with references to dishes, mealplans, and shoppingcarts
@@ -318,10 +334,11 @@ export function RepoProvider({ children }: { children: ReactNode }) {
         })
         const groupDocId = getDocIdFromUrl(groupHandle.url)
 
-        // Create the identity document with references to group and meallogs
+        // Create the identity document with references to group, meal logs, and hydration
         const identityHandle = createDoc<RawDoc>(repo, {
           data: {
             meallogs_doc_id: meallogsDocId,
+            hydration_doc_id: hydrationDocId,
             groups: [
               {
                 id: pendingGroupId,
@@ -339,6 +356,7 @@ export function RepoProvider({ children }: { children: ReactNode }) {
           dishes: dishesDocId,
           mealplans: mealplansDocId,
           meallogs: meallogsDocId,
+          hydration: hydrationDocId,
           shoppingcarts: shoppingcartsDocId,
         })
 
@@ -366,6 +384,7 @@ export function RepoProvider({ children }: { children: ReactNode }) {
           dishes: dishesHandle.url,
           mealPlans: mealplansHandle.url,
           mealLogs: meallogsHandle.url,
+          hydration: hydrationHandle.url,
           shoppingCarts: shoppingcartsHandle.url,
         })
         setGroups([{ id: pendingGroupId, name: pendingGroupName, doc_id: groupDocId }])
@@ -545,10 +564,39 @@ export function RepoProvider({ children }: { children: ReactNode }) {
         return
       }
 
+      let hydrationDocId = identityData.hydration_doc_id
+      const ensureHydrationDoc = async (docId?: string): Promise<AutomergeUrl> => {
+        if (docId) {
+          const existingUrl = `automerge:${docId}` as AutomergeUrl
+          try {
+            const handle = await repo.find(existingUrl)
+            await waitForDocument(handle)
+            return existingUrl
+          } catch {
+            console.warn('[repo] Hydration document missing, creating a replacement')
+          }
+        }
+
+        const hydrationHandle = createDoc<Record<string, unknown>>(repo, {})
+        hydrationDocId = getDocIdFromUrl(hydrationHandle.url)
+        identityHandle.change((d) => {
+          const data = parseDocData<IdentityDocData>(d) ?? {
+            meallogs_doc_id: identityData.meallogs_doc_id,
+            groups: identityData.groups,
+          }
+          d.data = {
+            ...data,
+            hydration_doc_id: hydrationDocId,
+          }
+        })
+        return hydrationHandle.url
+      }
+
       // Pre-fetch data documents - need to explicitly request from network
       const dishesUrl = `automerge:${groupData.dishes_doc_id}` as AutomergeUrl
       const mealPlansUrl = `automerge:${groupData.mealplans_doc_id}` as AutomergeUrl
       const mealLogsUrl = `automerge:${identityData.meallogs_doc_id}` as AutomergeUrl
+      const hydrationUrl = await ensureHydrationDoc(hydrationDocId)
 
       // Shopping carts doc - create if doesn't exist (backwards compatibility)
       let shoppingCartsUrl: AutomergeUrl
@@ -557,12 +605,7 @@ export function RepoProvider({ children }: { children: ReactNode }) {
         const existingUrl = `automerge:${groupData.shopping_carts_doc_id}` as AutomergeUrl
         try {
           const handle = await repo.find(existingUrl)
-          // Wait briefly for the document to load
-          const doc = await Promise.race([
-            handle.doc(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
-          ])
-          if (!doc) throw new Error('doc is null')
+          await waitForDocument(handle)
           shoppingCartsUrl = existingUrl
         } catch {
           // Document doesn't exist or can't be found - create a new one
@@ -608,6 +651,7 @@ export function RepoProvider({ children }: { children: ReactNode }) {
             repo.find(dishesUrl),
             repo.find(mealPlansUrl),
             repo.find(mealLogsUrl),
+            repo.find(hydrationUrl),
             groupData.shopping_carts_doc_id ? repo.find(shoppingCartsUrl) : Promise.resolve(null),
           ]),
           docTimeout,
@@ -624,6 +668,7 @@ export function RepoProvider({ children }: { children: ReactNode }) {
         dishes: dishesUrl,
         mealPlans: mealPlansUrl,
         mealLogs: mealLogsUrl,
+        hydration: hydrationUrl,
         shoppingCarts: shoppingCartsUrl,
       })
 

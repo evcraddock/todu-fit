@@ -102,8 +102,7 @@ pub fn default_quick_add_presets_ml() -> Vec<i32> {
         ml_from_oz(8.0),
         ml_from_oz(12.0),
         ml_from_oz(16.0),
-        500,
-        750,
+        ml_from_oz(24.0),
     ]
 }
 
