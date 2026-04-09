@@ -9,12 +9,12 @@ mod sync;
 use commands::{
     meal::MealRepos, ConfigCommand, DeviceCommand, DishCommand, DishSubcommand, GroupCommand,
     GroupSubcommand, InitCommand, MealCommand, MealPlanCommand, MealPlanSubcommand, MealSubcommand,
-    ShoppingCommand, ShoppingSubcommand, SyncCommand,
+    ShoppingCommand, ShoppingSubcommand, SyncCommand, WaterCommand, WaterSubcommand,
 };
 use config::Config;
 use sync::{
-    try_auto_sync, SyncDishRepository, SyncMealLogRepository, SyncMealPlanRepository,
-    SyncShoppingRepository,
+    try_auto_sync, SyncDishRepository, SyncHydrationRepository, SyncMealLogRepository,
+    SyncMealPlanRepository, SyncShoppingRepository,
 };
 
 #[derive(Parser)]
@@ -52,6 +52,9 @@ enum Commands {
 
     /// Manage shopping carts
     Shopping(ShoppingCommand),
+
+    /// Track private water intake
+    Water(WaterCommand),
 
     /// Manage configuration
     Config(ConfigCommand),
@@ -136,6 +139,10 @@ fn execute_command(
             let dish_repo = SyncDishRepository::new(data_dir);
             cmd.run(&shopping_repo, &mealplan_repo, &dish_repo, config)?;
         }
+        Some(Commands::Water(cmd)) => {
+            let repo = SyncHydrationRepository::new(config.data_dir.value.clone());
+            cmd.run(&repo)?;
+        }
         Some(Commands::Config(cmd)) => {
             cmd.run(config, cli_config_path)?;
         }
@@ -172,6 +179,13 @@ fn is_read_command(cmd: &Option<Commands>) -> bool {
         cmd,
         Some(Commands::Shopping(s)) if matches!(s.command,
             ShoppingSubcommand::List { .. })
+    ) || matches!(
+        cmd,
+        Some(Commands::Water(w)) if matches!(w.command,
+            WaterSubcommand::Today { .. }
+            | WaterSubcommand::Recent { .. }
+            | WaterSubcommand::History { .. }
+            | WaterSubcommand::Settings { .. })
     )
 }
 
@@ -209,5 +223,11 @@ fn is_write_command(cmd: &Option<Commands>) -> bool {
             | ShoppingSubcommand::Check { .. }
             | ShoppingSubcommand::Uncheck { .. }
             | ShoppingSubcommand::ClearChecked { .. })
+    ) || matches!(
+        cmd,
+        Some(Commands::Water(w)) if matches!(w.command,
+            WaterSubcommand::Add { .. }
+            | WaterSubcommand::Set { .. }
+            | WaterSubcommand::Delete { .. })
     )
 }
