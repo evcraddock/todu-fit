@@ -6,6 +6,7 @@ import { ThemeProvider, useTheme } from './theme'
 import { deletePasskey, setRootDocId, sendGroupInvite } from './auth/api'
 import { DishList, DishDetail, DishForm } from './dishes'
 import { MealCalendar, DayView, MealPlanForm, MealLogList, MealLogForm } from './meals'
+import { WaterPage } from './hydration'
 import { ConfirmDialog } from './components'
 import { CalendarSubscription } from './calendar'
 
@@ -113,6 +114,14 @@ function App() {
                 }
               />
               <Route
+                path="/water"
+                element={
+                  <ProtectedRoute>
+                    <WaterPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/log/new"
                 element={
                   <ProtectedRoute>
@@ -201,6 +210,12 @@ function Header() {
                 Dishes
               </Link>
               <Link
+                to="/water"
+                className="text-sm hover:underline py-2"
+              >
+                Water
+              </Link>
+              <Link
                 to="/settings"
                 className="text-sm hover:underline py-2"
               >
@@ -261,6 +276,13 @@ function Header() {
               Dishes
             </Link>
             <Link
+              to="/water"
+              onClick={closeMobileMenu}
+              className="block px-4 py-3 min-h-[44px] text-base hover:bg-blue-700 dark:hover:bg-slate-700 rounded transition-colors"
+            >
+              Water
+            </Link>
+            <Link
               to="/settings"
               onClick={closeMobileMenu}
               className="block px-4 py-3 min-h-[44px] text-base hover:bg-blue-700 dark:hover:bg-slate-700 rounded transition-colors"
@@ -315,6 +337,13 @@ function Home() {
         >
           <span className="text-2xl">📝</span>
           <span>Food Log</span>
+        </Link>
+        <Link
+          to="/water"
+          className="flex items-center justify-center gap-3 w-full min-h-[56px] px-6 py-4 bg-cyan-600 hover:bg-cyan-700 text-white text-lg font-medium rounded-xl shadow-md hover:shadow-lg transition-all"
+        >
+          <span className="text-2xl">💧</span>
+          <span>Water</span>
         </Link>
       </div>
       
