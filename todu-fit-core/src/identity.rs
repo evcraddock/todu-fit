@@ -25,8 +25,9 @@
 //! ```
 
 use automerge::transaction::Transactable;
-use automerge::{AutoCommit, ReadDoc};
+use automerge::{AutoCommit, ObjId, ObjType, ReadDoc};
 use serde::de::DeserializeOwned;
+use serde_json::Value as JsonValue;
 
 use crate::automerge::{MultiDocStorage, MultiStorageError};
 use crate::document_id::DocumentId;
@@ -390,28 +391,125 @@ where
             ))
         })?;
 
-    let json = if let Ok(text) = value.clone().into_string() {
-        text
-    } else if value.is_object() {
-        am_doc.text(&obj_id).map_err(|e| {
-            IdentityError::InvalidStoredState(format!(
-                "{} has unreadable 'data' content: {}. Run 'fit sync' to refresh local data.",
-                doc_kind, e
-            ))
-        })?
-    } else {
-        return Err(IdentityError::InvalidStoredState(format!(
-            "{} has invalid 'data' content. Run 'fit sync' to refresh local data.",
-            doc_kind
-        )));
-    };
+    match value.to_objtype() {
+        Some(ObjType::Map) | Some(ObjType::Table) | Some(ObjType::List) => {
+            let json = automerge_object_to_json(&am_doc, &obj_id, doc_kind)?;
+            serde_json::from_value(json).map_err(|e| {
+                IdentityError::InvalidStoredState(format!(
+                    "{} contains invalid structured data: {}. Run 'fit sync' to refresh local data.",
+                    doc_kind, e
+                ))
+            })
+        }
+        Some(ObjType::Text) => {
+            let json = am_doc.text(&obj_id).map_err(|e| {
+                IdentityError::InvalidStoredState(format!(
+                    "{} has unreadable 'data' text: {}. Run 'fit sync' to refresh local data.",
+                    doc_kind, e
+                ))
+            })?;
 
-    serde_json::from_str(&json).map_err(|e| {
+            serde_json::from_str(&json).map_err(|e| {
+                IdentityError::InvalidStoredState(format!(
+                    "{} contains invalid JSON: {}. Run 'fit sync' to refresh local data.",
+                    doc_kind, e
+                ))
+            })
+        }
+        None => {
+            let json = value.into_string().map_err(|_| {
+                IdentityError::InvalidStoredState(format!(
+                    "{} has invalid 'data' content. Run 'fit sync' to refresh local data.",
+                    doc_kind
+                ))
+            })?;
+
+            serde_json::from_str(&json).map_err(|e| {
+                IdentityError::InvalidStoredState(format!(
+                    "{} contains invalid JSON: {}. Run 'fit sync' to refresh local data.",
+                    doc_kind, e
+                ))
+            })
+        }
+    }
+}
+
+fn automerge_object_to_json(
+    doc: &AutoCommit,
+    obj_id: &ObjId,
+    doc_kind: &str,
+) -> Result<JsonValue, IdentityError> {
+    let obj_type = doc.object_type(obj_id).map_err(|e| {
         IdentityError::InvalidStoredState(format!(
-            "{} contains invalid JSON: {}. Run 'fit sync' to refresh local data.",
+            "{} has unreadable structured data: {}. Run 'fit sync' to refresh local data.",
             doc_kind, e
         ))
-    })
+    })?;
+
+    match obj_type {
+        ObjType::Map | ObjType::Table => {
+            let mut map = serde_json::Map::new();
+            for key in doc.keys(obj_id) {
+                if let Some((value, child_id)) = doc.get(obj_id, &key).map_err(|e| {
+                    IdentityError::InvalidStoredState(format!(
+                        "{} has unreadable field '{}': {}. Run 'fit sync' to refresh local data.",
+                        doc_kind, key, e
+                    ))
+                })? {
+                    map.insert(
+                        key,
+                        automerge_value_to_json(doc, value, &child_id, doc_kind)?,
+                    );
+                }
+            }
+            Ok(JsonValue::Object(map))
+        }
+        ObjType::List => {
+            let mut items = Vec::new();
+            for index in 0..doc.length(obj_id) {
+                if let Some((value, child_id)) = doc.get(obj_id, index).map_err(|e| {
+                    IdentityError::InvalidStoredState(format!(
+                        "{} has unreadable list item {}: {}. Run 'fit sync' to refresh local data.",
+                        doc_kind, index, e
+                    ))
+                })? {
+                    items.push(automerge_value_to_json(doc, value, &child_id, doc_kind)?);
+                }
+            }
+            Ok(JsonValue::Array(items))
+        }
+        ObjType::Text => doc.text(obj_id).map(JsonValue::String).map_err(|e| {
+            IdentityError::InvalidStoredState(format!(
+                "{} has unreadable text content: {}. Run 'fit sync' to refresh local data.",
+                doc_kind, e
+            ))
+        }),
+    }
+}
+
+fn automerge_value_to_json(
+    doc: &AutoCommit,
+    value: automerge::Value<'_>,
+    obj_id: &ObjId,
+    doc_kind: &str,
+) -> Result<JsonValue, IdentityError> {
+    if value.is_object() {
+        automerge_object_to_json(doc, obj_id, doc_kind)
+    } else {
+        let scalar = value.into_scalar().map_err(|_| {
+            IdentityError::InvalidStoredState(format!(
+                "{} contains an unsupported scalar value. Run 'fit sync' to refresh local data.",
+                doc_kind
+            ))
+        })?;
+
+        serde_json::to_value(scalar).map_err(|e| {
+            IdentityError::InvalidStoredState(format!(
+                "{} contains unsupported structured data: {}. Run 'fit sync' to refresh local data.",
+                doc_kind, e
+            ))
+        })
+    }
 }
 
 /// Errors that can occur during identity operations.
@@ -724,6 +822,11 @@ mod tests {
         assert_eq!(group.schema_version, GroupDocument::CURRENT_SCHEMA_VERSION);
     }
 
+    fn put_text(doc: &mut AutoCommit, obj_id: &ObjId, key: &str, value: &str) {
+        let text_id = doc.put_object(obj_id, key, ObjType::Text).unwrap();
+        doc.splice_text(&text_id, 0, 0, value).unwrap();
+    }
+
     #[test]
     fn test_load_identity_from_text_data_field() {
         let (identity, _temp) = test_identity();
@@ -745,6 +848,98 @@ mod tests {
         let loaded = identity.load_identity().unwrap();
         assert_eq!(loaded.meallogs_doc_id, meallogs_doc_id);
         assert_eq!(loaded.hydration_doc_id, hydration_doc_id);
+    }
+
+    #[test]
+    fn test_load_identity_from_native_map_data_field() {
+        let (identity, _temp) = test_identity();
+        let root_id = DocumentId::new();
+        let meallogs_doc_id = DocumentId::new();
+        let hydration_doc_id = DocumentId::new();
+        let group_doc_id = DocumentId::new();
+
+        let mut am_doc = AutoCommit::new();
+        let data_id = am_doc.put_object(ROOT, "data", ObjType::Map).unwrap();
+        am_doc.put(&data_id, "schema_version", 1).unwrap();
+        put_text(
+            &mut am_doc,
+            &data_id,
+            "meallogs_doc_id",
+            &meallogs_doc_id.to_bs58check(),
+        );
+        put_text(
+            &mut am_doc,
+            &data_id,
+            "hydration_doc_id",
+            &hydration_doc_id.to_bs58check(),
+        );
+        let groups_id = am_doc
+            .put_object(&data_id, "groups", ObjType::List)
+            .unwrap();
+        let group_id = am_doc.insert_object(&groups_id, 0, ObjType::Map).unwrap();
+        put_text(&mut am_doc, &group_id, "name", "family");
+        put_text(
+            &mut am_doc,
+            &group_id,
+            "doc_id",
+            &group_doc_id.to_bs58check(),
+        );
+
+        identity.storage.save_root_id(&root_id).unwrap();
+        identity.storage.save(&root_id, &am_doc.save()).unwrap();
+
+        let loaded = identity.load_identity().unwrap();
+        assert_eq!(loaded.schema_version, 1);
+        assert_eq!(loaded.meallogs_doc_id, meallogs_doc_id);
+        assert_eq!(loaded.hydration_doc_id, hydration_doc_id);
+        assert_eq!(loaded.groups.len(), 1);
+        assert_eq!(loaded.groups[0].name, "family");
+        assert_eq!(loaded.groups[0].doc_id, group_doc_id);
+    }
+
+    #[test]
+    fn test_load_group_from_native_map_data_field() {
+        let (identity, _temp) = test_identity();
+        identity.initialize_new().unwrap();
+        let group_doc_id = DocumentId::new();
+        let dishes_doc_id = DocumentId::new();
+        let mealplans_doc_id = DocumentId::new();
+        let shopping_carts_doc_id = DocumentId::new();
+
+        let mut am_doc = AutoCommit::new();
+        let data_id = am_doc.put_object(ROOT, "data", ObjType::Map).unwrap();
+        am_doc.put(&data_id, "schema_version", 2).unwrap();
+        put_text(&mut am_doc, &data_id, "name", "family");
+        put_text(
+            &mut am_doc,
+            &data_id,
+            "dishes_doc_id",
+            &dishes_doc_id.to_bs58check(),
+        );
+        put_text(
+            &mut am_doc,
+            &data_id,
+            "mealplans_doc_id",
+            &mealplans_doc_id.to_bs58check(),
+        );
+        put_text(
+            &mut am_doc,
+            &data_id,
+            "shopping_carts_doc_id",
+            &shopping_carts_doc_id.to_bs58check(),
+        );
+
+        identity
+            .storage
+            .save(&group_doc_id, &am_doc.save())
+            .unwrap();
+
+        let loaded = identity.load_group(&group_doc_id).unwrap();
+        assert_eq!(loaded.schema_version, 2);
+        assert_eq!(loaded.name, "family");
+        assert_eq!(loaded.dishes_doc_id, dishes_doc_id);
+        assert_eq!(loaded.mealplans_doc_id, mealplans_doc_id);
+        assert_eq!(loaded.shopping_carts_doc_id, shopping_carts_doc_id);
     }
 
     #[test]
