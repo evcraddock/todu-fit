@@ -26,6 +26,7 @@
 
 use automerge::transaction::Transactable;
 use automerge::{AutoCommit, ReadDoc};
+use serde::de::DeserializeOwned;
 
 use crate::automerge::{MultiDocStorage, MultiStorageError};
 use crate::document_id::DocumentId;
@@ -353,16 +354,7 @@ impl Identity {
         &self,
         bytes: &[u8],
     ) -> Result<IdentityDocument, IdentityError> {
-        let am_doc =
-            AutoCommit::load(bytes).map_err(|e| IdentityError::AutomergeError(e.to_string()))?;
-
-        let json: String = am_doc
-            .get(automerge::ROOT, "data")
-            .map_err(|e| IdentityError::AutomergeError(e.to_string()))?
-            .and_then(|(val, _)| val.into_string().ok())
-            .ok_or_else(|| IdentityError::AutomergeError("Missing data field".to_string()))?;
-
-        serde_json::from_str(&json).map_err(IdentityError::SerializationError)
+        deserialize_json_data_field(bytes, "identity document")
     }
 
     fn serialize_group_document(&self, doc: &GroupDocument) -> Result<Vec<u8>, IdentityError> {
@@ -377,17 +369,49 @@ impl Identity {
     }
 
     fn deserialize_group_document(&self, bytes: &[u8]) -> Result<GroupDocument, IdentityError> {
-        let am_doc =
-            AutoCommit::load(bytes).map_err(|e| IdentityError::AutomergeError(e.to_string()))?;
-
-        let json: String = am_doc
-            .get(automerge::ROOT, "data")
-            .map_err(|e| IdentityError::AutomergeError(e.to_string()))?
-            .and_then(|(val, _)| val.into_string().ok())
-            .ok_or_else(|| IdentityError::AutomergeError("Missing data field".to_string()))?;
-
-        serde_json::from_str(&json).map_err(IdentityError::SerializationError)
+        deserialize_json_data_field(bytes, "group document")
     }
+}
+
+fn deserialize_json_data_field<T>(bytes: &[u8], doc_kind: &str) -> Result<T, IdentityError>
+where
+    T: DeserializeOwned,
+{
+    let am_doc =
+        AutoCommit::load(bytes).map_err(|e| IdentityError::AutomergeError(e.to_string()))?;
+
+    let (value, obj_id) = am_doc
+        .get(automerge::ROOT, "data")
+        .map_err(|e| IdentityError::AutomergeError(e.to_string()))?
+        .ok_or_else(|| {
+            IdentityError::InvalidStoredState(format!(
+                "{} is missing required 'data' field. Run 'fit sync' to refresh local data.",
+                doc_kind
+            ))
+        })?;
+
+    let json = if let Ok(text) = value.clone().into_string() {
+        text
+    } else if value.is_object() {
+        am_doc.text(&obj_id).map_err(|e| {
+            IdentityError::InvalidStoredState(format!(
+                "{} has unreadable 'data' content: {}. Run 'fit sync' to refresh local data.",
+                doc_kind, e
+            ))
+        })?
+    } else {
+        return Err(IdentityError::InvalidStoredState(format!(
+            "{} has invalid 'data' content. Run 'fit sync' to refresh local data.",
+            doc_kind
+        )));
+    };
+
+    serde_json::from_str(&json).map_err(|e| {
+        IdentityError::InvalidStoredState(format!(
+            "{} contains invalid JSON: {}. Run 'fit sync' to refresh local data.",
+            doc_kind, e
+        ))
+    })
 }
 
 /// Errors that can occur during identity operations.
@@ -405,6 +429,8 @@ pub enum IdentityError {
     AlreadyInGroup(DocumentId),
     /// Serialization error.
     SerializationError(serde_json::Error),
+    /// Stored state is invalid or incomplete.
+    InvalidStoredState(String),
     /// Automerge error.
     AutomergeError(String),
 }
@@ -422,6 +448,7 @@ impl std::fmt::Display for IdentityError {
                 write!(f, "Already a member of group: {}", id.to_bs58check())
             }
             IdentityError::SerializationError(e) => write!(f, "Serialization error: {}", e),
+            IdentityError::InvalidStoredState(e) => write!(f, "Invalid stored state: {}", e),
             IdentityError::AutomergeError(e) => write!(f, "Automerge error: {}", e),
         }
     }
@@ -440,6 +467,7 @@ impl std::error::Error for IdentityError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use automerge::{transaction::Transactable, ObjType, ROOT};
     use tempfile::TempDir;
 
     fn test_identity() -> (Identity, TempDir) {
@@ -694,5 +722,42 @@ mod tests {
         let group = identity.load_group(&group_id).unwrap();
         assert_eq!(group.name, "Test Group");
         assert_eq!(group.schema_version, GroupDocument::CURRENT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn test_load_identity_from_text_data_field() {
+        let (identity, _temp) = test_identity();
+        let root_id = DocumentId::new();
+        let meallogs_doc_id = DocumentId::new();
+        let hydration_doc_id = DocumentId::new();
+
+        let mut am_doc = AutoCommit::new();
+        let text_id = am_doc.put_object(ROOT, "data", ObjType::Text).unwrap();
+        let json = format!(
+            r#"{{"schema_version":1,"meallogs_doc_id":"{}","groups":[],"hydration_doc_id":"{}"}}"#,
+            meallogs_doc_id, hydration_doc_id
+        );
+        am_doc.splice_text(&text_id, 0, 0, &json).unwrap();
+
+        identity.storage.save_root_id(&root_id).unwrap();
+        identity.storage.save(&root_id, &am_doc.save()).unwrap();
+
+        let loaded = identity.load_identity().unwrap();
+        assert_eq!(loaded.meallogs_doc_id, meallogs_doc_id);
+        assert_eq!(loaded.hydration_doc_id, hydration_doc_id);
+    }
+
+    #[test]
+    fn test_load_identity_missing_data_field_returns_actionable_error() {
+        let (identity, _temp) = test_identity();
+        let root_id = DocumentId::new();
+        let mut am_doc = AutoCommit::new();
+
+        identity.storage.save_root_id(&root_id).unwrap();
+        identity.storage.save(&root_id, &am_doc.save()).unwrap();
+
+        let err = identity.load_identity().unwrap_err();
+        assert!(matches!(err, IdentityError::InvalidStoredState(_)));
+        assert!(err.to_string().contains("missing required 'data' field"));
     }
 }
