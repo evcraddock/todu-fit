@@ -3,7 +3,7 @@
 //! This module provides functions to read and query data directly from
 //! Automerge documents without SQLite.
 
-use automerge::{AutoCommit, ObjId, ReadDoc, ROOT};
+use automerge::{AutoCommit, ObjId, ObjType, ReadDoc, Value, ROOT};
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
@@ -19,6 +19,8 @@ pub enum ReaderError {
     AutomergeError(String),
     /// Failed to parse a value.
     ParseError(String),
+    /// Document data did not have the expected Automerge shape.
+    MalformedData(String),
 }
 
 impl std::fmt::Display for ReaderError {
@@ -26,6 +28,7 @@ impl std::fmt::Display for ReaderError {
         match self {
             ReaderError::AutomergeError(e) => write!(f, "Automerge error: {}", e),
             ReaderError::ParseError(e) => write!(f, "Parse error: {}", e),
+            ReaderError::MalformedData(e) => write!(f, "Malformed data: {}", e),
         }
     }
 }
@@ -344,10 +347,20 @@ pub fn read_all_meallogs(doc: &AutoCommit) -> Result<Vec<MealLog>, ReaderError> 
     let mut logs = Vec::new();
 
     for key in doc.keys(ROOT) {
-        if let Some((_, obj_id)) = doc
+        if let Some((value, obj_id)) = doc
             .get(ROOT, &key)
             .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
         {
+            if !is_obj_type(&value, ObjType::Map) {
+                if Uuid::parse_str(&key).is_ok() {
+                    return Err(malformed_expected(
+                        format!("meal log '{}'", key),
+                        "map",
+                        &value,
+                    ));
+                }
+                continue;
+            }
             if let Some(log) = read_meallog(doc, &obj_id, &key)? {
                 logs.push(log);
             }
@@ -361,10 +374,17 @@ pub fn read_all_meallogs(doc: &AutoCommit) -> Result<Vec<MealLog>, ReaderError> 
 pub fn read_meallog_by_id(doc: &AutoCommit, id: Uuid) -> Result<Option<MealLog>, ReaderError> {
     let key = id.to_string();
 
-    if let Some((_, obj_id)) = doc
+    if let Some((value, obj_id)) = doc
         .get(ROOT, &key)
         .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
     {
+        if !is_obj_type(&value, ObjType::Map) {
+            return Err(malformed_expected(
+                format!("meal log '{}'", key),
+                "map",
+                &value,
+            ));
+        }
         read_meallog(doc, &obj_id, &key)
     } else {
         Ok(None)
@@ -435,16 +455,39 @@ fn read_meallog(
 fn read_dish_snapshots(doc: &AutoCommit, obj_id: &ObjId) -> Result<Vec<Dish>, ReaderError> {
     let mut dishes = Vec::new();
 
-    if let Some((_, list_id)) = doc
+    if let Some((value, list_id)) = doc
         .get(obj_id, "dishes")
         .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
     {
+        if !is_obj_type(&value, ObjType::List) {
+            return Err(malformed_expected(
+                "meal log field 'dishes'",
+                "list",
+                &value,
+            ));
+        }
+
         let len = doc.length(&list_id);
         for i in 0..len {
-            if let Some((_, dish_id)) = doc
+            if let Some((value, dish_id)) = doc
                 .get(&list_id, i)
                 .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
             {
+                if let Ok(dish_ref) = value.clone().into_string() {
+                    if let Some(dish) = dish_from_reference(&dish_ref) {
+                        dishes.push(dish);
+                    }
+                    continue;
+                }
+
+                if !is_obj_type(&value, ObjType::Map) {
+                    return Err(malformed_expected(
+                        format!("meal log field 'dishes[{}]'", i),
+                        "dish snapshot map or dish UUID string",
+                        &value,
+                    ));
+                }
+
                 // Read dish snapshot from embedded object
                 let id_str = get_string(doc, &dish_id, "id")?.unwrap_or_default();
                 let id = Uuid::parse_str(&id_str).unwrap_or_else(|_| Uuid::new_v4());
@@ -481,6 +524,27 @@ fn read_dish_snapshots(doc: &AutoCommit, obj_id: &ObjId) -> Result<Vec<Dish>, Re
     }
 
     Ok(dishes)
+}
+
+fn dish_from_reference(dish_ref: &str) -> Option<Dish> {
+    let id = Uuid::parse_str(dish_ref).ok()?;
+
+    Some(Dish {
+        id,
+        name: format!("Dish {}", id),
+        ingredients: Vec::new(),
+        instructions: String::new(),
+        nutrients: None,
+        prep_time: None,
+        cook_time: None,
+        servings: None,
+        tags: Vec::new(),
+        image_url: None,
+        source_url: None,
+        created_by: String::new(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    })
 }
 
 // =============================================================================
@@ -594,6 +658,33 @@ fn read_water_entry(
 // =============================================================================
 // Helpers
 // =============================================================================
+
+fn is_obj_type(value: &Value<'_>, expected: ObjType) -> bool {
+    value.to_objtype() == Some(expected)
+}
+
+fn malformed_expected(
+    context: impl Into<String>,
+    expected: &'static str,
+    value: &Value<'_>,
+) -> ReaderError {
+    ReaderError::MalformedData(format!(
+        "{} expected {}, found {}",
+        context.into(),
+        expected,
+        describe_value(value)
+    ))
+}
+
+fn describe_value(value: &Value<'_>) -> &'static str {
+    match value {
+        Value::Object(ObjType::Map) => "map",
+        Value::Object(ObjType::List) => "list",
+        Value::Object(ObjType::Text) => "text",
+        Value::Object(ObjType::Table) => "table",
+        Value::Scalar(_) => "scalar",
+    }
+}
 
 fn get_string(doc: &AutoCommit, obj_id: &ObjId, key: &str) -> Result<Option<String>, ReaderError> {
     if let Some((value, _)) = doc
@@ -1050,6 +1141,43 @@ mod tests {
 
         assert_eq!(logs[0].dishes.len(), 1);
         assert_eq!(logs[0].dishes[0].name, "Snapshot Pasta");
+    }
+
+    #[test]
+    fn test_read_meallog_with_web_dish_references() {
+        let mut doc = AutoCommit::new();
+        let log_id = "550e8400-e29b-41d4-a716-446655440003";
+        let dish_id = "550e8400-e29b-41d4-a716-446655440001";
+
+        let log_obj = doc.put_object(ROOT, log_id, ObjType::Map).unwrap();
+        doc.put(&log_obj, "date", "2025-01-15").unwrap();
+        doc.put(&log_obj, "meal_type", "lunch").unwrap();
+        doc.put(&log_obj, "created_by", "testuser").unwrap();
+        doc.put(&log_obj, "created_at", "2025-01-01T00:00:00Z")
+            .unwrap();
+
+        let dishes = doc.put_object(&log_obj, "dishes", ObjType::List).unwrap();
+        doc.insert(&dishes, 0, dish_id).unwrap();
+
+        let logs = read_all_meallogs(&doc).unwrap();
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].dishes.len(), 1);
+        assert_eq!(logs[0].dishes[0].id.to_string(), dish_id);
+        assert_eq!(logs[0].dishes[0].name, format!("Dish {}", dish_id));
+    }
+
+    #[test]
+    fn test_read_meallog_reports_malformed_root_record_context() {
+        let mut doc = AutoCommit::new();
+        let log_id = "550e8400-e29b-41d4-a716-446655440003";
+        doc.put(ROOT, log_id, "not-a-meal-log").unwrap();
+
+        let err = read_all_meallogs(&doc).unwrap_err();
+
+        assert!(matches!(err, ReaderError::MalformedData(_)));
+        assert!(err.to_string().contains(log_id));
+        assert!(err.to_string().contains("expected map"));
     }
 
     #[test]
