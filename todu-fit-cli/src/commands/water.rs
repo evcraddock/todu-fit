@@ -232,7 +232,7 @@ impl WaterCommand {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let settings = repo.get_settings()?;
         let mut entries = repo.list_entries()?;
-        entries.sort_by(|a, b| b.consumed_at.cmp(&a.consumed_at));
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.consumed_at));
         entries.truncate(limit);
 
         if entries.is_empty() {
@@ -282,7 +282,7 @@ impl WaterCommand {
             let date = entry.consumed_at.date_naive();
             date >= from_date && date <= to_date
         });
-        entries.sort_by(|a, b| a.consumed_at.cmp(&b.consumed_at));
+        entries.sort_by_key(|entry| entry.consumed_at);
 
         match format {
             OutputFormat::Json => {
