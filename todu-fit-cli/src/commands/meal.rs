@@ -228,7 +228,8 @@ impl MealCommand {
         };
 
         // Fetch meal logs
-        let logs = repos.meallog.list_range(from_date, to_date)?;
+        let mut logs = repos.meallog.list_range(from_date, to_date)?;
+        hydrate_referenced_dishes(&mut logs, repos)?;
 
         if logs.is_empty() {
             println!("No meal history found for {} to {}", from_date, to_date);
@@ -355,6 +356,31 @@ impl MealCommand {
         println!("Deleted meal log: {}", log_desc);
         Ok(())
     }
+}
+
+fn hydrate_referenced_dishes(
+    logs: &mut [MealLog],
+    repos: &MealRepos<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for log in logs {
+        for dish in &mut log.dishes {
+            if is_dish_reference_placeholder(dish) {
+                if let Some(resolved) = repos.dish.get_by_id(dish.id)? {
+                    *dish = resolved;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn is_dish_reference_placeholder(dish: &crate::models::Dish) -> bool {
+    dish.name == format!("Dish {}", dish.id)
+        && dish.ingredients.is_empty()
+        && dish.instructions.is_empty()
+        && dish.nutrients.is_none()
+        && dish.created_by.is_empty()
 }
 
 /// Calculate total nutrients for a meal by summing all dish nutrients
