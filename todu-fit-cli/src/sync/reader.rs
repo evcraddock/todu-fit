@@ -71,15 +71,22 @@ pub fn read_dish_by_id(doc: &AutoCommit, id: Uuid) -> Result<Option<Dish>, Reade
     }
 }
 
-#[allow(dead_code)]
-/// Searches dishes by name (case-insensitive partial match).
-pub fn search_dishes_by_name(doc: &AutoCommit, query: &str) -> Result<Vec<Dish>, ReaderError> {
+/// Searches dishes by name, tags, or ingredient names (case-insensitive partial match).
+pub fn search_dishes(doc: &AutoCommit, query: &str) -> Result<Vec<Dish>, ReaderError> {
     let query_lower = query.to_lowercase();
     let dishes = read_all_dishes(doc)?;
 
     Ok(dishes
         .into_iter()
-        .filter(|d| d.name.to_lowercase().contains(&query_lower))
+        .filter(|d| {
+            d.name.to_lowercase().contains(&query_lower)
+                || d.tags
+                    .iter()
+                    .any(|tag| tag.to_lowercase().contains(&query_lower))
+                || d.ingredients
+                    .iter()
+                    .any(|ingredient| ingredient.name.to_lowercase().contains(&query_lower))
+        })
         .collect())
 }
 
@@ -972,6 +979,10 @@ mod tests {
         doc.put(&ing, "name", "pasta").unwrap();
         doc.put(&ing, "quantity", 200.0).unwrap();
         doc.put(&ing, "unit", "g").unwrap();
+        let ing = doc.insert_object(&ingredients, 1, ObjType::Map).unwrap();
+        doc.put(&ing, "name", "San Marzano tomato").unwrap();
+        doc.put(&ing, "quantity", 1.0).unwrap();
+        doc.put(&ing, "unit", "can").unwrap();
 
         doc
     }
@@ -1007,7 +1018,34 @@ mod tests {
     #[test]
     fn test_search_dishes_by_name() {
         let doc = create_test_dish_doc();
-        let dishes = search_dishes_by_name(&doc, "pasta").unwrap();
+        let dishes = search_dishes(&doc, "pasta").unwrap();
+
+        assert_eq!(dishes.len(), 1);
+        assert_eq!(dishes[0].name, "Test Pasta");
+    }
+
+    #[test]
+    fn test_search_dishes_by_tag() {
+        let doc = create_test_dish_doc();
+        let dishes = search_dishes(&doc, "italian").unwrap();
+
+        assert_eq!(dishes.len(), 1);
+        assert_eq!(dishes[0].name, "Test Pasta");
+    }
+
+    #[test]
+    fn test_search_dishes_by_ingredient() {
+        let doc = create_test_dish_doc();
+        let dishes = search_dishes(&doc, "tomato").unwrap();
+
+        assert_eq!(dishes.len(), 1);
+        assert_eq!(dishes[0].ingredients[1].name, "San Marzano tomato");
+    }
+
+    #[test]
+    fn test_search_dishes_is_case_insensitive() {
+        let doc = create_test_dish_doc();
+        let dishes = search_dishes(&doc, "TOMATO").unwrap();
 
         assert_eq!(dishes.len(), 1);
         assert_eq!(dishes[0].name, "Test Pasta");
@@ -1027,10 +1065,13 @@ mod tests {
         let doc = create_test_dish_doc();
         let dishes = read_all_dishes(&doc).unwrap();
 
-        assert_eq!(dishes[0].ingredients.len(), 1);
+        assert_eq!(dishes[0].ingredients.len(), 2);
         assert_eq!(dishes[0].ingredients[0].name, "pasta");
         assert_eq!(dishes[0].ingredients[0].quantity, 200.0);
         assert_eq!(dishes[0].ingredients[0].unit, "g");
+        assert_eq!(dishes[0].ingredients[1].name, "San Marzano tomato");
+        assert_eq!(dishes[0].ingredients[1].quantity, 1.0);
+        assert_eq!(dishes[0].ingredients[1].unit, "can");
     }
 
     fn create_test_mealplan_doc() -> AutoCommit {
