@@ -72,6 +72,16 @@ pub enum DishSubcommand {
         tag: Option<String>,
     },
 
+    /// Search dishes by name, tag, or ingredient
+    Search {
+        /// Search query
+        query: String,
+
+        /// Output format
+        #[arg(long, short, value_enum, default_value = "text")]
+        format: OutputFormat,
+    },
+
     /// Show a dish's details
     Show {
         /// Dish ID (UUID) or name
@@ -189,6 +199,21 @@ fn parse_nutrients(json: &str) -> Result<Vec<Nutrient>, Box<dyn std::error::Erro
     Ok(nutrients)
 }
 
+fn print_dish_table(dishes: &[Dish]) {
+    println!("{:<36}  {:<30}  TAGS", "ID", "NAME");
+    println!("{}", "-".repeat(80));
+    for dish in dishes {
+        let tags = dish.tags.join(", ");
+        let name = if dish.name.len() > 30 {
+            format!("{}...", &dish.name[..27])
+        } else {
+            dish.name.clone()
+        };
+        println!("{:<36}  {:<30}  {}", dish.id, name, tags);
+    }
+    println!("\nTotal: {} dish(es)", dishes.len());
+}
+
 impl DishCommand {
     pub fn run(
         &self,
@@ -269,18 +294,30 @@ impl DishCommand {
                         println!("{}", serde_json::to_string_pretty(&dishes)?);
                     }
                     OutputFormat::Text => {
-                        println!("{:<36}  {:<30}  TAGS", "ID", "NAME");
-                        println!("{}", "-".repeat(80));
-                        for dish in &dishes {
-                            let tags = dish.tags.join(", ");
-                            let name = if dish.name.len() > 30 {
-                                format!("{}...", &dish.name[..27])
-                            } else {
-                                dish.name.clone()
-                            };
-                            println!("{:<36}  {:<30}  {}", dish.id, name, tags);
-                        }
-                        println!("\nTotal: {} dish(es)", dishes.len());
+                        print_dish_table(&dishes);
+                    }
+                }
+                Ok(())
+            }
+
+            DishSubcommand::Search { query, format } => {
+                if query.trim().is_empty() {
+                    return Err("Search query cannot be empty".into());
+                }
+
+                let dishes = repo.search(query.trim())?;
+
+                if dishes.is_empty() {
+                    println!("No dishes found");
+                    return Ok(());
+                }
+
+                match format {
+                    OutputFormat::Json => {
+                        println!("{}", serde_json::to_string_pretty(&dishes)?);
+                    }
+                    OutputFormat::Text => {
+                        print_dish_table(&dishes);
                     }
                 }
                 Ok(())

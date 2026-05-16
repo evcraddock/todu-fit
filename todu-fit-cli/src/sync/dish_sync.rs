@@ -13,8 +13,8 @@ use todu_fit_core::{DocumentId, MultiDocStorage};
 use crate::models::{Dish, Ingredient};
 use crate::sync::group_context::{resolve_group_context, GroupContextError};
 use crate::sync::reader::{
-    filter_dishes_by_tag, find_dish_by_name, read_all_dishes, read_dish_by_id,
-    search_dishes_by_name, ReaderError,
+    filter_dishes_by_tag, find_dish_by_name, read_all_dishes, read_dish_by_id, search_dishes,
+    ReaderError,
 };
 use crate::sync::writer;
 
@@ -219,11 +219,10 @@ impl SyncDishRepository {
         Ok(())
     }
 
-    /// Searches dishes by name (partial, case-insensitive).
-    #[allow(dead_code)]
+    /// Searches dishes by name, tags, or ingredient names (partial, case-insensitive).
     pub fn search(&self, query: &str) -> Result<Vec<Dish>, SyncDishError> {
         let (doc, _) = self.load_or_create_doc()?;
-        Ok(search_dishes_by_name(&doc, query)?)
+        Ok(search_dishes(&doc, query)?)
     }
 
     /// Filters dishes by tag.
@@ -304,7 +303,7 @@ mod tests {
 
         fn search(&self, query: &str) -> Vec<Dish> {
             let doc = self.load_or_create_doc();
-            search_dishes_by_name(&doc, query).unwrap()
+            search_dishes(&doc, query).unwrap()
         }
 
         fn filter_by_tag(&self, tag: &str) -> Vec<Dish> {
@@ -407,6 +406,51 @@ mod tests {
 
         let results = repo.search("chicken");
         assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_search_by_tag() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = TestDishRepo::new(&temp_dir);
+
+        repo.create(&Dish::new("Chicken Pasta", "chef"));
+        repo.create(&Dish::new("Beef Stew", "chef").with_tags(vec!["comfort".into()]));
+
+        let results = repo.search("comfort");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "Beef Stew");
+    }
+
+    #[test]
+    fn test_search_by_ingredient() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = TestDishRepo::new(&temp_dir);
+
+        repo.create(&Dish::new("Chicken Pasta", "chef"));
+        repo.create(
+            &Dish::new("Beef Stew", "chef")
+                .with_ingredients(vec![Ingredient::new("carrot", 2.0, "")]),
+        );
+
+        let results = repo.search("carrot");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "Beef Stew");
+    }
+
+    #[test]
+    fn test_search_is_case_insensitive() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = TestDishRepo::new(&temp_dir);
+
+        repo.create(&Dish::new("Chicken Pasta", "chef"));
+        repo.create(
+            &Dish::new("Beef Stew", "chef")
+                .with_ingredients(vec![Ingredient::new("carrot", 2.0, "")]),
+        );
+
+        let results = repo.search("CARROT");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "Beef Stew");
     }
 
     #[test]
