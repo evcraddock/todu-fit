@@ -744,8 +744,8 @@ fn get_f64(doc: &AutoCommit, obj_id: &ObjId, key: &str) -> Result<Option<f64>, R
     }
 }
 
-/// Gets a quantity value, handling both scalar numbers and Text objects.
-/// The UI stores quantities as Text CRDTs, while the CLI writes them as f64.
+/// Gets a quantity value, handling scalar numbers, scalar strings, and Text objects.
+/// The UI may store quantities as strings or Text CRDTs, while the CLI writes them as f64.
 fn get_quantity(doc: &AutoCommit, obj_id: &ObjId, key: &str) -> Result<Option<f64>, ReaderError> {
     if let Some((value, obj_id_value)) = doc
         .get(obj_id, key)
@@ -759,13 +759,19 @@ fn get_quantity(doc: &AutoCommit, obj_id: &ObjId, key: &str) -> Result<Option<f6
         if let Some(i) = value.to_i64() {
             return Ok(Some(i as f64));
         }
-        // Check if it's a Text object (UI writes this format)
+        // Try scalar strings (web writes this format for ingredient quantities)
+        if let Ok(s) = value.clone().into_string() {
+            if let Ok(f) = s.trim().parse::<f64>() {
+                return Ok(Some(f));
+            }
+        }
+        // Check if it's a Text object (UI can write this format)
         if value.is_object() {
             // Read the text content and parse as number
             let text = doc
                 .text(&obj_id_value)
                 .map_err(|e| ReaderError::AutomergeError(format!("Failed to read text: {}", e)))?;
-            if let Ok(f) = text.parse::<f64>() {
+            if let Ok(f) = text.trim().parse::<f64>() {
                 return Ok(Some(f));
             }
         }
@@ -1072,6 +1078,24 @@ mod tests {
         assert_eq!(dishes[0].ingredients[1].name, "San Marzano tomato");
         assert_eq!(dishes[0].ingredients[1].quantity, 1.0);
         assert_eq!(dishes[0].ingredients[1].unit, "can");
+    }
+
+    #[test]
+    fn test_read_ingredient_quantity_from_scalar_string() {
+        let mut doc = create_test_dish_doc();
+        let dish_id = "550e8400-e29b-41d4-a716-446655440001";
+        let (_, dish_obj) = doc.get(ROOT, dish_id).unwrap().unwrap();
+        let (_, ingredients) = doc.get(&dish_obj, "ingredients").unwrap().unwrap();
+        let ingredient = doc.insert_object(&ingredients, 2, ObjType::Map).unwrap();
+        doc.put(&ingredient, "name", "salt").unwrap();
+        doc.put(&ingredient, "quantity", "2").unwrap();
+        doc.put(&ingredient, "unit", "tsp").unwrap();
+
+        let dishes = read_all_dishes(&doc).unwrap();
+
+        assert_eq!(dishes[0].ingredients[2].name, "salt");
+        assert_eq!(dishes[0].ingredients[2].quantity, 2.0);
+        assert_eq!(dishes[0].ingredients[2].unit, "tsp");
     }
 
     fn create_test_mealplan_doc() -> AutoCommit {
