@@ -1,6 +1,6 @@
 [package]
 name = "todu-fit-core"
-version = "2.6.3"
+version = "2.7.0"
 edition = "2021"
 description = "Core library for Todu Fit - shared models and sync logic"
 
