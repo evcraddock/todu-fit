@@ -5,6 +5,7 @@
 
 use automerge::{AutoCommit, ObjId, ObjType, ReadDoc, Value, ROOT};
 use chrono::{DateTime, NaiveDate, Utc};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::models::{
@@ -446,6 +447,7 @@ fn read_meallog(
 
     // Read dish snapshots
     let dishes = read_dish_snapshots(doc, obj_id)?;
+    let dish_portions = read_dish_portions(doc, obj_id)?;
 
     Ok(Some(MealLog {
         id,
@@ -453,10 +455,36 @@ fn read_meallog(
         meal_type,
         mealplan_id,
         dishes,
+        dish_portions,
         notes,
         created_by,
         created_at,
     }))
+}
+
+fn read_dish_portions(doc: &AutoCommit, obj_id: &ObjId) -> Result<HashMap<Uuid, f64>, ReaderError> {
+    let mut portions = HashMap::new();
+    let Some((value, portions_id)) = doc
+        .get(obj_id, "dish_portions")
+        .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
+    else {
+        return Ok(portions);
+    };
+
+    if !is_obj_type(&value, ObjType::Map) {
+        return Err(malformed_expected("meal log dish_portions", "map", &value));
+    }
+
+    for key in doc.keys(&portions_id) {
+        if let (Ok(dish_id), Some(portion)) = (
+            Uuid::parse_str(&key),
+            get_quantity(doc, &portions_id, &key)?,
+        ) {
+            portions.insert(dish_id, portion);
+        }
+    }
+
+    Ok(portions)
 }
 
 fn read_dish_snapshots(doc: &AutoCommit, obj_id: &ObjId) -> Result<Vec<Dish>, ReaderError> {
@@ -1206,6 +1234,23 @@ mod tests {
 
         assert_eq!(logs[0].dishes.len(), 1);
         assert_eq!(logs[0].dishes[0].name, "Snapshot Pasta");
+        assert_eq!(logs[0].portion_for(logs[0].dishes[0].id), 1.0);
+    }
+
+    #[test]
+    fn test_read_meallog_with_fractional_portion() {
+        let mut doc = create_test_meallog_doc();
+        let log_id = "550e8400-e29b-41d4-a716-446655440003";
+        let (_, log_obj) = doc.get(ROOT, log_id).unwrap().unwrap();
+        let portions = doc
+            .put_object(&log_obj, "dish_portions", ObjType::Map)
+            .unwrap();
+        let dish_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440001").unwrap();
+        doc.put(&portions, dish_id.to_string(), 0.5).unwrap();
+
+        let logs = read_all_meallogs(&doc).unwrap();
+
+        assert_eq!(logs[0].portion_for(dish_id), 0.5);
     }
 
     #[test]

@@ -388,9 +388,10 @@ fn calculate_meal_nutrients(log: &MealLog) -> HashMap<String, f64> {
     let mut totals: HashMap<String, f64> = HashMap::new();
 
     for dish in &log.dishes {
+        let portion = log.portion_for(dish.id);
         if let Some(nutrients) = &dish.nutrients {
             for nutrient in nutrients {
-                *totals.entry(nutrient.name.clone()).or_insert(0.0) += nutrient.amount;
+                *totals.entry(nutrient.name.clone()).or_insert(0.0) += nutrient.amount * portion;
             }
         }
     }
@@ -441,7 +442,16 @@ fn print_log_details(log: &MealLog) {
     if !log.dishes.is_empty() {
         println!("  Dishes:");
         for dish in &log.dishes {
-            println!("    - {}", dish.name);
+            println!(
+                "    - {} ({} serving{})",
+                dish.name,
+                log.portion_for(dish.id),
+                if log.portion_for(dish.id) == 1.0 {
+                    ""
+                } else {
+                    "s"
+                }
+            );
         }
     }
     if let Some(n) = &log.notes {
