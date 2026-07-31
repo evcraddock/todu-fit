@@ -1,5 +1,6 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use uuid::Uuid;
 
@@ -21,6 +22,10 @@ pub struct MealLog {
     /// Dish snapshots - full copies of dishes as they were when logged.
     /// These are not references; modifying the original dish won't affect logs.
     pub dishes: Vec<Dish>,
+    /// Actual servings eaten for each dish snapshot, keyed by dish ID.
+    /// Missing entries are one full serving for backwards compatibility.
+    #[serde(default)]
+    pub dish_portions: HashMap<Uuid, f64>,
     pub notes: Option<String>,
     pub created_by: String,
     pub created_at: DateTime<Utc>,
@@ -34,6 +39,7 @@ impl MealLog {
             meal_type,
             mealplan_id: None,
             dishes: Vec::new(),
+            dish_portions: HashMap::new(),
             notes: None,
             created_by: created_by.into(),
             created_at: Utc::now(),
@@ -48,6 +54,15 @@ impl MealLog {
     pub fn with_dishes(mut self, dishes: Vec<Dish>) -> Self {
         self.dishes = dishes;
         self
+    }
+
+    pub fn with_dish_portion(mut self, dish_id: Uuid, portion: f64) -> Self {
+        self.dish_portions.insert(dish_id, portion);
+        self
+    }
+
+    pub fn portion_for(&self, dish_id: Uuid) -> f64 {
+        self.dish_portions.get(&dish_id).copied().unwrap_or(1.0)
     }
 
     pub fn with_notes(mut self, notes: impl Into<String>) -> Self {
@@ -137,5 +152,20 @@ mod tests {
         assert_eq!(parsed.date, log.date);
         assert_eq!(parsed.meal_type, log.meal_type);
         assert_eq!(parsed.notes, log.notes);
+    }
+
+    #[test]
+    fn test_meal_log_portions_roundtrip_and_legacy_default() {
+        let date = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+        let dish_id = Uuid::new_v4();
+        let log = MealLog::new(date, MealType::Dinner, "user1").with_dish_portion(dish_id, 0.5);
+
+        let json = serde_json::to_string(&log).unwrap();
+        let parsed: MealLog = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.portion_for(dish_id), 0.5);
+
+        let legacy_json = json.replace(&format!(",\"dish_portions\":{{\"{}\":0.5}}", dish_id), "");
+        let legacy: MealLog = serde_json::from_str(&legacy_json).unwrap();
+        assert_eq!(legacy.portion_for(dish_id), 1.0);
     }
 }

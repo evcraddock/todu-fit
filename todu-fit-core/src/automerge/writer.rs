@@ -216,6 +216,16 @@ pub fn write_meallog(doc: &mut AutoCommit, meallog: &MealLog) {
             doc.put(&dish_obj, "servings", servings as i64).unwrap();
         }
     }
+
+    if !meallog.dish_portions.is_empty() {
+        let portions_id = doc
+            .put_object(&log_id, "dish_portions", ObjType::Map)
+            .unwrap();
+        for (dish_id, portion) in &meallog.dish_portions {
+            doc.put(&portions_id, dish_id.to_string(), *portion)
+                .unwrap();
+        }
+    }
 }
 
 /// Deletes a meal log from an Automerge document.
