@@ -4,7 +4,7 @@
 .PHONY: help build test-cli lint clean \
         dev test stop restart status logs \
         connect-vite connect-hono connect-sync \
-        web-install web-build web-lint \
+        web-install web-build web-lint web-test \
         fit fit-init fit-sync fit-config fit-dishes fit-dish-create \
         reset test-reset
 
@@ -52,6 +52,7 @@ help: ## Show this help
 	@echo "  web-install     Install web dependencies"
 	@echo "  web-build       Build web for production"
 	@echo "  web-lint        Lint web (tsc)"
+	@echo "  web-test        Run web unit tests"
 	@echo "  clean           Clean all build artifacts"
 	@echo ""
 	@echo "CLI (auto-detects dev/test env):"
@@ -147,6 +148,9 @@ web-build: ## Build web for production
 
 web-lint: ## Lint web
 	cd web && npm run lint
+
+web-test: ## Run web unit tests
+	cd web && npm test
 
 # =============================================================================
 # CLI Commands (auto-detects dev/test environment)

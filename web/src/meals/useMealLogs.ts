@@ -4,6 +4,7 @@ import { useDocument } from '../repo'
 import { useRepoState } from '../repo/RepoContext'
 import { useDishes } from '../dishes/useDishes'
 import { MealLog, MealLogsDoc, CliMealLog, MealType, NutritionSummary } from './types'
+import { getMealLogEntries } from './mealLogDocument'
 
 // Helper to create ImmutableString for non-collaborative text
 // This ensures strings are stored as scalar values (compatible with automerge-rs)
@@ -64,29 +65,17 @@ export function useMealLogs() {
     return () => clearTimeout(timer)
   }, [doc])
 
-  // Convert CLI format to web format, filtering invalid entries
-  const isValidMealLog = (entry: unknown): entry is CliMealLog => {
-    if (entry === null || typeof entry !== 'object') {
-      return false
-    }
-    const log = entry as Record<string, unknown>
-    // Valid meallog must have date and meal_type
-    return 'date' in log && 'meal_type' in log
-  }
+  const mealLogEntries = useMemo(() => doc ? getMealLogEntries(doc) : [], [doc])
 
-  const mealLogs = useMemo(() => {
-    if (!doc) return []
-    return Object.entries(doc)
-      .filter(([, entry]) => isValidMealLog(entry))
-      .map(([id, cliLog]) => convertCliMealLog(id, cliLog))
-  }, [doc])
+  const mealLogs = useMemo(
+    () => mealLogEntries.map(([id, cliLog]) => convertCliMealLog(id, cliLog)),
+    [mealLogEntries],
+  )
 
   const getMealLog = useCallback((id: string): MealLog | undefined => {
-    const cliLog = doc?.[id]
-    return cliLog && isValidMealLog(cliLog)
-      ? convertCliMealLog(id, cliLog)
-      : undefined
-  }, [doc])
+    const entry = mealLogEntries.find(([entryId]) => entryId === id)
+    return entry ? convertCliMealLog(...entry) : undefined
+  }, [mealLogEntries])
 
   // Get logs for a specific date
   const getLogsForDate = useCallback((date: string): MealLog[] => {
