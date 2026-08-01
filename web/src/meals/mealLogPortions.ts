@@ -1,4 +1,5 @@
 import { Dish } from '../dishes'
+import { resolveMealLogDish } from './mealLogDishes'
 import { MealLog, NutritionSummary } from './types'
 
 export function getDishPortion(
@@ -44,7 +45,7 @@ export function calculateMealLogNutrition(
   }
 
   for (const dishId of log.dishIds) {
-    const dish = getDish(dishId)
+    const dish = resolveMealLogDish(log, dishId, getDish)
     if (!dish) continue
 
     const portion = getDishPortion(log.dishPortions, dishId)
