@@ -5,11 +5,92 @@ import { useDishes } from '../dishes/useDishes'
 import { ManualShoppingItem } from './types'
 import { EditItemDialog } from './EditItemDialog'
 import { formatShoppingQuantities } from './shoppingQuantity'
+import { partitionShoppingItems } from './shoppingPresentation'
 
 interface AggregatedIngredient {
   name: string
   quantities: { quantity: string; unit: string }[]
   isManual: boolean
+}
+
+interface ShoppingItemRowProps {
+  ingredient: AggregatedIngredient
+  checked: boolean
+  canEdit: boolean
+  onToggle: () => void
+  onEdit: () => void
+  onRemove: () => void
+}
+
+function ShoppingItemRow({
+  ingredient,
+  checked,
+  canEdit,
+  onToggle,
+  onEdit,
+  onRemove,
+}: ShoppingItemRowProps) {
+  return (
+    <li
+      className={`px-4 py-2 flex items-center gap-3 min-h-[44px] transition-colors ${
+        checked ? 'bg-gray-50/50 dark:bg-gray-700/20' : ''
+      } ${canEdit ? 'active:bg-gray-100 dark:active:bg-gray-700' : ''}`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        className="w-5 h-5 rounded border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 dark:focus:ring-offset-gray-800 cursor-pointer flex-shrink-0"
+      />
+      <div
+        className={`flex-1 flex justify-between items-center min-w-0 ${canEdit ? 'cursor-pointer' : ''}`}
+        onClick={canEdit ? onEdit : undefined}
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span
+            className={`text-sm transition-all truncate ${
+              checked
+                ? 'line-through text-gray-400 dark:text-gray-500'
+                : 'text-gray-900 dark:text-gray-100'
+            }`}
+          >
+            {ingredient.name}
+          </span>
+          {!canEdit && (
+            <span
+              className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0"
+              title="From meal plan"
+            >
+              🍽
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+          <span
+            className={`text-xs transition-all ${
+              checked
+                ? 'text-gray-400 dark:text-gray-500'
+                : 'text-gray-500 dark:text-gray-400'
+            }`}
+          >
+            {formatShoppingQuantities(ingredient.quantities)}
+          </span>
+          {canEdit && (
+            <button
+              onClick={(event) => {
+                event.stopPropagation()
+                onRemove()
+              }}
+              className="w-8 h-8 flex items-center justify-center text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs"
+              title="Remove item"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+    </li>
+  )
 }
 
 interface ShoppingCartProps {
@@ -36,6 +117,7 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
   const [newItemUnit, setNewItemUnit] = useState('')
   const [addItemError, setAddItemError] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState(true)
+  const [areCheckedItemsExpanded, setAreCheckedItemsExpanded] = useState(false)
   const [editingItem, setEditingItem] = useState<ManualShoppingItem | null>(null)
 
   // Get meal plans for this week
@@ -150,9 +232,30 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
     setNewItemUnit('')
   }
 
-  // Count checked/unchecked
-  const checkedCount = aggregatedIngredients.filter((ing) => isChecked(ing.name)).length
+  const { unchecked: uncheckedIngredients, checked: checkedIngredients } =
+    partitionShoppingItems(aggregatedIngredients, (ingredient) => isChecked(ingredient.name))
+  const checkedCount = checkedIngredients.length
   const totalCount = aggregatedIngredients.length
+
+  const renderShoppingItem = (ingredient: AggregatedIngredient) => {
+    const canEdit = isManualOnly(ingredient.name)
+    return (
+      <ShoppingItemRow
+        key={ingredient.name}
+        ingredient={ingredient}
+        checked={isChecked(ingredient.name)}
+        canEdit={canEdit}
+        onToggle={() => toggleChecked(ingredient.name)}
+        onEdit={() => {
+          const item = manualItems.find(
+            (manualItem) => manualItem.name.toLowerCase() === ingredient.name.toLowerCase(),
+          )
+          if (item) setEditingItem(item)
+        }}
+        onRemove={() => removeManualItem(ingredient.name)}
+      />
+    )
+  }
 
   if (isLoading) {
     return (
@@ -236,79 +339,31 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
               )}
             </div>
           ) : (
-            <ul className="divide-y divide-gray-100 dark:divide-gray-700 max-h-[400px] overflow-y-auto">
-              {aggregatedIngredients.map((ing) => {
-                const checked = isChecked(ing.name)
-                const canRemove = isManualOnly(ing.name)
-                const canEdit = canRemove
-
-                return (
-                  <li
-                    key={ing.name}
-                    className={`px-4 py-2 flex items-center gap-3 min-h-[44px] transition-colors ${
-                      checked ? 'bg-gray-50/50 dark:bg-gray-700/20' : ''
-                    } ${canEdit ? 'active:bg-gray-100 dark:active:bg-gray-700' : ''}`}
+            <div className="max-h-[400px] overflow-y-auto">
+              {uncheckedIngredients.length > 0 && (
+                <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {uncheckedIngredients.map(renderShoppingItem)}
+                </ul>
+              )}
+              {checkedIngredients.length > 0 && (
+                <div className={uncheckedIngredients.length > 0 ? 'border-t border-gray-200 dark:border-gray-700' : ''}>
+                  <button
+                    type="button"
+                    onClick={() => setAreCheckedItemsExpanded(!areCheckedItemsExpanded)}
+                    aria-expanded={areCheckedItemsExpanded}
+                    className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                   >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleChecked(ing.name)}
-                      className="w-5 h-5 rounded border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 dark:focus:ring-offset-gray-800 cursor-pointer flex-shrink-0"
-                    />
-                    <div
-                      className={`flex-1 flex justify-between items-center min-w-0 ${canEdit ? 'cursor-pointer' : ''}`}
-                      onClick={canEdit ? () => {
-                        const item = manualItems.find((m) => m.name.toLowerCase() === ing.name.toLowerCase())
-                        if (item) setEditingItem(item)
-                      } : undefined}
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span
-                          className={`text-sm transition-all truncate ${
-                            checked
-                              ? 'line-through text-gray-400 dark:text-gray-500'
-                              : 'text-gray-900 dark:text-gray-100'
-                          }`}
-                        >
-                          {ing.name}
-                        </span>
-                        {!canRemove && (
-                          <span
-                            className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0"
-                            title="From meal plan"
-                          >
-                            🍽
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                        <span
-                          className={`text-xs transition-all ${
-                            checked
-                              ? 'text-gray-400 dark:text-gray-500'
-                              : 'text-gray-500 dark:text-gray-400'
-                          }`}
-                        >
-                          {formatShoppingQuantities(ing.quantities)}
-                        </span>
-                        {canRemove && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              removeManualItem(ing.name)
-                            }}
-                            className="w-8 h-8 flex items-center justify-center text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs"
-                            title="Remove item"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
+                    <span>Checked ({checkedIngredients.length})</span>
+                    <span aria-hidden="true">{areCheckedItemsExpanded ? '▼' : '▶'}</span>
+                  </button>
+                  {areCheckedItemsExpanded && (
+                    <ul className="divide-y divide-gray-100 dark:divide-gray-700 border-t border-gray-100 dark:border-gray-700">
+                      {checkedIngredients.map(renderShoppingItem)}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </>
       )}
