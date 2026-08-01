@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { v4 as uuidv4 } from 'uuid'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useRepoState, RepoLoading } from '../repo'
 import { useMealPlans } from './useMealPlans'
@@ -86,7 +87,7 @@ function MealPlanFormContent() {
       navigate(`/meals/${date}`)
     } else {
       const newPlan: MealPlan = {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         date,
         mealType,
         title: finalTitle,

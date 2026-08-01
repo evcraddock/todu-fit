@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { v4 as uuidv4 } from 'uuid'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useRepoState, RepoLoading } from '../repo'
 import { useDishes } from './useDishes'
@@ -150,7 +151,7 @@ function DishFormContent() {
     } else {
       // Create new dish
       const newDish: Dish = {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         name: name.trim(),
         prepTime: prepTime ? parseInt(prepTime, 10) : undefined,
         cookTime: cookTime ? parseInt(cookTime, 10) : undefined,
