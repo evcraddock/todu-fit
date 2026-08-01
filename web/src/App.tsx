@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth, ProtectedRoute, Login, PasskeyRegister, AllowlistAdmin, InviteSuccess, InviteError } from './auth'
-import { RepoProvider, useRepoState } from './repo'
+import { RepoProvider, RepoLoading, useRepoState } from './repo'
 import { ThemeProvider, useTheme } from './theme'
 import { deletePasskey, setRootDocId, sendGroupInvite } from './auth/api'
 import { DishList, DishDetail, DishForm } from './dishes'
@@ -384,6 +384,16 @@ function hydrationPresetEditorValue(presetsMl: number[], unit: 'ml' | 'oz', ozFr
 }
 
 function Settings() {
+  const { isReady } = useRepoState()
+
+  if (!isReady) {
+    return <RepoLoading />
+  }
+
+  return <SettingsContent />
+}
+
+function SettingsContent() {
   const { auth, refreshAuth } = useAuth()
   const { currentGroupName, groups } = useRepoState()
   const { theme, setTheme } = useTheme()
