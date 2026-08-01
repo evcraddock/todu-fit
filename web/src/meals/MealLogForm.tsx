@@ -7,6 +7,7 @@ import { useMealPlans } from './useMealPlans'
 import { useDishes } from '../dishes/useDishes'
 import { MealLog, MealType, MEAL_TYPES, MEAL_TYPE_LABELS } from './types'
 import { DishSelector } from './DishSelector'
+import { normalizeDishPortions } from './mealLogPortions'
 
 // Get today's date in YYYY-MM-DD format
 function getTodayDate(): string {
@@ -46,6 +47,7 @@ function MealLogFormContent() {
     (searchParams.get('type') as MealType) || 'dinner'
   )
   const [selectedDishIds, setSelectedDishIds] = useState<string[]>([])
+  const [dishPortions, setDishPortions] = useState<Record<string, number>>({})
   const [notes, setNotes] = useState('')
   const [showLogFromPlan, setShowLogFromPlan] = useState(false)
 
@@ -55,6 +57,7 @@ function MealLogFormContent() {
       setDate(existingLog.date)
       setMealType(existingLog.mealType)
       setSelectedDishIds(existingLog.dishIds)
+      setDishPortions(normalizeDishPortions(existingLog.dishIds, existingLog.dishPortions))
       setNotes(existingLog.notes)
     }
   }, [id, isLoading])
@@ -65,8 +68,10 @@ function MealLogFormContent() {
   const handleToggleDish = (dishId: string) => {
     if (selectedDishIds.includes(dishId)) {
       setSelectedDishIds(selectedDishIds.filter((id) => id !== dishId))
+      setDishPortions(({ [dishId]: _removed, ...remaining }) => remaining)
     } else {
       setSelectedDishIds([...selectedDishIds, dishId])
+      setDishPortions({ ...dishPortions, [dishId]: 1 })
     }
   }
 
@@ -79,6 +84,7 @@ function MealLogFormContent() {
       }
     }
     setSelectedDishIds(newDishIds)
+    setDishPortions(normalizeDishPortions(newDishIds, dishPortions))
     setShowLogFromPlan(false)
   }
 
@@ -87,11 +93,14 @@ function MealLogFormContent() {
 
     const now = new Date().toISOString()
 
+    const normalizedPortions = normalizeDishPortions(selectedDishIds, dishPortions)
+
     if (isEdit && id) {
       updateMealLog(id, {
         date,
         mealType,
         dishIds: selectedDishIds,
+        dishPortions: normalizedPortions,
         notes: notes.trim(),
       })
       navigate(`/log/${date}`)
@@ -102,6 +111,7 @@ function MealLogFormContent() {
         mealType,
         mealPlanId: null,
         dishIds: selectedDishIds,
+        dishPortions: normalizedPortions,
         notes: notes.trim(),
         createdBy: auth?.userId || 'unknown',
         createdAt: now,
@@ -220,6 +230,41 @@ function MealLogFormContent() {
             onToggleDish={handleToggleDish}
             colorTheme="green"
           />
+          {selectedDishIds.length > 0 && (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Servings eaten</p>
+              {selectedDishIds.map((dishId) => {
+                const dish = dishes.find((candidate) => candidate.id === dishId)
+                return (
+                  <div key={dishId} className="flex items-center justify-between gap-4">
+                    <label
+                      htmlFor={`portion-${dishId}`}
+                      className="text-sm text-gray-700 dark:text-gray-300"
+                    >
+                      {dish?.name ?? 'Unknown dish'}
+                    </label>
+                    <input
+                      id={`portion-${dishId}`}
+                      type="number"
+                      min="0.01"
+                      step="any"
+                      required
+                      value={dishPortions[dishId] ?? 1}
+                      onChange={(event) => {
+                        const portion = event.target.valueAsNumber
+                        setDishPortions({
+                          ...dishPortions,
+                          [dishId]: Number.isNaN(portion) ? 0 : portion,
+                        })
+                      }}
+                      aria-label={`Servings eaten for ${dish?.name ?? 'unknown dish'}`}
+                      className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-green-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </fieldset>
 
         {/* Notes */}

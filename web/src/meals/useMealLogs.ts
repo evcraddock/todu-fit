@@ -5,6 +5,11 @@ import { useRepoState } from '../repo/RepoContext'
 import { useDishes } from '../dishes/useDishes'
 import { MealLog, MealLogsDoc, CliMealLog, MealType, NutritionSummary } from './types'
 import { getMealLogEntries } from './mealLogDocument'
+import {
+  calculateMealLogNutrition,
+  normalizeDishPortions,
+  readDishPortions,
+} from './mealLogPortions'
 
 // Helper to create ImmutableString for non-collaborative text
 // This ensures strings are stored as scalar values (compatible with automerge-rs)
@@ -35,6 +40,7 @@ function convertCliMealLog(id: string, cliLog: CliMealLog): MealLog {
     mealType: getString(cliLog.meal_type) as MealType,
     mealPlanId: cliLog.mealplan_id ? getString(cliLog.mealplan_id) : null,
     dishIds: (cliLog.dishes ?? []).map((d) => getString(d)),
+    dishPortions: readDishPortions(cliLog.dish_portions),
     notes: getString(cliLog.notes ?? ''),
     createdBy: getString(cliLog.created_by),
     createdAt: getString(cliLog.created_at),
@@ -109,58 +115,21 @@ export function useMealLogs() {
     }
 
     for (const log of logs) {
-      for (const dishId of log.dishIds) {
-        const dish = getDish(dishId)
-        if (!dish) continue
-
-        // Sum up nutrients from each dish
-        for (const nutrient of dish.nutrients) {
-          const name = nutrient.name.toLowerCase()
-          if (name === 'calories' || name === 'kcal') {
-            summary.calories += nutrient.amount
-          } else if (name === 'protein') {
-            summary.protein += nutrient.amount
-          } else if (name === 'carbs' || name === 'carbohydrates') {
-            summary.carbs += nutrient.amount
-          } else if (name === 'fat') {
-            summary.fat += nutrient.amount
-          }
-        }
-      }
+      const logSummary = calculateMealLogNutrition(log, getDish)
+      summary.calories += logSummary.calories
+      summary.protein += logSummary.protein
+      summary.carbs += logSummary.carbs
+      summary.fat += logSummary.fat
     }
 
     return summary
   }, [getLogsForDate, getDish])
 
   // Calculate nutrition for a single meal log
-  const getLogNutrition = useCallback((log: MealLog): NutritionSummary => {
-    const summary: NutritionSummary = {
-      calories: 0,
-      protein: 0,
-      carbs: 0,
-      fat: 0,
-    }
-
-    for (const dishId of log.dishIds) {
-      const dish = getDish(dishId)
-      if (!dish) continue
-
-      for (const nutrient of dish.nutrients) {
-        const name = nutrient.name.toLowerCase()
-        if (name === 'calories' || name === 'kcal') {
-          summary.calories += nutrient.amount
-        } else if (name === 'protein') {
-          summary.protein += nutrient.amount
-        } else if (name === 'carbs' || name === 'carbohydrates') {
-          summary.carbs += nutrient.amount
-        } else if (name === 'fat') {
-          summary.fat += nutrient.amount
-        }
-      }
-    }
-
-    return summary
-  }, [getDish])
+  const getLogNutrition = useCallback(
+    (log: MealLog): NutritionSummary => calculateMealLogNutrition(log, getDish),
+    [getDish],
+  )
 
   const addMealLog = useCallback((log: MealLog) => {
     changeDoc((d) => {
@@ -171,6 +140,7 @@ export function useMealLogs() {
         meal_type: imm(log.mealType),
         mealplan_id: log.mealPlanId ? imm(log.mealPlanId) : null,
         dishes: log.dishIds.map((id) => imm(id)),
+        dish_portions: normalizeDishPortions(log.dishIds, log.dishPortions),
         notes: log.notes ? imm(log.notes) : null,
         created_by: imm(log.createdBy),
         created_at: imm(log.createdAt),
@@ -191,6 +161,11 @@ export function useMealLogs() {
             : null
         if (updates.dishIds !== undefined)
           d[id].dishes = updates.dishIds.map((did) => imm(did)) as unknown as string[]
+        if (updates.dishIds !== undefined || updates.dishPortions !== undefined) {
+          const dishIds = updates.dishIds ?? d[id].dishes.map((did) => getString(did))
+          const portions = updates.dishPortions ?? readDishPortions(d[id].dish_portions)
+          d[id].dish_portions = normalizeDishPortions(dishIds, portions)
+        }
         if (updates.notes !== undefined)
           d[id].notes = updates.notes ? (imm(updates.notes) as unknown as string) : null
       }
@@ -210,6 +185,10 @@ export function useMealLogs() {
       const exists = d[logId]?.dishes.some((id) => getString(id) === dishId)
       if (d[logId] && !exists) {
         d[logId].dishes.push(imm(dishId) as unknown as string)
+        d[logId].dish_portions = {
+          ...readDishPortions(d[logId].dish_portions),
+          [dishId]: 1,
+        }
       }
     })
   }, [changeDoc])
@@ -219,6 +198,9 @@ export function useMealLogs() {
     changeDoc((d) => {
       if (d[logId]) {
         d[logId].dishes = d[logId].dishes.filter((id) => getString(id) !== dishId)
+        const portions = readDishPortions(d[logId].dish_portions)
+        delete portions[dishId]
+        d[logId].dish_portions = portions
       }
     })
   }, [changeDoc])
