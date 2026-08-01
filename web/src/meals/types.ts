@@ -56,6 +56,7 @@ export interface MealLog {
   mealType: MealType
   mealPlanId: string | null // optional link to meal plan
   dishIds: string[]
+  dishPortions: Record<string, number>
   notes: string
   createdBy: string
   createdAt: string
@@ -67,6 +68,7 @@ export interface CliMealLog {
   meal_type: MealType
   mealplan_id?: string | null
   dishes: string[] // dish UUIDs
+  dish_portions?: Record<string, number>
   notes?: string | null
   created_by: string
   created_at: string

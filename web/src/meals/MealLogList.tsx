@@ -5,6 +5,7 @@ import { useMealLogs } from './useMealLogs'
 import { useDishes } from '../dishes/useDishes'
 import { MEAL_TYPES, MEAL_TYPE_COLORS, MEAL_TYPE_LABELS, MealType, MealLog } from './types'
 import { ConfirmDialog } from '../components'
+import { getDishPortion } from './mealLogPortions'
 
 // Date utilities
 function parseDate(dateStr: string): Date {
@@ -206,8 +207,9 @@ function MealLogListContent() {
                                 <ul className="space-y-1">
                                   {log.dishIds.map((dishId) => {
                                     const dish = getDish(dishId)
+                                    const portion = getDishPortion(log.dishPortions, dishId)
                                     return (
-                                      <li key={dishId} className="text-sm">
+                                      <li key={dishId} className="text-sm flex items-center gap-2">
                                         {dish ? (
                                           <Link
                                             to={`/dishes/${dishId}`}
@@ -220,6 +222,9 @@ function MealLogListContent() {
                                             Unknown dish
                                           </span>
                                         )}
+                                        <span className="text-gray-500 dark:text-gray-400">
+                                          {portion} {portion === 1 ? 'serving' : 'servings'}
+                                        </span>
                                       </li>
                                     )
                                   })}
