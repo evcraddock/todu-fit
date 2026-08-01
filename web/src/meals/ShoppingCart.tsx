@@ -4,6 +4,7 @@ import { useMealPlans } from './useMealPlans'
 import { useDishes } from '../dishes/useDishes'
 import { ManualShoppingItem } from './types'
 import { EditItemDialog } from './EditItemDialog'
+import { formatShoppingQuantities } from './shoppingQuantity'
 
 interface AggregatedIngredient {
   name: string
@@ -116,38 +117,6 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
     }
     // Check if it's in manual items
     return manualItems.some((item) => item.name.toLowerCase() === key)
-  }
-
-  // Format quantities for display
-  const formatQuantities = (quantities: { quantity: string; unit: string }[]): string => {
-    if (quantities.length === 0) return ''
-
-    const byUnit = new Map<string, string[]>()
-    for (const q of quantities) {
-      const unit = q.unit.toLowerCase().trim()
-      if (!byUnit.has(unit)) {
-        byUnit.set(unit, [])
-      }
-      byUnit.get(unit)!.push(q.quantity)
-    }
-
-    const parts: string[] = []
-    for (const [unit, qtys] of byUnit) {
-      const numericQtys = qtys.filter((q) => !isNaN(parseFloat(q)))
-      const nonNumericQtys = qtys.filter((q) => isNaN(parseFloat(q)))
-
-      if (numericQtys.length > 0) {
-        const sum = numericQtys.reduce((acc, q) => acc + parseFloat(q), 0)
-        const formatted = sum % 1 === 0 ? sum.toString() : sum.toFixed(2)
-        parts.push(unit ? `${formatted} ${unit}` : formatted)
-      }
-
-      for (const q of nonNumericQtys) {
-        parts.push(unit ? `${q} ${unit}` : q)
-      }
-    }
-
-    return parts.join(', ')
   }
 
   // Handle adding a new item
@@ -320,7 +289,7 @@ export function ShoppingCart({ weekStart, weekEnd }: ShoppingCartProps) {
                               : 'text-gray-500 dark:text-gray-400'
                           }`}
                         >
-                          {formatQuantities(ing.quantities)}
+                          {formatShoppingQuantities(ing.quantities)}
                         </span>
                         {canRemove && (
                           <button
