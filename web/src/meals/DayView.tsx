@@ -5,6 +5,8 @@ import { useMealPlans } from './useMealPlans'
 import { useDishes } from '../dishes/useDishes'
 import { MEAL_TYPES, MEAL_TYPE_COLORS, MEAL_TYPE_LABELS, MealType, MealPlan } from './types'
 import { ConfirmDialog } from '../components'
+import { NutritionInline } from './NutritionInline'
+import { calculateDailyPlanNutrition, calculateDishNutrition } from './mealPlanNutrition'
 
 // Date utilities
 function parseDate(dateStr: string): Date {
@@ -55,6 +57,11 @@ function DayViewContent() {
 
   // Get plans for this date
   const plans = useMemo(() => getPlansForDate(dateStr), [getPlansForDate, dateStr])
+
+  const dailyNutrition = useMemo(
+    () => calculateDailyPlanNutrition(plans, getDish),
+    [plans, getDish],
+  )
 
   // Group plans by meal type
   const plansByMealType = useMemo(() => {
@@ -127,6 +134,37 @@ function DayViewContent() {
           >
             + Add Meal
           </Link>
+        </div>
+      </div>
+
+      {/* Daily Nutrition */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6 transition-colors">
+        <h2 className="text-lg font-medium mb-3 text-gray-900 dark:text-gray-100">Daily Nutrition</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+          <div>
+            <div className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">
+              {Math.round(dailyNutrition.calories)}
+            </div>
+            <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Calories</div>
+          </div>
+          <div>
+            <div className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">
+              {Math.round(dailyNutrition.protein)}g
+            </div>
+            <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Protein</div>
+          </div>
+          <div>
+            <div className="text-xl sm:text-2xl font-bold text-amber-600 dark:text-amber-400">
+              {Math.round(dailyNutrition.carbs)}g
+            </div>
+            <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Carbs</div>
+          </div>
+          <div>
+            <div className="text-xl sm:text-2xl font-bold text-red-600 dark:text-red-400">
+              {Math.round(dailyNutrition.fat)}g
+            </div>
+            <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Fat</div>
+          </div>
         </div>
       </div>
 
@@ -213,14 +251,17 @@ function DayViewContent() {
                               {plan.dishIds.map((dishId) => {
                                 const dish = getDish(dishId)
                                 return (
-                                  <li key={dishId} className="text-sm">
+                                  <li key={dishId} className="text-sm flex flex-wrap items-baseline gap-x-2">
                                     {dish ? (
-                                      <Link
-                                        to={`/dishes/${dishId}`}
-                                        className="text-blue-600 dark:text-blue-400 hover:underline py-1 inline-block"
-                                      >
-                                        {dish.name}
-                                      </Link>
+                                      <>
+                                        <Link
+                                          to={`/dishes/${dishId}`}
+                                          className="text-blue-600 dark:text-blue-400 hover:underline py-1 inline-block"
+                                        >
+                                          {dish.name}
+                                        </Link>
+                                        <NutritionInline nutrition={calculateDishNutrition(dish)} />
+                                      </>
                                     ) : (
                                       <span className="text-gray-400 italic">
                                         Unknown dish

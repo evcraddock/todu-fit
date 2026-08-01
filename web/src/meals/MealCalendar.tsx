@@ -2,9 +2,12 @@ import { useState, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useRepoState, RepoLoading } from '../repo'
 import { useMealPlans } from './useMealPlans'
+import { Dish } from '../dishes'
 import { useDishes } from '../dishes/useDishes'
 import { MEAL_TYPE_COLORS, MEAL_TYPE_LABELS, MealType, MEAL_TYPES, MealPlan } from './types'
 import { ShoppingCart } from './ShoppingCart'
+import { NutritionInline } from './NutritionInline'
+import { calculateDishNutrition } from './mealPlanNutrition'
 
 type TabType = 'meals' | 'shopping'
 
@@ -307,7 +310,7 @@ function MealCalendarContent() {
 // Weekly Meals Tab Component
 interface WeeklyMealsTabProps {
   weekPlans: MealPlan[]
-  getDish: (id: string) => { name: string } | undefined
+  getDish: (id: string) => Dish | undefined
 }
 
 function WeeklyMealsTab({ weekPlans, getDish }: WeeklyMealsTabProps) {
@@ -396,15 +399,18 @@ function WeeklyMealsTab({ weekPlans, getDish }: WeeklyMealsTabProps) {
                             {plan.dishIds.map((dishId) => {
                               const dish = getDish(dishId)
                               return (
-                                <li key={dishId} className="flex items-center gap-1">
+                                <li key={dishId} className="flex flex-wrap items-baseline gap-x-2">
                                   <span className="text-gray-400">•</span>
                                   {dish ? (
-                                    <Link
-                                      to={`/dishes/${dishId}`}
-                                      className="text-blue-600 dark:text-blue-400 hover:underline"
-                                    >
-                                      {dish.name}
-                                    </Link>
+                                    <>
+                                      <Link
+                                        to={`/dishes/${dishId}`}
+                                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                                      >
+                                        {dish.name}
+                                      </Link>
+                                      <NutritionInline nutrition={calculateDishNutrition(dish)} />
+                                    </>
                                   ) : (
                                     <span className="text-gray-400 italic">Unknown dish</span>
                                   )}
