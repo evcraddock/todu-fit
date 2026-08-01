@@ -1,3 +1,5 @@
+import type { Dish } from '../dishes'
+
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
 export interface MealPlan {
@@ -56,6 +58,7 @@ export interface MealLog {
   mealType: MealType
   mealPlanId: string | null // optional link to meal plan
   dishIds: string[]
+  dishSnapshots?: Record<string, Dish>
   dishPortions: Record<string, number>
   notes: string
   createdBy: string
@@ -67,7 +70,7 @@ export interface CliMealLog {
   date: string
   meal_type: MealType
   mealplan_id?: string | null
-  dishes: string[] // dish UUIDs
+  dishes: unknown[] // dish UUIDs or embedded dish snapshots
   dish_portions?: Record<string, number>
   notes?: string | null
   created_by: string

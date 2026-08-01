@@ -5,6 +5,7 @@ import { useRepoState } from '../repo/RepoContext'
 import { useDishes } from '../dishes/useDishes'
 import { MealLog, MealLogsDoc, CliMealLog, MealType, NutritionSummary } from './types'
 import { getMealLogEntries } from './mealLogDocument'
+import { decodeMealLogDishes } from './mealLogDishes'
 import {
   calculateMealLogNutrition,
   normalizeDishPortions,
@@ -34,12 +35,14 @@ function getString(value: unknown): string {
 
 // Convert CLI meallog (snake_case) to web meallog (camelCase)
 function convertCliMealLog(id: string, cliLog: CliMealLog): MealLog {
+  const { dishIds, dishSnapshots } = decodeMealLogDishes(cliLog.dishes)
   return {
     id,
     date: getString(cliLog.date),
     mealType: getString(cliLog.meal_type) as MealType,
     mealPlanId: cliLog.mealplan_id ? getString(cliLog.mealplan_id) : null,
-    dishIds: (cliLog.dishes ?? []).map((d) => getString(d)),
+    dishIds,
+    dishSnapshots,
     dishPortions: readDishPortions(cliLog.dish_portions),
     notes: getString(cliLog.notes ?? ''),
     createdBy: getString(cliLog.created_by),

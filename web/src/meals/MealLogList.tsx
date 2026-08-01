@@ -6,6 +6,7 @@ import { useDishes } from '../dishes/useDishes'
 import { MEAL_TYPES, MEAL_TYPE_COLORS, MEAL_TYPE_LABELS, MealType, MealLog } from './types'
 import { ConfirmDialog } from '../components'
 import { getDishPortion } from './mealLogPortions'
+import { resolveMealLogDish } from './mealLogDishes'
 
 // Date utilities
 function parseDate(dateStr: string): Date {
@@ -206,17 +207,20 @@ function MealLogListContent() {
                               {log.dishIds.length > 0 ? (
                                 <ul className="space-y-1">
                                   {log.dishIds.map((dishId) => {
-                                    const dish = getDish(dishId)
+                                    const sharedDish = getDish(dishId)
+                                    const dish = resolveMealLogDish(log, dishId, getDish)
                                     const portion = getDishPortion(log.dishPortions, dishId)
                                     return (
                                       <li key={dishId} className="text-sm flex items-center gap-2">
-                                        {dish ? (
+                                        {dish && sharedDish ? (
                                           <Link
                                             to={`/dishes/${dishId}`}
                                             className="text-blue-600 dark:text-blue-400 hover:underline font-medium py-1 inline-block"
                                           >
                                             {dish.name}
                                           </Link>
+                                        ) : dish ? (
+                                          <span className="font-medium">{dish.name}</span>
                                         ) : (
                                           <span className="text-gray-400 italic">
                                             Unknown dish

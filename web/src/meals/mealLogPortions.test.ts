@@ -54,6 +54,16 @@ test('scales nutrition for multiple servings', () => {
   )
 })
 
+test('uses embedded snapshot nutrition when a shared dish is unavailable', () => {
+  const log = mealLog({ [dish.id]: 0.5 })
+  log.dishSnapshots = { [dish.id]: dish }
+
+  assert.deepEqual(
+    calculateMealLogNutrition(log, () => undefined),
+    { calories: 200, protein: 10, carbs: 25, fat: 5 },
+  )
+})
+
 test('treats a legacy log without portion metadata as one serving', () => {
   assert.equal(getDishPortion({}, dish.id), 1)
   assert.deepEqual(
