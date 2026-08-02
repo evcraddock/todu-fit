@@ -1,9 +1,14 @@
-use chrono::{DateTime, Duration, Local, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono_tz::Tz;
 use clap::{Args, Subcommand, ValueEnum};
 use uuid::Uuid;
 
 use crate::sync::SyncHydrationRepository;
-use todu_fit_core::{HydrationUnit, WaterEntry};
+use todu_fit_core::{
+    average_daily_ml_in_timezone, daily_total_ml_in_timezone, entries_for_date_in_timezone,
+    goal_progress_in_timezone, streak_days_in_timezone, HydrationSettings, HydrationUnit,
+    WaterEntry,
+};
 
 #[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
 pub enum WaterUnitArg {
@@ -103,6 +108,10 @@ pub enum WaterSubcommand {
         #[arg(long = "display-unit", value_enum)]
         display_unit: Option<WaterUnitArg>,
 
+        /// IANA timezone used for calendar dates (for example, America/Chicago)
+        #[arg(long)]
+        timezone: Option<String>,
+
         /// Comma-separated quick-add preset values in the selected unit
         #[arg(long, value_delimiter = ',')]
         presets: Vec<f64>,
@@ -127,8 +136,9 @@ impl WaterCommand {
                 goal,
                 unit,
                 display_unit,
+                timezone,
                 presets,
-            } => self.update_settings(repo, *goal, *unit, *display_unit, presets),
+            } => self.update_settings(repo, *goal, *unit, *display_unit, timezone, presets),
             WaterSubcommand::Delete { id } => self.delete(repo, id),
         }
     }
@@ -157,7 +167,11 @@ impl WaterCommand {
             "  Amount: {}",
             format_amount(created.amount_ml, settings.preferred_unit)
         );
-        println!("  Time: {}", format_timestamp_local(created.consumed_at));
+        let timezone = settings_timezone(&settings)?;
+        println!(
+            "  Time: {}",
+            format_timestamp(created.consumed_at, timezone)
+        );
         Ok(())
     }
 
@@ -166,15 +180,21 @@ impl WaterCommand {
         repo: &SyncHydrationRepository,
         format: &OutputFormat,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let today = Local::now().date_naive();
         let settings = repo.get_settings()?;
-        let mut entries = repo.list_entries_for_date(today)?;
+        let timezone = settings_timezone(&settings)?;
+        let today = Utc::now().with_timezone(&timezone).date_naive();
+        let all_entries = repo.list_entries()?;
+        let mut entries = entries_for_date_in_timezone(&all_entries, today, timezone)
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
         entries.sort_by_key(|entry| entry.consumed_at);
 
-        let total_ml = repo.daily_total_ml(today)?;
-        let progress = repo.goal_progress(today)?;
-        let streak = repo.streak_days(today)?;
-        let average_ml = repo.average_daily_ml(today, 7)?;
+        let total_ml = daily_total_ml_in_timezone(&all_entries, today, timezone);
+        let progress =
+            goal_progress_in_timezone(&all_entries, today, settings.daily_goal_ml, timezone);
+        let streak = streak_days_in_timezone(&all_entries, today, settings.daily_goal_ml, timezone);
+        let average_ml = average_daily_ml_in_timezone(&all_entries, today, 7, timezone);
 
         match format {
             OutputFormat::Json => {
@@ -186,13 +206,15 @@ impl WaterCommand {
                     "streak_days": streak,
                     "average_daily_ml_7d": average_ml,
                     "entries": entries,
+                    "timezone": settings.timezone,
+                    "timestamp_semantics": "entries[].consumed_at is RFC3339 UTC; date and totals use the configured IANA timezone",
                     "settings": settings,
                 });
                 println!("{}", serde_json::to_string_pretty(&output)?);
             }
             OutputFormat::Text => {
-                println!("Water Today - {}", today);
-                println!("{}", "=".repeat(32));
+                println!("Water Today - {} ({})", today, settings.timezone);
+                println!("{}", "=".repeat(48));
                 println!(
                     "{} / {} ({})",
                     format_amount(total_ml, settings.preferred_unit),
@@ -212,7 +234,7 @@ impl WaterCommand {
                     for entry in &entries {
                         println!(
                             "  {}  {}  {}",
-                            format_timestamp_local(entry.consumed_at),
+                            format_timestamp(entry.consumed_at, timezone),
                             entry.id,
                             format_amount(entry.amount_ml, settings.preferred_unit)
                         );
@@ -231,6 +253,7 @@ impl WaterCommand {
         format: &OutputFormat,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let settings = repo.get_settings()?;
+        let timezone = settings_timezone(&settings)?;
         let mut entries = repo.list_entries()?;
         entries.sort_by_key(|entry| std::cmp::Reverse(entry.consumed_at));
         entries.truncate(limit);
@@ -250,7 +273,7 @@ impl WaterCommand {
                 for entry in &entries {
                     println!(
                         "{}  {}  {}",
-                        format_timestamp_local(entry.consumed_at),
+                        format_timestamp(entry.consumed_at, timezone),
                         entry.id,
                         format_amount(entry.amount_ml, settings.preferred_unit)
                     );
@@ -268,7 +291,9 @@ impl WaterCommand {
         to: &Option<String>,
         format: &OutputFormat,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let today = Local::now().date_naive();
+        let settings = repo.get_settings()?;
+        let timezone = settings_timezone(&settings)?;
+        let today = Utc::now().with_timezone(&timezone).date_naive();
         let to_date = parse_date_or_default(to.as_deref(), today)?;
         let from_date = parse_date_or_default(from.as_deref(), to_date - Duration::days(7))?;
 
@@ -276,12 +301,8 @@ impl WaterCommand {
             return Err("--from must be on or before --to".into());
         }
 
-        let settings = repo.get_settings()?;
-        let mut entries = repo.list_entries()?;
-        entries.retain(|entry| {
-            let date = entry.consumed_at.date_naive();
-            date >= from_date && date <= to_date
-        });
+        let all_entries = repo.list_entries()?;
+        let mut entries = entries_in_date_range(&all_entries, from_date, to_date, timezone);
         entries.sort_by_key(|entry| entry.consumed_at);
 
         match format {
@@ -289,11 +310,11 @@ impl WaterCommand {
                 let mut days = Vec::new();
                 let mut day = from_date;
                 while day <= to_date {
-                    let total_ml = repo.daily_total_ml(day)?;
+                    let total_ml = daily_total_ml_in_timezone(&entries, day, timezone);
                     days.push(serde_json::json!({
                         "date": day,
                         "total_ml": total_ml,
-                        "goal_progress": todu_fit_core::goal_progress(&entries, day, settings.daily_goal_ml),
+                        "goal_progress": goal_progress_in_timezone(&entries, day, settings.daily_goal_ml, timezone),
                     }));
                     day += Duration::days(1);
                 }
@@ -303,21 +324,28 @@ impl WaterCommand {
                     "to": to_date,
                     "entries": entries,
                     "days": days,
+                    "timezone": settings.timezone,
+                    "date_semantics": "from and to are inclusive calendar dates in timezone",
+                    "timestamp_semantics": "entries[].consumed_at is RFC3339 UTC",
                     "settings": settings,
                 });
                 println!("{}", serde_json::to_string_pretty(&output)?);
             }
             OutputFormat::Text => {
                 println!("Water History: {} to {}", from_date, to_date);
-                println!("{}", "=".repeat(40));
+                println!("Timezone: {}", settings.timezone);
+                println!("Dates are inclusive; entry times include the UTC offset.");
+                println!("{}", "=".repeat(56));
 
                 let mut day = from_date;
                 while day <= to_date {
                     let day_entries: Vec<&WaterEntry> = entries
                         .iter()
-                        .filter(|entry| entry.consumed_at.date_naive() == day)
+                        .filter(|entry| {
+                            entry.consumed_at.with_timezone(&timezone).date_naive() == day
+                        })
                         .collect();
-                    let total_ml = repo.daily_total_ml(day)?;
+                    let total_ml = daily_total_ml_in_timezone(&entries, day, timezone);
                     let progress = total_ml as f64 / settings.daily_goal_ml as f64;
                     println!(
                         "{}  {} / {} ({})",
@@ -329,7 +357,7 @@ impl WaterCommand {
                     for entry in day_entries {
                         println!(
                             "  {}  {}",
-                            format_timestamp_local(entry.consumed_at),
+                            format_timestamp(entry.consumed_at, timezone),
                             format_amount(entry.amount_ml, settings.preferred_unit)
                         );
                     }
@@ -354,6 +382,7 @@ impl WaterCommand {
                 println!("Water Settings");
                 println!("{}", "=".repeat(24));
                 println!("Preferred unit: {}", format_unit(settings.preferred_unit));
+                println!("Timezone: {}", settings.timezone);
                 println!(
                     "Daily goal: {}",
                     format_amount(settings.daily_goal_ml, settings.preferred_unit)
@@ -377,6 +406,7 @@ impl WaterCommand {
         goal: Option<f64>,
         unit: Option<WaterUnitArg>,
         display_unit: Option<WaterUnitArg>,
+        timezone: &Option<String>,
         presets: &[f64],
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut settings = repo.get_settings()?;
@@ -406,9 +436,17 @@ impl WaterCommand {
             settings.preferred_unit = display.into();
         }
 
+        if let Some(timezone) = timezone {
+            timezone
+                .parse::<Tz>()
+                .map_err(|_| format!("Invalid IANA timezone: {}", timezone))?;
+            settings.timezone = timezone.clone();
+        }
+
         let saved = repo.save_settings(&settings)?;
         println!("Updated water settings:");
         println!("  Preferred unit: {}", format_unit(saved.preferred_unit));
+        println!("  Timezone: {}", saved.timezone);
         println!(
             "  Daily goal: {}",
             format_amount(saved.daily_goal_ml, saved.preferred_unit)
@@ -438,6 +476,22 @@ impl WaterCommand {
     }
 }
 
+fn entries_in_date_range(
+    entries: &[WaterEntry],
+    from: NaiveDate,
+    to: NaiveDate,
+    timezone: Tz,
+) -> Vec<WaterEntry> {
+    entries
+        .iter()
+        .filter(|entry| {
+            let date = entry.consumed_at.with_timezone(&timezone).date_naive();
+            date >= from && date <= to
+        })
+        .cloned()
+        .collect()
+}
+
 fn parse_date_or_default(
     value: Option<&str>,
     default: NaiveDate,
@@ -449,10 +503,17 @@ fn parse_date_or_default(
     }
 }
 
-fn format_timestamp_local(timestamp: DateTime<Utc>) -> String {
+fn settings_timezone(settings: &HydrationSettings) -> Result<Tz, Box<dyn std::error::Error>> {
+    settings
+        .timezone
+        .parse::<Tz>()
+        .map_err(|_| format!("Invalid configured IANA timezone: {}", settings.timezone).into())
+}
+
+fn format_timestamp(timestamp: DateTime<Utc>, timezone: Tz) -> String {
     timestamp
-        .with_timezone(&Local)
-        .format("%Y-%m-%d %H:%M")
+        .with_timezone(&timezone)
+        .format("%Y-%m-%d %H:%M %:z")
         .to_string()
 }
 
@@ -509,6 +570,42 @@ mod tests {
     }
 
     #[test]
+    fn test_history_range_uses_configured_timezone_and_inclusive_dates() {
+        let entries = vec![
+            WaterEntry::new(
+                250,
+                DateTime::parse_from_rfc3339("2026-07-25T05:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            )
+            .unwrap(),
+            WaterEntry::new(
+                500,
+                DateTime::parse_from_rfc3339("2026-07-26T03:20:18Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            )
+            .unwrap(),
+            WaterEntry::new(
+                750,
+                DateTime::parse_from_rfc3339("2026-07-26T05:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            )
+            .unwrap(),
+        ];
+        let date = NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
+
+        let filtered = entries_in_date_range(&entries, date, date, chrono_tz::America::Chicago);
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(
+            filtered.iter().map(|entry| entry.amount_ml).sum::<i32>(),
+            750
+        );
+    }
+
+    #[test]
     fn test_water_subcommand_parsing() {
         #[derive(Parser)]
         struct TestCli {
@@ -523,6 +620,14 @@ mod tests {
                 assert_eq!(unit, WaterUnitArg::Oz);
             }
             _ => panic!("expected add command"),
+        }
+
+        let cli = TestCli::parse_from(["fit", "set", "--timezone", "America/Chicago"]);
+        match cli.command {
+            WaterSubcommand::Set { timezone, .. } => {
+                assert_eq!(timezone.as_deref(), Some("America/Chicago"));
+            }
+            _ => panic!("expected set command"),
         }
     }
 }

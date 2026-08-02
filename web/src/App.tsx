@@ -6,7 +6,7 @@ import { ThemeProvider, useTheme } from './theme'
 import { deletePasskey, setRootDocId, sendGroupInvite } from './auth/api'
 import { DishList, DishDetail, DishForm } from './dishes'
 import { MealCalendar, DayView, MealPlanForm, MealLogList, MealLogForm } from './meals'
-import { WaterPage, useHydration } from './hydration'
+import { isValidIanaTimezone, WaterPage, useHydration } from './hydration'
 import { ConfirmDialog } from './components'
 import { CalendarSubscription } from './calendar'
 
@@ -405,6 +405,7 @@ function SettingsContent() {
   const [waterSettingsUnit, setWaterSettingsUnit] = useState<'ml' | 'oz'>(hydrationSettings.preferredUnit)
   const [waterGoalInput, setWaterGoalInput] = useState(() => hydrationGoalAmountForUnit(hydrationSettings.dailyGoalMl, hydrationSettings.preferredUnit, hydrationHelpers.ozFromMl))
   const [waterPresetInput, setWaterPresetInput] = useState(() => hydrationPresetEditorValue(hydrationSettings.quickAddPresetsMl, hydrationSettings.preferredUnit, hydrationHelpers.ozFromMl))
+  const [waterTimezoneInput, setWaterTimezoneInput] = useState(hydrationSettings.timezone)
 
   // Group invite state
   const [inviteModalGroup, setInviteModalGroup] = useState<{ id: string; name: string; doc_id: string } | null>(null)
@@ -448,7 +449,8 @@ function SettingsContent() {
     setWaterSettingsUnit(hydrationSettings.preferredUnit)
     setWaterGoalInput(hydrationGoalAmountForUnit(hydrationSettings.dailyGoalMl, hydrationSettings.preferredUnit, hydrationHelpers.ozFromMl))
     setWaterPresetInput(hydrationPresetEditorValue(hydrationSettings.quickAddPresetsMl, hydrationSettings.preferredUnit, hydrationHelpers.ozFromMl))
-  }, [hydrationHelpers.ozFromMl, hydrationPresetKey, hydrationSettings.dailyGoalMl, hydrationSettings.preferredUnit])
+    setWaterTimezoneInput(hydrationSettings.timezone)
+  }, [hydrationHelpers.ozFromMl, hydrationPresetKey, hydrationSettings.dailyGoalMl, hydrationSettings.preferredUnit, hydrationSettings.timezone])
 
   const handleSaveWaterSettings = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -470,6 +472,11 @@ function SettingsContent() {
       return
     }
 
+    if (!isValidIanaTimezone(waterTimezoneInput.trim())) {
+      setMessage({ type: 'error', text: 'Enter a valid IANA timezone, such as America/Chicago' })
+      return
+    }
+
     const dailyGoalMl = waterSettingsUnit === 'ml' ? Math.round(goalValue) : hydrationHelpers.mlFromOz(goalValue)
     const quickAddPresetsMl = quickAddValues.map((value) => waterSettingsUnit === 'ml' ? Math.round(value) : hydrationHelpers.mlFromOz(value))
 
@@ -478,6 +485,7 @@ function SettingsContent() {
         dailyGoalMl,
         preferredUnit: waterSettingsUnit,
         quickAddPresetsMl,
+        timezone: waterTimezoneInput.trim(),
       })
       setMessage({ type: 'success', text: 'Water settings saved' })
     } catch (err) {
@@ -688,6 +696,20 @@ function SettingsContent() {
               <option value="oz">oz</option>
               <option value="ml">mL</option>
             </select>
+          </div>
+          <div>
+            <label htmlFor="water-timezone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Timezone
+            </label>
+            <input
+              id="water-timezone"
+              type="text"
+              value={waterTimezoneInput}
+              onChange={(event) => setWaterTimezoneInput(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 font-mono text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              placeholder="America/Chicago"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Use an IANA timezone. Water days and history ranges use this timezone.</p>
           </div>
           <div>
             <label htmlFor="water-goal" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

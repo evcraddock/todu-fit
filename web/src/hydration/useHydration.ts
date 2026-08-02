@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { useDocument } from '../repo'
 import { useRepoState } from '../repo/RepoContext'
 import { CliHydrationSettings, CliWaterEntry, HydrationDoc, HydrationSettings, HydrationUnit, WaterEntry } from './types'
+import { dateStringInTimezone, detectIanaTimezone, isValidIanaTimezone, resolveIanaTimezone } from './waterHistory'
 
 const ML_PER_OUNCE = 29.5735
 
@@ -41,6 +42,7 @@ function defaultSettings(): HydrationSettings {
     dailyGoalMl: mlFromOz(80),
     preferredUnit: 'oz',
     quickAddPresetsMl: defaultQuickAddPresetsMl(),
+    timezone: detectIanaTimezone(),
   }
 }
 
@@ -67,6 +69,7 @@ function convertCliSettings(settings?: CliHydrationSettings): HydrationSettings 
     dailyGoalMl: Number(settings.daily_goal_ml ?? defaultSettings().dailyGoalMl),
     preferredUnit: getString(settings.preferred_unit) === 'ml' ? 'ml' : 'oz',
     quickAddPresetsMl: normalizePresets((settings.quick_add_presets_ml ?? defaultQuickAddPresetsMl()).map(Number)),
+    timezone: resolveIanaTimezone(getString(settings.timezone)),
   }
 }
 
@@ -77,21 +80,6 @@ function isWaterEntry(value: unknown): value is CliWaterEntry {
 
   const entry = value as Record<string, unknown>
   return 'consumed_at' in entry && 'amount_ml' in entry
-}
-
-function localDateString(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function dateStringFromIso(isoString: string): string {
-  const date = new Date(isoString)
-  if (Number.isNaN(date.getTime())) {
-    return ''
-  }
-  return localDateString(date)
 }
 
 export function formatHydrationAmount(amountMl: number, unit: HydrationUnit): string {
@@ -138,11 +126,30 @@ export function useHydration() {
 
   const settings = useMemo(() => convertCliSettings(doc?.settings), [doc])
 
-  const today = localDateString(new Date())
+  useEffect(() => {
+    if (!doc || isValidIanaTimezone(getString(doc.settings?.timezone))) return
+
+    const timezone = detectIanaTimezone()
+    changeDoc((d) => {
+      if (d.settings) {
+        d.settings.timezone = imm(timezone) as unknown as string
+      } else {
+        const defaults = defaultSettings()
+        d.settings = {
+          daily_goal_ml: defaults.dailyGoalMl,
+          preferred_unit: imm(defaults.preferredUnit) as unknown as HydrationUnit,
+          quick_add_presets_ml: defaults.quickAddPresetsMl,
+          timezone: imm(timezone) as unknown as string,
+        } as unknown as CliHydrationSettings
+      }
+    })
+  }, [changeDoc, doc])
+
+  const today = dateStringInTimezone(new Date(), settings.timezone)
 
   const todayEntries = useMemo(
-    () => entries.filter((entry) => dateStringFromIso(entry.consumedAt) === today),
-    [entries, today]
+    () => entries.filter((entry) => dateStringInTimezone(entry.consumedAt, settings.timezone) === today),
+    [entries, settings.timezone, today]
   )
 
   const todayTotalMl = useMemo(
@@ -186,6 +193,10 @@ export function useHydration() {
       throw new Error('Daily goal must be positive')
     }
 
+    if (!isValidIanaTimezone(next.timezone)) {
+      throw new Error('Enter a valid IANA timezone')
+    }
+
     const quickAddPresetsMl = normalizePresets(next.quickAddPresetsMl)
     if (quickAddPresetsMl.length === 0) {
       throw new Error('Quick-add presets cannot be empty')
@@ -196,6 +207,7 @@ export function useHydration() {
         daily_goal_ml: Math.round(next.dailyGoalMl),
         preferred_unit: imm(next.preferredUnit) as unknown as HydrationUnit,
         quick_add_presets_ml: quickAddPresetsMl,
+        timezone: imm(next.timezone) as unknown as string,
       } as unknown as CliHydrationSettings
     })
   }, [changeDoc])

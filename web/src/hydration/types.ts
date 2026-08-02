@@ -12,6 +12,7 @@ export interface HydrationSettings {
   dailyGoalMl: number
   preferredUnit: HydrationUnit
   quickAddPresetsMl: number[]
+  timezone: string
 }
 
 export interface CliWaterEntry {
@@ -25,6 +26,7 @@ export interface CliHydrationSettings {
   daily_goal_ml: number
   preferred_unit: HydrationUnit
   quick_add_presets_ml: number[]
+  timezone?: string
 }
 
 export interface HydrationDoc {

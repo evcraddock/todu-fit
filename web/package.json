@@ -11,7 +11,7 @@
     "start": "node dist-server/server.js",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/meals/*.test.ts",
+    "test": "tsx --test src/**/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
