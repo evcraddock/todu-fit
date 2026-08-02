@@ -9,9 +9,10 @@ mod shopping_cart;
 
 pub use dish::Dish;
 pub use hydration::{
-    average_daily_ml, daily_total_ml, default_quick_add_presets_ml, entries_for_date,
-    goal_progress, ml_from_oz, oz_from_ml, streak_days, HydrationSettings, HydrationUnit,
-    WaterEntry,
+    average_daily_ml, average_daily_ml_in_timezone, daily_total_ml, daily_total_ml_in_timezone,
+    default_quick_add_presets_ml, entries_for_date, entries_for_date_in_timezone, goal_progress,
+    goal_progress_in_timezone, ml_from_oz, oz_from_ml, streak_days, streak_days_in_timezone,
+    HydrationSettings, HydrationUnit, WaterEntry,
 };
 pub use ingredient::Ingredient;
 pub use meal_log::MealLog;

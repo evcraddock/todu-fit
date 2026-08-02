@@ -10,13 +10,15 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use todu_fit_core::{
-    average_daily_ml, daily_total_ml, goal_progress, streak_days, DocumentId, HydrationSettings,
+    average_daily_ml_in_timezone, daily_total_ml_in_timezone, entries_for_date_in_timezone,
+    goal_progress_in_timezone, streak_days_in_timezone, DocumentId, HydrationSettings,
     MultiDocStorage, WaterEntry,
 };
 
 use crate::sync::group_context::{resolve_user_context, GroupContextError};
 use crate::sync::reader::{
-    read_all_water_entries, read_hydration_settings, read_water_entry_by_id, ReaderError,
+    read_all_water_entries, read_hydration_settings, read_hydration_timezone,
+    read_water_entry_by_id, ReaderError,
 };
 use crate::sync::writer;
 
@@ -136,16 +138,26 @@ impl SyncHydrationRepository {
         &self,
         date: NaiveDate,
     ) -> Result<Vec<WaterEntry>, SyncHydrationError> {
-        Ok(self
-            .list_entries()?
+        let entries = self.list_entries()?;
+        let timezone = self.settings_timezone()?;
+        Ok(entries_for_date_in_timezone(&entries, date, timezone)
             .into_iter()
-            .filter(|entry| entry.consumed_at.date_naive() == date)
+            .cloned()
             .collect())
     }
 
     pub fn get_settings(&self) -> Result<HydrationSettings, SyncHydrationError> {
-        let (doc, _) = self.load_or_create_doc()?;
-        Ok(read_hydration_settings(&doc)?.unwrap_or_default())
+        let (mut doc, doc_id) = self.load_or_create_doc()?;
+        let persisted_timezone = read_hydration_timezone(&doc)?;
+        let mut settings = read_hydration_settings(&doc)?.unwrap_or_default();
+
+        if persisted_timezone.is_none() {
+            settings.timezone = detected_system_timezone();
+            writer::write_hydration_settings(&mut doc, &settings);
+            self.save_doc(&mut doc, &doc_id)?;
+        }
+
+        Ok(settings)
     }
 
     pub fn save_settings(
@@ -163,19 +175,35 @@ impl SyncHydrationRepository {
 
     pub fn daily_total_ml(&self, date: NaiveDate) -> Result<i32, SyncHydrationError> {
         let entries = self.list_entries()?;
-        Ok(daily_total_ml(&entries, date))
+        Ok(daily_total_ml_in_timezone(
+            &entries,
+            date,
+            self.settings_timezone()?,
+        ))
     }
 
     pub fn goal_progress(&self, date: NaiveDate) -> Result<f64, SyncHydrationError> {
         let entries = self.list_entries()?;
         let settings = self.get_settings()?;
-        Ok(goal_progress(&entries, date, settings.daily_goal_ml))
+        let timezone = parse_timezone(&settings.timezone)?;
+        Ok(goal_progress_in_timezone(
+            &entries,
+            date,
+            settings.daily_goal_ml,
+            timezone,
+        ))
     }
 
     pub fn streak_days(&self, through_date: NaiveDate) -> Result<usize, SyncHydrationError> {
         let entries = self.list_entries()?;
         let settings = self.get_settings()?;
-        Ok(streak_days(&entries, through_date, settings.daily_goal_ml))
+        let timezone = parse_timezone(&settings.timezone)?;
+        Ok(streak_days_in_timezone(
+            &entries,
+            through_date,
+            settings.daily_goal_ml,
+            timezone,
+        ))
     }
 
     pub fn average_daily_ml(
@@ -184,8 +212,31 @@ impl SyncHydrationRepository {
         days: usize,
     ) -> Result<f64, SyncHydrationError> {
         let entries = self.list_entries()?;
-        Ok(average_daily_ml(&entries, end_date, days))
+        Ok(average_daily_ml_in_timezone(
+            &entries,
+            end_date,
+            days,
+            self.settings_timezone()?,
+        ))
     }
+
+    fn settings_timezone(&self) -> Result<chrono_tz::Tz, SyncHydrationError> {
+        let settings = self.get_settings()?;
+        parse_timezone(&settings.timezone)
+    }
+}
+
+fn parse_timezone(timezone: &str) -> Result<chrono_tz::Tz, SyncHydrationError> {
+    timezone
+        .parse()
+        .map_err(|_| SyncHydrationError::Validation(format!("Invalid IANA timezone: {}", timezone)))
+}
+
+fn detected_system_timezone() -> String {
+    iana_time_zone::get_timezone()
+        .ok()
+        .filter(|timezone| timezone.parse::<chrono_tz::Tz>().is_ok())
+        .unwrap_or_else(|| "UTC".to_string())
 }
 
 #[cfg(test)]
@@ -193,7 +244,7 @@ mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
     use tempfile::TempDir;
-    use todu_fit_core::{ml_from_oz, HydrationUnit};
+    use todu_fit_core::{daily_total_ml, goal_progress, ml_from_oz, HydrationUnit};
 
     struct TestHydrationRepo {
         storage: MultiDocStorage,
@@ -252,11 +303,13 @@ mod tests {
     fn test_save_settings() {
         let temp_dir = TempDir::new().unwrap();
         let repo = TestHydrationRepo::new(&temp_dir);
-        let settings = HydrationSettings::new(ml_from_oz(80.0), HydrationUnit::Oz);
+        let mut settings = HydrationSettings::new(ml_from_oz(80.0), HydrationUnit::Oz);
+        settings.timezone = "America/Chicago".to_string();
 
         let saved = repo.save_settings(&settings);
         assert_eq!(saved.preferred_unit, HydrationUnit::Oz);
         assert_eq!(saved.daily_goal_ml, ml_from_oz(80.0));
+        assert_eq!(saved.timezone, "America/Chicago");
     }
 
     #[test]

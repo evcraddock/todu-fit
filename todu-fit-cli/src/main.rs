@@ -87,7 +87,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Execute the command
     let result = execute_command(&cli.command, &config, cli_config_path);
 
-    // Auto-sync AFTER write commands (only if command succeeded)
+    // Auto-sync AFTER commands that write or may migrate settings (only if command succeeded)
     if result.is_ok() && is_write_command(&cli.command) {
         try_auto_sync(&config);
     }
@@ -227,6 +227,10 @@ fn is_write_command(cmd: &Option<Commands>) -> bool {
         cmd,
         Some(Commands::Water(w)) if matches!(w.command,
             WaterSubcommand::Add { .. }
+            | WaterSubcommand::Today { .. }
+            | WaterSubcommand::Recent { .. }
+            | WaterSubcommand::History { .. }
+            | WaterSubcommand::Settings { .. }
             | WaterSubcommand::Set { .. }
             | WaterSubcommand::Delete { .. })
     )

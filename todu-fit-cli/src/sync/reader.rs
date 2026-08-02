@@ -626,6 +626,17 @@ pub fn read_water_entry_by_id(
     }
 }
 
+/// Reads the configured hydration timezone, if it has been persisted.
+pub fn read_hydration_timezone(doc: &AutoCommit) -> Result<Option<String>, ReaderError> {
+    let Some((_, settings_id)) = doc
+        .get(ROOT, "settings")
+        .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
+    else {
+        return Ok(None);
+    };
+    get_string(doc, &settings_id, "timezone")
+}
+
 /// Reads hydration settings from an Automerge document.
 pub fn read_hydration_settings(doc: &AutoCommit) -> Result<Option<HydrationSettings>, ReaderError> {
     if let Some((_, obj_id)) = doc
@@ -641,11 +652,13 @@ pub fn read_hydration_settings(doc: &AutoCommit) -> Result<Option<HydrationSetti
             .into_iter()
             .map(|value| value as i32)
             .collect();
+        let timezone = get_string(doc, &obj_id, "timezone")?.unwrap_or_else(|| "UTC".to_string());
 
         Ok(Some(HydrationSettings {
             daily_goal_ml,
             preferred_unit,
             quick_add_presets_ml,
+            timezone,
         }))
     } else {
         Ok(None)
@@ -1351,6 +1364,8 @@ mod tests {
         assert_eq!(settings.daily_goal_ml, 2000);
         assert_eq!(settings.preferred_unit, HydrationUnit::Ml);
         assert_eq!(settings.quick_add_presets_ml, vec![250, 500]);
+        assert_eq!(settings.timezone, "UTC");
+        assert_eq!(read_hydration_timezone(&doc).unwrap(), None);
     }
 
     fn create_test_shopping_cart_doc() -> AutoCommit {

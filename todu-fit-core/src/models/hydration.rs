@@ -1,4 +1,5 @@
 use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -19,6 +20,8 @@ pub struct HydrationSettings {
     pub daily_goal_ml: i32,
     pub preferred_unit: HydrationUnit,
     pub quick_add_presets_ml: Vec<i32>,
+    #[serde(default = "default_timezone")]
+    pub timezone: String,
 }
 
 impl HydrationSettings {
@@ -27,6 +30,7 @@ impl HydrationSettings {
             daily_goal_ml,
             preferred_unit,
             quick_add_presets_ml: default_quick_add_presets_ml(),
+            timezone: default_timezone(),
         };
         settings.normalize_presets();
         settings
@@ -42,6 +46,9 @@ impl HydrationSettings {
         if self.quick_add_presets_ml.iter().any(|preset| *preset <= 0) {
             return Err("Quick-add presets must be positive".to_string());
         }
+        self.timezone
+            .parse::<Tz>()
+            .map_err(|_| format!("Invalid IANA timezone: {}", self.timezone))?;
         Ok(())
     }
 
@@ -97,6 +104,10 @@ impl WaterEntry {
     }
 }
 
+fn default_timezone() -> String {
+    "UTC".to_string()
+}
+
 pub fn default_quick_add_presets_ml() -> Vec<i32> {
     vec![
         ml_from_oz(8.0),
@@ -114,11 +125,26 @@ pub fn oz_from_ml(ml: i32) -> f64 {
     ml as f64 / ML_PER_OUNCE
 }
 
-pub fn entries_for_date(entries: &[WaterEntry], date: NaiveDate) -> Vec<&WaterEntry> {
+pub fn entries_for_date_in_timezone(
+    entries: &[WaterEntry],
+    date: NaiveDate,
+    timezone: Tz,
+) -> Vec<&WaterEntry> {
     entries
         .iter()
-        .filter(|entry| entry.consumed_at.date_naive() == date)
+        .filter(|entry| entry.consumed_at.with_timezone(&timezone).date_naive() == date)
         .collect()
+}
+
+pub fn daily_total_ml_in_timezone(entries: &[WaterEntry], date: NaiveDate, timezone: Tz) -> i32 {
+    entries_for_date_in_timezone(entries, date, timezone)
+        .into_iter()
+        .map(|entry| entry.amount_ml)
+        .sum()
+}
+
+pub fn entries_for_date(entries: &[WaterEntry], date: NaiveDate) -> Vec<&WaterEntry> {
+    entries_for_date_in_timezone(entries, date, chrono_tz::UTC)
 }
 
 pub fn daily_total_ml(entries: &[WaterEntry], date: NaiveDate) -> i32 {
@@ -128,14 +154,28 @@ pub fn daily_total_ml(entries: &[WaterEntry], date: NaiveDate) -> i32 {
         .sum()
 }
 
-pub fn goal_progress(entries: &[WaterEntry], date: NaiveDate, goal_ml: i32) -> f64 {
+pub fn goal_progress_in_timezone(
+    entries: &[WaterEntry],
+    date: NaiveDate,
+    goal_ml: i32,
+    timezone: Tz,
+) -> f64 {
     if goal_ml <= 0 {
         return 0.0;
     }
-    daily_total_ml(entries, date) as f64 / goal_ml as f64
+    daily_total_ml_in_timezone(entries, date, timezone) as f64 / goal_ml as f64
 }
 
-pub fn streak_days(entries: &[WaterEntry], through_date: NaiveDate, goal_ml: i32) -> usize {
+pub fn goal_progress(entries: &[WaterEntry], date: NaiveDate, goal_ml: i32) -> f64 {
+    goal_progress_in_timezone(entries, date, goal_ml, chrono_tz::UTC)
+}
+
+pub fn streak_days_in_timezone(
+    entries: &[WaterEntry],
+    through_date: NaiveDate,
+    goal_ml: i32,
+    timezone: Tz,
+) -> usize {
     if goal_ml <= 0 {
         return 0;
     }
@@ -143,7 +183,7 @@ pub fn streak_days(entries: &[WaterEntry], through_date: NaiveDate, goal_ml: i32
     let mut streak = 0;
     let mut date = through_date;
     loop {
-        if daily_total_ml(entries, date) < goal_ml {
+        if daily_total_ml_in_timezone(entries, date, timezone) < goal_ml {
             break;
         }
         streak += 1;
@@ -155,7 +195,16 @@ pub fn streak_days(entries: &[WaterEntry], through_date: NaiveDate, goal_ml: i32
     streak
 }
 
-pub fn average_daily_ml(entries: &[WaterEntry], end_date: NaiveDate, days: usize) -> f64 {
+pub fn streak_days(entries: &[WaterEntry], through_date: NaiveDate, goal_ml: i32) -> usize {
+    streak_days_in_timezone(entries, through_date, goal_ml, chrono_tz::UTC)
+}
+
+pub fn average_daily_ml_in_timezone(
+    entries: &[WaterEntry],
+    end_date: NaiveDate,
+    days: usize,
+    timezone: Tz,
+) -> f64 {
     if days == 0 {
         return 0.0;
     }
@@ -164,10 +213,14 @@ pub fn average_daily_ml(entries: &[WaterEntry], end_date: NaiveDate, days: usize
     let mut total = 0;
     for offset in 0..days {
         let date = start_date + Duration::days(offset as i64);
-        total += daily_total_ml(entries, date);
+        total += daily_total_ml_in_timezone(entries, date, timezone);
     }
 
     total as f64 / days as f64
+}
+
+pub fn average_daily_ml(entries: &[WaterEntry], end_date: NaiveDate, days: usize) -> f64 {
+    average_daily_ml_in_timezone(entries, end_date, days, chrono_tz::UTC)
 }
 
 fn validate_amount_ml(amount_ml: i32) -> Result<(), String> {
@@ -203,6 +256,7 @@ mod tests {
             daily_goal_ml: 0,
             preferred_unit: HydrationUnit::Ml,
             quick_add_presets_ml: vec![500],
+            timezone: "UTC".to_string(),
         };
         assert!(settings.validate().is_err());
     }
@@ -272,6 +326,78 @@ mod tests {
         assert!((goal_progress(&entries, day2, 1500) - 1.0).abs() < f64::EPSILON);
         assert_eq!(streak_days(&entries, day3, 1000), 3);
         assert!((average_daily_ml(&entries, day3, 3) - 1166.666).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_timezone_grouping_across_utc_date_boundary() {
+        let entry = WaterEntry::new(
+            500,
+            DateTime::parse_from_rfc3339("2026-07-26T03:20:18Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        )
+        .unwrap();
+        let local_date = NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
+        let utc_date = NaiveDate::from_ymd_opt(2026, 7, 26).unwrap();
+
+        assert_eq!(
+            daily_total_ml_in_timezone(
+                std::slice::from_ref(&entry),
+                local_date,
+                chrono_tz::America::Chicago,
+            ),
+            500
+        );
+        assert_eq!(
+            daily_total_ml_in_timezone(std::slice::from_ref(&entry), utc_date, chrono_tz::UTC),
+            500
+        );
+    }
+
+    #[test]
+    fn test_timezone_grouping_uses_daylight_saving_rules() {
+        let before_transition = WaterEntry::new(
+            250,
+            DateTime::parse_from_rfc3339("2026-03-08T07:30:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        )
+        .unwrap();
+        let after_transition = WaterEntry::new(
+            350,
+            DateTime::parse_from_rfc3339("2026-03-08T08:30:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        )
+        .unwrap();
+        let date = NaiveDate::from_ymd_opt(2026, 3, 8).unwrap();
+
+        assert_eq!(
+            daily_total_ml_in_timezone(
+                &[before_transition, after_transition],
+                date,
+                chrono_tz::America::Chicago,
+            ),
+            600
+        );
+    }
+
+    #[test]
+    fn test_hydration_settings_reject_invalid_timezone() {
+        let settings = HydrationSettings {
+            timezone: "Central Time".to_string(),
+            ..HydrationSettings::default()
+        };
+        assert!(settings.validate().is_err());
+    }
+
+    #[test]
+    fn test_legacy_settings_json_defaults_timezone_to_utc() {
+        let settings: HydrationSettings = serde_json::from_str(
+            r#"{"daily_goal_ml":2000,"preferred_unit":"ml","quick_add_presets_ml":[500]}"#,
+        )
+        .unwrap();
+        assert_eq!(settings.timezone, "UTC");
     }
 
     #[test]

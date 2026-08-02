@@ -281,6 +281,8 @@ pub fn write_hydration_settings(doc: &mut AutoCommit, settings: &HydrationSettin
         },
     )
     .unwrap();
+    doc.put(&settings_id, "timezone", settings.timezone.as_str())
+        .unwrap();
 
     let presets_id = doc
         .put_object(&settings_id, "quick_add_presets_ml", ObjType::List)

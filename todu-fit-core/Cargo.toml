@@ -8,6 +8,7 @@ description = "Core library for Todu Fit - shared models and sync logic"
 automerge = "0.7"
 bs58 = { version = "0.5", features = ["check"] }
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
 ciborium = "0.2"
 futures = "0.3"
 reqwest = { version = "0.12", features = ["json"] }

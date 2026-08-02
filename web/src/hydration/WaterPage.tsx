@@ -1,21 +1,15 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useRepoState, RepoLoading } from '../repo'
 import { ConfirmDialog } from '../components'
 import { HydrationUnit, WaterEntry } from './types'
 import { formatHydrationAmount, useHydration } from './useHydration'
-
-function formatTimestamp(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-
-  return date.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
+import {
+  buildWaterHistory,
+  dateStringInTimezone,
+  formatTimestampInTimezone,
+  shiftDateString,
+} from './waterHistory'
 
 function formatGoalProgress(progress: number): string {
   return `${Math.min(Math.round(progress * 100), 999)}%`
@@ -32,18 +26,31 @@ export function WaterPage() {
 }
 
 function WaterPageContent({ currentGroupName }: { currentGroupName: string | null }) {
-  const { todayEntries, todayTotalMl, goalProgress, settings, addEntry, deleteEntry, isLoading, helpers } = useHydration()
+  const { entries, todayEntries, todayTotalMl, goalProgress, settings, addEntry, deleteEntry, isLoading, helpers } = useHydration()
   const [customAmount, setCustomAmount] = useState('')
   const [customUnit, setCustomUnit] = useState<HydrationUnit>(settings.preferredUnit)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<WaterEntry | null>(null)
+  const configuredToday = dateStringInTimezone(new Date(), settings.timezone)
+  const [historyFrom, setHistoryFrom] = useState(() => shiftDateString(configuredToday, -6))
+  const [historyTo, setHistoryTo] = useState(configuredToday)
 
   const totalLabel = helpers.formatHydrationAmount(todayTotalMl, settings.preferredUnit)
   const goalLabel = helpers.formatHydrationAmount(settings.dailyGoalMl, settings.preferredUnit)
   const progressWidth = `${Math.min(goalProgress * 100, 100)}%`
 
   const recentEntries = useMemo(() => todayEntries.slice(0, 10), [todayEntries])
+  const historyDays = useMemo(
+    () => buildWaterHistory(entries, historyFrom, historyTo, settings.timezone),
+    [entries, historyFrom, historyTo, settings.timezone],
+  )
+  const historyRangeIsValid = historyFrom <= historyTo
+
+  useEffect(() => {
+    setHistoryFrom(shiftDateString(configuredToday, -6))
+    setHistoryTo(configuredToday)
+  }, [configuredToday])
 
   const handleQuickAdd = (amountMl: number) => {
     try {
@@ -215,7 +222,7 @@ function WaterPageContent({ currentGroupName }: { currentGroupName: string | nul
 
       <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-colors">
         <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">Recent entries</h2>
-        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Today only. No history or reporting view is included here.</p>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Today in {settings.timezone}.</p>
         {recentEntries.length === 0 ? (
           <p className="mt-4 text-sm italic text-gray-500 dark:text-gray-400">No water logged yet today.</p>
         ) : (
@@ -227,7 +234,7 @@ function WaterPageContent({ currentGroupName }: { currentGroupName: string | nul
               >
                 <div>
                   <p className="font-medium text-gray-900 dark:text-gray-100">{formatHydrationAmount(entry.amountMl, settings.preferredUnit)}</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{formatTimestamp(entry.consumedAt)}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{formatTimestampInTimezone(entry.consumedAt, settings.timezone)}</p>
                 </div>
                 <button
                   onClick={() => setDeleteTarget(entry)}
@@ -241,10 +248,83 @@ function WaterPageContent({ currentGroupName }: { currentGroupName: string | nul
         )}
       </section>
 
+      <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-colors">
+        <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">History</h2>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+          Dates are inclusive calendar days in {settings.timezone}. Timestamps are stored in UTC and displayed in that timezone.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label htmlFor="water-history-from" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">From</label>
+            <input
+              id="water-history-from"
+              type="date"
+              value={historyFrom}
+              onChange={(event) => setHistoryFrom(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+            />
+          </div>
+          <div>
+            <label htmlFor="water-history-to" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To</label>
+            <input
+              id="water-history-to"
+              type="date"
+              value={historyTo}
+              onChange={(event) => setHistoryTo(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+            />
+          </div>
+        </div>
+        {!historyRangeIsValid ? (
+          <p className="mt-4 text-sm text-red-600 dark:text-red-400">From must be on or before To.</p>
+        ) : (
+          <div className="mt-5 space-y-4">
+            {historyDays.slice().reverse().map((day) => (
+              <div key={day.date} className="rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between bg-gray-50 px-4 py-3 dark:bg-gray-700/50">
+                  <h3 className="font-medium text-gray-900 dark:text-gray-100">{day.date}</h3>
+                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                    {formatHydrationAmount(day.totalMl, settings.preferredUnit)}
+                  </span>
+                </div>
+                {day.entries.length === 0 ? (
+                  <p className="px-4 py-3 text-sm italic text-gray-500 dark:text-gray-400">No water logged.</p>
+                ) : (
+                  <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                    {day.entries.map((entry) => (
+                      <div key={entry.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-gray-100">
+                            {formatHydrationAmount(entry.amountMl, settings.preferredUnit)}
+                          </p>
+                          <time
+                            dateTime={entry.consumedAt}
+                            title={`Stored as ${entry.consumedAt}`}
+                            className="text-sm text-gray-500 dark:text-gray-400"
+                          >
+                            {formatTimestampInTimezone(entry.consumedAt, settings.timezone)}
+                          </time>
+                        </div>
+                        <button
+                          onClick={() => setDeleteTarget(entry)}
+                          className="px-3 py-2 text-sm text-red-600 transition-colors hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <ConfirmDialog
         isOpen={deleteTarget !== null}
         title="Delete water entry"
-        message={deleteTarget ? `Delete ${helpers.formatHydrationAmount(deleteTarget.amountMl, settings.preferredUnit)} from today?` : ''}
+        message={deleteTarget ? `Delete ${helpers.formatHydrationAmount(deleteTarget.amountMl, settings.preferredUnit)} entry?` : ''}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
       />
