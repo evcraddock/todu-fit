@@ -533,6 +533,7 @@ fn read_dish_snapshots(doc: &AutoCommit, obj_id: &ObjId) -> Result<Vec<Dish>, Re
 
                 let tags = read_string_list(doc, &dish_id, "tags")?;
                 let ingredients = read_ingredients(doc, &dish_id)?;
+                let nutrients = read_nutrients(doc, &dish_id)?;
 
                 let prep_time = get_i64(doc, &dish_id, "prep_time")?.map(|v| v as i32);
                 let cook_time = get_i64(doc, &dish_id, "cook_time")?.map(|v| v as i32);
@@ -543,7 +544,7 @@ fn read_dish_snapshots(doc: &AutoCommit, obj_id: &ObjId) -> Result<Vec<Dish>, Re
                     name,
                     ingredients,
                     instructions,
-                    nutrients: None,
+                    nutrients,
                     prep_time,
                     cook_time,
                     servings,
@@ -1227,6 +1228,15 @@ mod tests {
         doc.put(&dish, "created_by", "testuser").unwrap();
         let _ = doc.put_object(&dish, "tags", ObjType::List).unwrap();
         let _ = doc.put_object(&dish, "ingredients", ObjType::List).unwrap();
+        let nutrients = doc.put_object(&dish, "nutrients", ObjType::List).unwrap();
+        let calories = doc.insert_object(&nutrients, 0, ObjType::Map).unwrap();
+        doc.put(&calories, "name", "calories").unwrap();
+        doc.put(&calories, "amount", 600.0).unwrap();
+        doc.put(&calories, "unit", "kcal").unwrap();
+        let protein = doc.insert_object(&nutrients, 1, ObjType::Map).unwrap();
+        doc.put(&protein, "name", "protein").unwrap();
+        doc.put(&protein, "amount", 30.0).unwrap();
+        doc.put(&protein, "unit", "g").unwrap();
 
         doc
     }
@@ -1247,6 +1257,13 @@ mod tests {
 
         assert_eq!(logs[0].dishes.len(), 1);
         assert_eq!(logs[0].dishes[0].name, "Snapshot Pasta");
+        assert_eq!(
+            logs[0].dishes[0].nutrients,
+            Some(vec![
+                Nutrient::new("calories", 600.0, "kcal"),
+                Nutrient::new("protein", 30.0, "g"),
+            ])
+        );
         assert_eq!(logs[0].portion_for(logs[0].dishes[0].id), 1.0);
     }
 

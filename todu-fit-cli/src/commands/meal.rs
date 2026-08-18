@@ -460,3 +460,44 @@ fn print_log_details(log: &MealLog) {
     println!();
     println!("Log ID: {}", log.id);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Dish, Nutrient};
+
+    #[test]
+    fn mixed_planned_and_unplanned_history_includes_portioned_nutrients() {
+        let date = NaiveDate::from_ymd_opt(2026, 8, 10).unwrap();
+        let planned_dish = Dish::new("Planned chicken", "test").with_nutrients(vec![
+            Nutrient::new("calories", 600.0, "kcal"),
+            Nutrient::new("protein", 40.0, "g"),
+        ]);
+        let planned_dish_id = planned_dish.id;
+        let planned = MealLog::new(date, MealType::Lunch, "test")
+            .with_mealplan_id(Uuid::new_v4())
+            .with_dishes(vec![planned_dish])
+            .with_dish_portion(planned_dish_id, 0.5);
+
+        let unplanned_dish = Dish::new("Unplanned shake", "test").with_nutrients(vec![
+            Nutrient::new("calories", 200.0, "kcal"),
+            Nutrient::new("protein", 20.0, "g"),
+        ]);
+        let unplanned =
+            MealLog::new(date, MealType::Snack, "test").with_dishes(vec![unplanned_dish]);
+        let logs = vec![planned, unplanned];
+
+        let json = serde_json::to_value(&logs).unwrap();
+        assert_eq!(json[0]["dishes"][0]["nutrients"][0]["amount"], 600.0);
+
+        let mut daily_totals = HashMap::new();
+        for log in &logs {
+            for (name, amount) in calculate_meal_nutrients(log) {
+                *daily_totals.entry(name).or_insert(0.0) += amount;
+            }
+        }
+
+        assert_eq!(daily_totals.get("calories"), Some(&500.0));
+        assert_eq!(daily_totals.get("protein"), Some(&40.0));
+    }
+}
