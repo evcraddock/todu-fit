@@ -1,5 +1,7 @@
 # Electron feasibility and migration research
 
+> Subsequent direction: [Shared Rust core with desktop and mobile apps](SHARED-CORE-APPS.md) records the proposal to replace the website, require Windows desktop support, and put the desktop application behind a Rust-core adapter. The recommendation below is the earlier frontend-reuse option, not an adopted implementation decision. Its security, authentication and distribution findings remain useful context.
+
 Task: `task-b06292ca` — Research converting the web app to an Electron app.
 
 Research date: 2026-11-02. Repository baseline: `796b6f1667156217e5683907d9075bb6fe88f4b7` (`main`). This is a research recommendation, not an implemented or runtime-validated desktop design. No application behavior, dependencies, or server configuration change with this document.
