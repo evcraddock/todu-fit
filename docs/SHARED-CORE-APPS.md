@@ -63,11 +63,11 @@ Platform-dependent facilities such as credentials, paths and application lifecyc
 
 The existing repository provides useful foundations:
 
-- [`todu-fit-core/src/lib.rs`](../todu-fit-core/src/lib.rs) exports models, nutrition/hydration calculations, identity/group types, Automerge storage/writers and sync APIs.
+- [`todu-fit-core/src/lib.rs`](../todu-fit-core/src/lib.rs) exports domain/nutrition models, hydration calculations, identity/group types, Automerge storage/writers and sync APIs.
 - [`todu-fit-cli/src/sync/`](../todu-fit-cli/src/sync/) contains additional application-facing repositories and orchestration that are not yet reusable through the core alone.
 - [`web/src/`](../web/src/) contains React screens and presentation code that could be adapted for Electron.
 
-The core is therefore a starting point, not already a complete application service suitable for every client. Some CLI-owned behavior would need extracting, and relevant TypeScript-only domain behavior would need reconciling with Rust. Reuse must preserve current behavior and existing document compatibility rather than copy implementations into a new adapter.
+The core is therefore a starting point, not already a complete application service suitable for every client. Some CLI-owned behavior would need extracting, and relevant TypeScript-only domain behavior—such as nutrition aggregation in `web/src/meals/mealPlanNutrition.ts`—would need migrating or reconciling with Rust. Reuse must preserve current behavior and existing document compatibility rather than copy implementations into a new adapter.
 
 An illustrative layout is:
 
