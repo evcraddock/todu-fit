@@ -4,20 +4,20 @@ use std::io::Write;
 
 use crate::config::Config;
 
-#[derive(Clone, ValueEnum, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, ValueEnum, Default)]
 pub enum OutputFormat {
     #[default]
     Text,
     Json,
 }
 
-#[derive(Args)]
+#[derive(serde::Serialize, serde::Deserialize, Args)]
 pub struct ConfigCommand {
     #[command(subcommand)]
     pub command: ConfigSubcommand,
 }
 
-#[derive(Subcommand)]
+#[derive(serde::Serialize, serde::Deserialize, Subcommand)]
 pub enum ConfigSubcommand {
     /// Show current configuration values
     Show {

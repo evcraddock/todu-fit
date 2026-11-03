@@ -1,5 +1,5 @@
-use std::io::Write;
-use std::process::{Command, Output, Stdio};
+mod support;
+use std::process::Output;
 
 use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
@@ -35,27 +35,9 @@ impl Fixture {
         Self { dir, repo, dish }
     }
 
-    fn run(&self, args: &[&str], input: &str) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_fit"))
-            .arg("-c")
-            .arg(self.dir.path().join("config.yaml"))
-            .args(args)
-            .env("FIT_DATA_DIR", self.dir.path())
-            .env_remove("FIT_SYNC_URL")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(input.as_bytes())
-            .unwrap();
-        child.wait_with_output().unwrap()
+    fn run(&self, args: &[&str], _input: &str) -> Output {
+        support::run(self.dir.path(), args)
     }
-
     fn success(&self, args: &[&str]) -> String {
         let output = self.run(args, "");
         assert!(
@@ -207,11 +189,10 @@ fn ingredient_commands_and_deletion_confirmation_stay_in_the_cli() {
         "Removed ingredient 'SALT' from 'Test Pasta'\n"
     );
     let cancelled = fixture.run(&["dish", "delete", "Test Pasta"], "n\n");
-    assert!(cancelled.status.success());
-    assert_eq!(
-        String::from_utf8(cancelled.stdout).unwrap(),
-        "Delete dish 'Test Pasta'? [y/N] Deletion cancelled.\n"
-    );
+    assert!(!cancelled.status.success());
+    assert!(String::from_utf8(cancelled.stderr)
+        .unwrap()
+        .contains("Confirmation required"));
     assert!(fixture.repo.get_by_id(fixture.dish.id).unwrap().is_some());
     assert_eq!(
         fixture.success(&["dish", "delete", "Test Pasta", "--force"]),

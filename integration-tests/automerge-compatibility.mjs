@@ -1,7 +1,7 @@
 // Isolated CLI <-> JavaScript Repo check. Does not use the managed dev environment.
 // Run: make build && node integration-tests/automerge-compatibility.mjs target/release/fit
 import assert from 'node:assert/strict'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -18,9 +18,9 @@ const { WebSocketServer } = require('ws')
 const exec = promisify(execFile)
 const repository = fileURLToPath(new URL('../', import.meta.url))
 const binary = resolve(repository, process.argv[2] ?? 'target/debug/fit')
-const directory = await mkdtemp(join(tmpdir(), 'fit-automerge-compatibility-'))
+const directory = await mkdtemp(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'fit-compat-'))
 const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
-let repo
+let repo, daemon, joinedDaemon
 
 try {
   await once(server, 'listening')
@@ -40,6 +40,14 @@ try {
     })
     return result.stdout
   }
+  daemon = spawn(binary, ['-c', config, 'daemon'], { env: { ...process.env, FIT_DATA_DIR: data, FIT_SYNC_URL: url }, stdio: ['ignore', 'ignore', 'inherit'] })
+  const deadline = Date.now() + 10000
+  while (true) {
+    try { await readFile(join(data, 'daemon.endpoint')); break } catch {}
+    assert(Date.now() < deadline && daemon.exitCode === null, 'daemon startup')
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  const rootIdOf = async () => /^ID: (.+)$/m.exec(await fit('device', 'show'))[1]
   const find = async id => repo.find(`automerge:${String(id)}`, { signal: AbortSignal.timeout(10_000) })
   const metadata = handle => {
     const value = handle.doc().data
@@ -58,7 +66,25 @@ try {
   await fit('shopping', 'check', 'Soap', '--week', '2026-07-19')
   await fit('water', 'set', '--goal', '1000', '--unit', 'ml', '--display-unit', 'ml', '--timezone', 'America/Chicago', '--presets', '250,500')
   await fit('sync')
-  const rootId = (await readFile(join(data, 'root_doc_id'), 'utf8')).trim()
+  const rootId = await rootIdOf()
+  // Fresh daemon joins the supplied identity and discovers referenced documents.
+  const joinedData = join(directory, 'joined')
+  const joinedConfig = join(directory, 'joined.yaml')
+  await writeFile(joinedConfig, `data_dir: ${JSON.stringify(joinedData)}\nsync:\n  server_url: ${JSON.stringify(url)}\n  auto_sync: false\n`)
+  const joinedEnv = { ...process.env, FIT_DATA_DIR: joinedData, FIT_SYNC_URL: url }
+  joinedDaemon = spawn(binary, ['-c', joinedConfig, 'daemon'], { env: joinedEnv, stdio: ['ignore', 'ignore', 'inherit'] })
+  const joinedDeadline = Date.now() + 10000
+  while (true) {
+    try { await readFile(join(joinedData, 'daemon.endpoint')); break } catch {}
+    assert(Date.now() < joinedDeadline && joinedDaemon.exitCode === null, 'joined daemon startup')
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  const joinedFit = async (...args) => (await exec(binary, ['-c', joinedConfig, ...args], { env: joinedEnv, timeout: 60000 })).stdout
+  await joinedFit('init', '--join', rootId)
+  await joinedFit('sync')
+  assert.match(await joinedFit('device', 'show'), new RegExp(rootId))
+  assert.match(await joinedFit('dish', 'list'), /CLI Café/)
+  console.log('PASS fresh daemon joins exact root ID and discovers referenced group/feature documents')
   const identity = metadata(await find(rootId))
   const group = metadata(await find(identity.groups[0].doc_id))
   const dishes = await find(group.dishes_doc_id)
@@ -94,7 +120,7 @@ try {
   await fit('dish', 'update', jsDishId, '--instructions', 'Changed after reconnect')
   await fit('sync')
   assert.equal(String(dishes.doc()[jsDishId].instructions), 'Changed after reconnect')
-  assert.equal((await readFile(join(data, 'root_doc_id'), 'utf8')).trim(), rootId)
+  assert.equal(await rootIdOf(), rootId)
   console.log('PASS Rust update after reconnect -> JS, preserving the identity ID')
 
   await fit('mealplan', 'create', '--date', '2026-11-01', '--type', 'dinner',
@@ -160,7 +186,7 @@ try {
   await fit('sync')
   assert.equal(await fit('mealplan', 'list', '--from', '2026-11-01', '--to', '2026-11-02'), 'No meal plans found\n')
   assert.equal(await fit('meal', 'history', '--from', '2026-11-01', '--to', '2026-11-02'), 'No meal history found for 2026-11-01 to 2026-11-02\n')
-  assert.equal((await readFile(join(data, 'root_doc_id'), 'utf8')).trim(), rootId)
+  assert.equal(await rootIdOf(), rootId)
   console.log('PASS meal plan/log deletions both directions with unchanged identity')
 
   const week = '2026-07-19'
@@ -218,7 +244,7 @@ try {
   await fit('sync')
   assert.equal(await fit('water', 'recent', '-f', 'json'), 'No water entries found\n')
   assert.equal(metadata(await find(rootId)).hydration_doc_id, identity.hydration_doc_id)
-  assert.equal((await readFile(join(data, 'root_doc_id'), 'utf8')).trim(), rootId)
+  assert.equal(await rootIdOf(), rootId)
   console.log('PASS personal hydration settings/entries, timezone totals and deletions both directions')
 
   await fit('dish', 'delete', jsDishId, '--force')
@@ -229,6 +255,8 @@ try {
   assert.equal(await fit('dish', 'list', '--format', 'json'), 'No dishes found\n')
   console.log('PASS CLI and JS dish deletions converge in both directions')
 } finally {
+  if (joinedDaemon && joinedDaemon.exitCode === null) { const stopped = once(joinedDaemon, 'exit'); joinedDaemon.kill('SIGKILL'); await stopped }
+  if (daemon && daemon.exitCode === null) { const stopped = once(daemon, 'exit'); daemon.kill('SIGKILL'); await stopped }
   if (repo) await repo.shutdown()
   for (const client of server.clients) client.terminate()
   await new Promise((resolveClose, reject) => server.close(error => error ? reject(error) : resolveClose()))

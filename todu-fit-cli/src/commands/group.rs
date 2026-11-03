@@ -9,13 +9,13 @@ use todu_fit_core::{DocumentId, Identity, IdentityState, MultiDocStorage};
 use crate::config::Config;
 
 /// Manage groups for shared dishes and meal plans
-#[derive(Args)]
+#[derive(serde::Serialize, serde::Deserialize, Args)]
 pub struct GroupCommand {
     #[command(subcommand)]
     pub command: GroupSubcommand,
 }
 
-#[derive(Subcommand)]
+#[derive(serde::Serialize, serde::Deserialize, Subcommand)]
 pub enum GroupSubcommand {
     /// Create a new group
     Create {
@@ -275,7 +275,7 @@ impl GroupCommand {
                     io::stdout().flush()?;
 
                     let mut input = String::new();
-                    io::stdin().read_line(&mut input)?;
+                    crate::output::read_confirmation(&mut input)?;
 
                     if !input.trim().eq_ignore_ascii_case("y") {
                         println!("Cancelled.");

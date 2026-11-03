@@ -8,20 +8,20 @@ use crate::models::{MealPlan, MealType};
 use crate::sync::{SyncDishRepository, SyncMealPlanRepository};
 use todu_fit_core::{MealPlanDraft, MealPlanUpdate};
 
-#[derive(Clone, ValueEnum, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, ValueEnum, Default)]
 pub enum OutputFormat {
     #[default]
     Text,
     Json,
 }
 
-#[derive(Args)]
+#[derive(serde::Serialize, serde::Deserialize, Args)]
 pub struct MealPlanCommand {
     #[command(subcommand)]
     pub command: MealPlanSubcommand,
 }
 
-#[derive(Subcommand)]
+#[derive(serde::Serialize, serde::Deserialize, Subcommand)]
 pub enum MealPlanSubcommand {
     /// Create a new meal plan
     Create {
@@ -404,7 +404,7 @@ impl MealPlanCommand {
                     io::stdout().flush()?;
 
                     let mut input = String::new();
-                    io::stdin().read_line(&mut input)?;
+                    crate::output::read_confirmation(&mut input)?;
 
                     if !input.trim().eq_ignore_ascii_case("y") {
                         println!("Deletion cancelled.");

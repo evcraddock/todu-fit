@@ -1,162 +1,83 @@
-# Shared Rust core with desktop and mobile apps
+# Shared Rust Core and installed applications
 
-## Purpose and status
+## Selected architecture
 
-This proposal describes a direction for replacing the todu-fit website with installed desktop and mobile applications, while keeping one reusable Rust application engine. It follows the discussion associated with `task-b06292ca`.
-
-The idea borrowed from Rott is **a portable core with separate application adapters**. The platform direction selected on November 3, 2026 is Electron with React/TypeScript for Windows and macOS, while retaining Swift/SwiftUI for iOS. Both interfaces call the same Rust core through language-appropriate adapters.
-
-The platform direction is approved; the detailed implementation plan remains to be defined. The initial bridge proof is described below; no existing website, service or user data is changed by this document. Agent integration is deferred and is not a prerequisite for delivering the apps.
-
-The first local native-addon proof is now implemented in [`apps/desktop`](../apps/desktop/README.md), with a thin napi-rs adapter in `adapters/desktop`. The packaged macOS arm64 create/quit/reopen dish flow has passed locally. Windows automation is present but remains unverified and nonblocking for this milestone. The candidate discussion below records the original proposal; the proof uses the native Node addon approach, not a sidecar. This does not establish release or migration readiness.
-
-## Product direction
-
-- Replace the browser website with installed desktop and mobile applications rather than maintain it as another long-term client.
-- Support Windows and macOS with one Electron desktop interface. CPU architectures and supported OS versions remain to be agreed.
-- Reuse the existing React/TypeScript presentation where practical, backed by `todu-fit-core` rather than a second application engine in JavaScript.
-- Retain Swift/SwiftUI for the existing iOS application and connect it to the same Rust core through a Swift adapter. Android is outside the selected platform scope.
-- Keep the CLI as another consumer of the shared core.
-
-The website can remain available temporarily during development and migration. Replacing the website does not mean removing the synchronization or other hosted services the installed apps still need.
-
-## Proposed architecture
+The selected direction is Electron/React on macOS and Windows, with reusable application
+behavior in Rust Core. The CLI and desktop use **one local Rust daemon owning persistence
+and network sync**, rather than opening independent Core stores or sharing a writable folder.
+The daemon remains usable with no desktop window open. This supersedes the per-client
+napi-rs ownership model from the initial Electron proof (`task-b06292ca`). Implementation
+belongs to `task-8a47646c`; it is not a release or a real-data migration.
 
 ```text
-Windows/macOS app: Electron + React/TypeScript
-  Presentation, windows, menus, navigation
-                     |
-           Typed Electron preload API
-                     |
-          Electron main-process adapter
-                     |
-          TypeScript-to-Rust bridge
-                     |
-                     v
-               todu-fit-core <---------- CLI
-                     ^
-                     |
-             Swift-to-Rust adapter
-                     |
-        iOS app: Swift/SwiftUI and native services
-
-      Core-managed synchronization <----> Hosted sync service
+CLI parsing/output ─────────────┐
+                               ├── typed local IPC ── Rust daemon ── Rust Core
+Electron + React               │                          │               │
+  sandboxed preload → main ────┘                          │          domain rules
+                                                          │          Automerge sync
+                                                durable local store       │
+                                                                          ↕
+                                                                   hosted sync server
 ```
 
-The renderer does not receive unrestricted Node.js, filesystem or Rust-library access. Electron main owns the desktop bridge; a narrow preload API exposes application operations and events to the renderer.
+The initial implementation hosts the daemon as `fit daemon` so the existing CLI adapters
+can be reused without duplicating domain operations. Unix sockets serve macOS/Linux;
+Windows has a named-pipe implementation awaiting runtime verification. The service lifecycle
+is explicit foreground startup, independent of Electron. No installer/service registration
+or user-daemon restart is part of this work.
 
-Adapters are separate from the portable core. A Node binding, mobile binding generator, GUI framework or platform credential API must not become a requirement for ordinary Rust core consumers such as the CLI.
+See [DAEMON.md](DAEMON.md) for protocol, durability, failure/retry semantics, configuration,
+validation, compatibility changes, and the safe adoption plan.
 
 ## Responsibilities
 
-| Layer | Owns | Should not own |
-| --- | --- | --- |
-| `todu-fit-core` | Domain operations, validation, nutrition calculations, identity/group document operations, Automerge persistence, synchronization behavior and reusable application services. | React/Swift/UI types, Electron windows, bridge-generator annotations, platform credential stores or automatic discovery of an app's global state. |
-| Desktop Rust/TypeScript adapter | Binding-friendly inputs/results/errors, asynchronous execution, event delivery, cancellation and resource lifetime translation. | A competing meal-planning model or another persistence/sync implementation. |
-| Electron main and preload | App lifecycle, validated renderer requests, window/platform integration, secure credential access and coordination with the core session. | Arbitrary privileged APIs exposed to renderer content. |
-| React renderer | Screens, forms, navigation, transient presentation state and displaying operation/sync results. | Its own authoritative Automerge repo, durable document store or duplicate domain rules. |
-| Mobile adapter and app | Platform bindings, presentation, app/background lifecycle and platform-service integration. | Independent implementations of the core's domain and document behavior. |
-| Hosted services | Cross-device synchronization and any separately retained account, authentication or public-feed services. | The only copy of local data needed to use an already initialized app offline. |
+| Component | Owns |
+| --- | --- |
+| `todu-fit-core` | Models, validation, nutrition, dishes, meal plans/logs, shopping, hydration, identity/group operations and Automerge sync coordination |
+| Rust daemon | Exclusive local ownership, transactional persistence, request replay, local transport, bounded connections and independent sync scheduling |
+| CLI adapter | Argument parsing, validation, output formatting, client errors and configuration commands |
+| Electron main/preload | Validated renderer IPC, daemon connection, platform/window lifecycle |
+| React | Presentation and transient view state; refreshes on committed revision changes |
+| Hosted sync service | Cross-device synchronization, not the only durable copy |
 
-Platform-dependent facilities such as credentials, paths and application lifecycle should be supplied explicitly through adapter boundaries. Remote authorization remains enforced by the relevant server; sharing a local Rust core does not replace server-side access checks.
+Core has no Electron, Node binding or UI dependency. Repositories execute in disposable
+transaction workspaces under the daemon; document bytes and successful mutation receipts
+commit atomically in SQLite before success reaches either client. A network failure cannot
+invalidate a successful local save. A network exchange does not hold the local-operation lock.
 
-## What can be reused today
+## Existing reusable work
 
-The existing repository provides useful foundations:
+Core already shares dish CRUD/ingredients, meal-plan/log operations, referenced-dish hydration
+and nutrients, shopping aggregation/cart updates, water/settings calculations, identity/group
+handling, and `SyncCoordinator`. The daemon calls these implementations. Existing React
+screens can be adapted incrementally; the current desktop slice remains list/create dishes.
+Remaining desktop screens are separate work.
 
-- [`todu-fit-core/src/lib.rs`](../todu-fit-core/src/lib.rs) exports domain/nutrition models, hydration calculations, identity/group types, Automerge storage/readers/writers and sync APIs. [`dishes.rs`](../todu-fit-core/src/dishes.rs) now provides local dish CRUD/query/ingredient operations and field updates; [`context.rs`](../todu-fit-core/src/context.rs) resolves supplied data-root and group selections. [`meal_plans.rs`](../todu-fit-core/src/meal_plans.rs) and [`meal_logs.rs`](../todu-fit-core/src/meal_logs.rs) share meal-plan CRUD/query/update rules, planned/unplanned logging, food-log history readers, referenced-dish hydration and nutrient aggregation. [`shopping.rs`](../todu-fit-core/src/shopping.rs) shares cart mutations and weekly ingredient views; [`hydration.rs`](../todu-fit-core/src/hydration.rs) shares personal water/settings operations and reuses the existing calculations. The CLI supplies the existing lazy host-timezone detector; Core does not discover platform settings. These operations do not trigger network sync.
-- [`todu-fit-core/src/sync/coordinator.rs`](../todu-fit-core/src/sync/coordinator.rs) provides `SyncCoordinator` with an explicit server URL and `MultiDocStorage`. It syncs identity metadata, personal documents, then each group and its documents, using the existing Core protocol client. Discovery, per-document persistence and structured results/errors are shared. [`todu-fit-cli/src/sync/`](../todu-fit-cli/src/sync/) retains configuration adaptation, CLI error guidance, runtime ownership and auto-sync reporting; command handlers retain terminal output.
-- [`web/src/`](../web/src/) contains React screens and presentation code that could be adapted for Electron.
-- The separate `todu-fit-ios` repository contains SwiftUI screens and Apple-specific integrations to retain. Its current Swift-owned storage and sync would need a coordinated transition to Rust Core ownership.
+The old napi-rs adapter and dedicated worker remain available as historical isolated proof
+code. They are not used by normal desktop startup. Their previous packaged macOS arm64
+success establishes only that earlier proof; current daemon evidence is recorded separately.
+The proof user's existing documents are preserved and are not adopted automatically.
 
-The core is therefore a starting point, not already a complete application service suitable for every client. Some CLI-owned behavior would need extracting, and relevant TypeScript-only domain behavior—such as nutrition aggregation in `web/src/meals/mealPlanNutrition.ts`—would need migrating or reconciling with Rust. Reuse must preserve current behavior and existing document compatibility rather than copy implementations into a new adapter.
+## Identity, sync and adoption
 
-The [Automerge upgrade notes](AUTOMERGE-COMPATIBILITY.md) record the upgrade to the latest stable Rust/web releases and the compatibility checks. The dependency upgrade preceded the dish extraction. Dish, meal-plan, food-log, shopping and hydration operations are now shared through Core without changing document formats. CLI sync orchestration is now shared too. It preserves per-document connections, acknowledged convergence, partial persistence on failure, and the existing skip policy for unreadable group metadata; it introduces no background worker or UI event contract.
+There is no web login requirement. Supply the existing sync server address in daemon
+configuration and explicitly join the desired root document ID. Core follows its group and
+feature-document references. A fresh identity requires an explicit `init --new`; missing or
+unavailable remote data never triggers replacement identity creation.
 
-The feature-path review confirmed that dish mutations, meal-plan/log operations, shopping aggregation/cart persistence and hydration calculations/settings persistence call Core repositories. CLI argument parsing and validation, date defaults, confirmation prompts, host-timezone detection, output shaping and before/after-command sync triggers remain adapter responsibilities. The existing JavaScript Repo fixture covers initialized stores; it does not establish discovery for previously empty stores. The Repo negative-timeout warning remains reproducible with the pre-extraction `07a47fb` CLI, independently of its acknowledged-convergence fix.
+Local saving and network synchronization are separate states. The hosted sync service remains
+needed even if the website is eventually retired. Existing unsynced browser edits must be
+reconciled before browser retirement. Preserve root/group/document IDs and personal/shared
+boundaries throughout any future adoption. Real-data import, deployment and old-client
+cutover require a separately approved, verified migration.
 
-An illustrative layout is:
+## Later work and boundaries
 
-```text
-todu-fit-core/       portable domain, storage, sync and application APIs
-todu-fit-cli/        command parsing, output and core calls
-adapters/desktop/   Rust exports and TypeScript binding contract
-apps/desktop/       Electron main/preload and React presentation
-adapters/mobile/    Swift-to-Rust bindings for iOS
-todu-fit-ios/       existing separate SwiftUI app repository
-```
+Swift/SwiftUI and a separate Rust adapter remain the intended iOS direction; iOS lifecycle,
+background sync and binding selection are outside this daemon task. Android is outside scope.
+Agent integrations, Pi extensions and remote daemon access are deferred. No public HTTP or
+remote-control interface is introduced.
 
-These paths illustrate boundaries, not a committed repository reorganization or a decision to move the iOS repository into this monorepo. Existing code can move incrementally when an implementation plan is approved.
-
-## A TypeScript-to-Rust bridge
-
-The desktop bridge should expose application operations, not raw Automerge objects or unrestricted filesystem primitives. For example, a renderer could request a dish list, save a meal log or record a water entry, then receive typed results and change notifications. Naming and exact API shapes still need design.
-
-Two implementation approaches are candidates:
-
-1. **Native Node addon:** an adapter, potentially using napi-rs, makes Rust-backed functions available to Electron main. This requires proving that the selected binding/toolchain and packaged binaries work with the supported Electron versions, operating systems and architectures.
-2. **Rust sidecar:** Electron main starts a separate Rust process and communicates over a bounded, typed process protocol. This requires process discovery/startup, request/event framing, cancellation, crash handling and clean shutdown. A sidecar does not require exposing a localhost HTTP server.
-
-Neither approach is selected here. Prefer the smallest approach that demonstrates the required operations, lifecycle guarantees and Windows/macOS packaging. TypeScript interfaces alone do not validate messages at runtime; validate renderer IPC and binding inputs at their respective trust boundaries.
-
-The iOS app needs a separate Swift-to-Rust adapter. UniFFI, as used by Rott's Apple adapter, is a candidate, not a selected todu-fit dependency. Electron and iOS share the core application APIs, but do not need to use the same binding generator.
-
-Bridge acceptance should include:
-
-- File/network work does not block the renderer or Electron's main event loop.
-- A core session has explicit ownership of storage and sync resources; adapters do not accidentally create competing sessions for the same data root.
-- Structured errors, document-change notifications and sync state reach the UI without leaking credentials or private data into diagnostics.
-- Cancellation semantics distinguish unfinished work from an operation that already committed successfully.
-- Closing a window, quitting the app, switching identities and shutting down a sidecar release resources predictably and preserve pending local writes.
-- Installed Windows and macOS packages can load/start the Rust component, not merely compile it during development.
-
-## How this differs from wrapping the website
-
-The current web application creates its own JavaScript Automerge repo backed by IndexedDB. Under this proposal, the desktop app would instead use Rust-managed document storage and synchronization through the bridge. React hooks would become clients of that application API.
-
-This is a larger change than bundling the website into an Electron window, but it avoids maintaining separate Rust and TypeScript implementations of the application engine. The renderer may cache presentation data; the core remains authoritative for durable state and domain operations.
-
-The initial [Electron research](ELECTRON-RESEARCH.md) recommended preserving the browser engine to maximize frontend reuse. This proposal changes that objective: prioritize shared application behavior across the CLI, desktop and mobile apps, while reusing React presentation where practical.
-
-## Agent integration — deferred
-
-Agent assistance, such as helping create dishes or propose meal plans, can be added later. It is not required for the core refactor, desktop delivery or iOS transition. Keep shared operations callable through clear core APIs so future agent tools can use the same behavior as the interfaces; do not add Pi-specific dependencies to the core.
-
-Electron's Node environment offers a path to integrate Pi's JavaScript/TypeScript libraries directly. A separate daemon managing an agent could also serve desktop clients and, through an authenticated network interface, iOS clients. These are possible future approaches, not a selected or implemented agent architecture. Agent tools, streaming chat, runtime lifecycle and any daemon/network interface belong to later work.
-
-## Hosted services and authentication
-
-Retiring the website removes the browser UI as a supported product; it does not automatically remove every Hono endpoint or the sync server.
-
-Before implementation, decide:
-
-- How devices authenticate and receive/revoke credentials, and how those credentials authorize synchronization.
-- Whether any hosted login/account-management pages remain as support surfaces rather than a full web application.
-- Whether existing calendar subscription feeds remain a supported feature. Publicly reachable feeds cannot depend on the desktop app staying open.
-- Which existing Hono services are retained, replaced or retired, and in what order.
-
-Apps should store credentials using their platform's protected storage through explicit interfaces. Offline access to existing local documents must not depend on a successful `/auth/me` request at every launch. Remote session expiry/revocation, local cached access and destructive account removal need separate, documented policies.
-
-## Migration and delivery principles
-
-1. Inventory current Rust and TypeScript behavior and define the shared core API around real use cases.
-2. Prove one vertical desktop slice—such as list/save a dish—through React, Electron IPC, the Rust adapter and durable storage. Include Windows/macOS packaging and offline reopen in the proof.
-3. Move reusable CLI orchestration into the core without changing CLI behavior or the Automerge schema unnecessarily.
-4. Expand desktop features and mobile adapters incrementally, with interoperability and lifecycle checks appropriate to each client.
-5. Migrate existing identities and data, verify parity, then retire the website through an explicit deployment decision.
-
-Preserve existing identity/group/document IDs and personal-versus-shared boundaries. Browser IndexedDB is not automatically the Rust app's storage: existing unsynced browser edits must reach the sync service or be recovered through an explicit export/import path before retirement. Never silently create replacement identities or delete old stores. Test convergence among old and new clients during the transition.
-
-## Open decisions
-
-- CPU architectures and supported OS versions for Windows, macOS and iOS.
-- Native addon versus sidecar for Electron, and concrete desktop and Swift bridge tooling.
-- Core API, event contract, execution model and platform-service injection boundaries.
-- Authentication, hosted-service footprint and calendar subscription requirements.
-- Offline cached-access policy, local-data protection, backups and account-removal behavior.
-- Installer signing, updates, CI coverage and release ownership for each supported platform.
-- Later agent integration: direct desktop embedding versus daemon hosting, tool transport and remote iOS access. These decisions do not block the initial apps.
-
-## Summary
-
-The selected direction is **one Rust application engine, Electron/React for Windows and macOS, and Swift/SwiftUI for iOS**, connected through separate adapters. The desktop app becomes a client of `todu-fit-core`, with reusable React presentation and Rust-owned application behavior. Agent integration can follow later. Rott provides the architectural pattern, not a requirement to copy its product-specific implementation.
+Signing, updates, supported OS/CPU matrices, service installation, remaining feature screens,
+large-store optimizations and persistent desktop retry intents remain separate decisions.
+The current change must be validated and reviewed before any release or adoption of user data.

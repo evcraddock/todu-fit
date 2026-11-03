@@ -11,7 +11,7 @@ use todu_fit_core::{DocumentId, Identity, IdentityState, MultiDocStorage};
 use crate::config::Config;
 
 /// Initialize a new identity or join an existing one
-#[derive(Args)]
+#[derive(serde::Serialize, serde::Deserialize, Args)]
 pub struct InitCommand {
     /// Create a new identity
     #[arg(long, conflicts_with = "join")]
@@ -93,7 +93,7 @@ impl InitCommand {
         io::stdout().flush()?;
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
+        crate::output::read_confirmation(&mut input)?;
 
         Ok(input.trim().eq_ignore_ascii_case("y"))
     }

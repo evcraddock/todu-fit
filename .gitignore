@@ -23,3 +23,5 @@ web/tsconfig.node.tsbuildinfo
 /apps/desktop/out/
 /apps/desktop/native/
 /apps/desktop/test-results/
+
+/apps/desktop/daemon/

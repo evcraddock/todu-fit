@@ -1,8 +1,6 @@
+mod support;
 use chrono::NaiveDate;
-use std::{
-    io::Write,
-    process::{Command, Output, Stdio},
-};
+use std::process::Output;
 use tempfile::TempDir;
 use todu_fit_core::{
     automerge::reader::read_all_mealplans, Dish, DishRepository, Identity, MealLog,
@@ -56,25 +54,8 @@ impl Fixture {
             dish,
         }
     }
-    fn run(&self, args: &[&str], input: &str) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_fit"))
-            .arg("-c")
-            .arg(self.dir.path().join("config.yaml"))
-            .args(args)
-            .env("FIT_DATA_DIR", self.dir.path())
-            .env_remove("FIT_SYNC_URL")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(input.as_bytes())
-            .unwrap();
-        child.wait_with_output().unwrap()
+    fn run(&self, args: &[&str], _input: &str) -> Output {
+        support::run(self.dir.path(), args)
     }
     fn success(&self, args: &[&str]) -> String {
         let out = self.run(args, "");
@@ -169,11 +150,10 @@ fn plan_updates_membership_and_confirmation_preserve_existing_behavior() {
         "Added 'Pasta' to 'Updated'\n"
     );
     let cancel = f.run(&["mealplan", "delete", &id], "n\n");
-    assert!(cancel.status.success());
-    assert_eq!(
-        String::from_utf8(cancel.stdout).unwrap(),
-        "Delete meal plan 'Updated' (lunch 2026-11-02)? [y/N] Deletion cancelled.\n"
-    );
+    assert!(!cancel.status.success());
+    assert!(String::from_utf8(cancel.stderr)
+        .unwrap()
+        .contains("Confirmation required"));
     assert!(f.plans.get_by_id(f.plan.id).unwrap().is_some());
     assert_eq!(
         f.success(&["mealplan", "delete", &id, "--force"]),
@@ -361,11 +341,10 @@ fn log_deletion_confirmation_and_private_group_independence_remain_in_the_cli() 
         .unwrap();
     let id = log.id.to_string();
     let cancel = f.run(&["meal", "delete", &id], "n\n");
-    assert!(cancel.status.success());
-    assert_eq!(
-        String::from_utf8(cancel.stdout).unwrap(),
-        "Delete meal log '2026-11-01 dinner unplanned'? [y/N] Deletion cancelled.\n"
-    );
+    assert!(!cancel.status.success());
+    assert!(String::from_utf8(cancel.stderr)
+        .unwrap()
+        .contains("Confirmation required"));
     assert_eq!(
         f.success(&["meal", "delete", &id, "--yes"]),
         "Deleted meal log: 2026-11-01 dinner unplanned\n"

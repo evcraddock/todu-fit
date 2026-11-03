@@ -10,20 +10,20 @@ use crate::sync::{SyncDishRepository, SyncMealPlanRepository, SyncShoppingReposi
 use todu_fit_core::shopping::{week_start as get_week_start, ShoppingList};
 use todu_fit_core::ManualItem;
 
-#[derive(Clone, ValueEnum, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, ValueEnum, Default)]
 pub enum OutputFormat {
     #[default]
     Table,
     Json,
 }
 
-#[derive(Args)]
+#[derive(serde::Serialize, serde::Deserialize, Args)]
 pub struct ShoppingCommand {
     #[command(subcommand)]
     pub command: ShoppingSubcommand,
 }
 
-#[derive(Subcommand)]
+#[derive(serde::Serialize, serde::Deserialize, Subcommand)]
 pub enum ShoppingSubcommand {
     /// List shopping cart items for a week
     List {

@@ -21,13 +21,11 @@
 //! let meallogs = MealLogsDoc::new();
 //! ```
 
-pub mod auto_sync;
 pub mod client;
 #[cfg(test)]
 pub mod schema;
 pub mod writer;
 
-pub use auto_sync::try_auto_sync;
 pub use client::{SyncClient, SyncClientError};
 pub use todu_fit_core::DishRepository as SyncDishRepository;
 pub use todu_fit_core::{

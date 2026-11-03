@@ -2,15 +2,17 @@
   "name": "todu-fit-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Todu Fit native Core desktop proof",
+  "description": "Todu Fit shared daemon desktop client",
   "author": "Todu",
   "main": "electron/main.cjs",
   "scripts": {
     "build:native": "node scripts/build-native.cjs",
-    "build": "npm run build:native && tsc --noEmit && vite build",
+    "build": "npm run build:daemon && tsc --noEmit && vite build",
     "package": "npm run build && electron-builder --dir",
-    "test": "node --test tests/native.cjs",
-    "test:packaged": "node tests/packaged.cjs"
+    "test": "node --test tests/daemon.cjs",
+    "test:packaged": "node tests/packaged.cjs",
+    "build:daemon": "node scripts/build-daemon.cjs",
+    "test:native-proof": "node --test tests/native.cjs"
   },
   "build": {
     "appId": "com.todu.fit.proof",
@@ -25,8 +27,8 @@
     ],
     "extraResources": [
       {
-        "from": "native",
-        "to": "native"
+        "from": "daemon",
+        "to": "daemon"
       }
     ],
     "mac": {

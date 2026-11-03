@@ -11,12 +11,12 @@ mod water;
 
 pub use config_cmd::ConfigCommand;
 pub use device::DeviceCommand;
-pub use dish::{DishCommand, DishSubcommand};
-pub use group::{GroupCommand, GroupSubcommand};
+pub use dish::DishCommand;
+pub use group::GroupCommand;
 pub use init::InitCommand;
-pub use meal::{MealCommand, MealSubcommand};
-pub use mealplan::{MealPlanCommand, MealPlanSubcommand};
-pub use shopping::{ShoppingCommand, ShoppingSubcommand};
+pub use meal::MealCommand;
+pub use mealplan::MealPlanCommand;
+pub use shopping::ShoppingCommand;
 pub use sync_cmd::SyncCommand;
 pub(crate) use water::detected_system_timezone;
-pub use water::{WaterCommand, WaterSubcommand};
+pub use water::WaterCommand;

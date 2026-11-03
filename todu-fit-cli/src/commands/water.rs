@@ -11,7 +11,7 @@ use todu_fit_core::{
     WaterEntry,
 };
 
-#[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
 pub enum WaterUnitArg {
     Ml,
     Oz,
@@ -26,20 +26,20 @@ impl From<WaterUnitArg> for HydrationUnit {
     }
 }
 
-#[derive(Clone, ValueEnum, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, ValueEnum, Default)]
 pub enum OutputFormat {
     #[default]
     Text,
     Json,
 }
 
-#[derive(Args)]
+#[derive(serde::Serialize, serde::Deserialize, Args)]
 pub struct WaterCommand {
     #[command(subcommand)]
     pub command: WaterSubcommand,
 }
 
-#[derive(Subcommand)]
+#[derive(serde::Serialize, serde::Deserialize, Subcommand)]
 pub enum WaterSubcommand {
     /// Add a water entry
     Add {
