@@ -205,6 +205,20 @@ pub fn write_meallog(doc: &mut AutoCommit, meallog: &MealLog) {
             doc.put(&ing_id, "unit", ingredient.unit.as_str()).unwrap();
         }
 
+        // Preserve nutrients in the historical snapshot using the same list/map
+        // representation as canonical dishes and the existing snapshot reader.
+        if let Some(ref nutrients) = dish.nutrients {
+            let nutrients_id = doc
+                .put_object(&dish_obj, "nutrients", ObjType::List)
+                .unwrap();
+            for (j, nutrient) in nutrients.iter().enumerate() {
+                let nut_id = doc.insert_object(&nutrients_id, j, ObjType::Map).unwrap();
+                doc.put(&nut_id, "name", nutrient.name.as_str()).unwrap();
+                doc.put(&nut_id, "amount", nutrient.amount).unwrap();
+                doc.put(&nut_id, "unit", nutrient.unit.as_str()).unwrap();
+            }
+        }
+
         // Optional fields
         if let Some(prep_time) = dish.prep_time {
             doc.put(&dish_obj, "prep_time", prep_time as i64).unwrap();

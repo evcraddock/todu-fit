@@ -216,7 +216,7 @@ fn planned_and_unplanned_logging_keep_metadata_snapshots_and_history_formats() {
         assert_eq!(log.created_by, "cli-fixture");
         assert_eq!(log.dishes[0].id, f.dish.id);
         assert_eq!(log.dishes[0].name, "Pasta");
-        assert!(log.dishes[0].nutrients.is_none());
+        assert_eq!(log.dishes[0].nutrients, f.dish.nutrients);
     }
     assert!(logs
         .iter()
@@ -235,6 +235,81 @@ fn planned_and_unplanned_logging_keep_metadata_snapshots_and_history_formats() {
         ]),
         "No meal history found for 2027-01-01 to 2027-01-02\n"
     );
+}
+
+#[test]
+fn logging_by_name_and_id_preserves_every_dish_nutrient_in_history() {
+    let f = Fixture::new();
+    for (name, nutrients) in [
+        (
+            "Nutrient meal",
+            r#"{"calories":250,"protein":12.5,"carbs":30,"fat":8}"#,
+        ),
+        (
+            "Side dish",
+            r#"{"calories":100,"protein":2.5,"carbs":10,"fat":4}"#,
+        ),
+    ] {
+        f.success(&["dish", "create", name, "--nutrients", nutrients]);
+    }
+    let canonical: Vec<Dish> =
+        serde_json::from_str(&f.success(&["dish", "list", "--format", "json"])).unwrap();
+    let dishes: Vec<_> = canonical.iter().filter(|d| d.name != "Pasta").collect();
+    assert_eq!(dishes.len(), 2);
+    for by_id in [false, true] {
+        let references: Vec<_> = dishes
+            .iter()
+            .map(|dish| {
+                if by_id {
+                    dish.id.to_string()
+                } else {
+                    dish.name.clone()
+                }
+            })
+            .collect();
+        f.success(&[
+            "meal",
+            "log",
+            "--date",
+            "2026-11-02",
+            "--type",
+            "lunch",
+            "--dish",
+            &references[0],
+            "--dish",
+            &references[1],
+        ]);
+    }
+    let logs: Vec<MealLog> = serde_json::from_str(&f.success(&[
+        "meal",
+        "history",
+        "--from",
+        "2026-11-02",
+        "--to",
+        "2026-11-02",
+        "--format",
+        "json",
+    ]))
+    .unwrap();
+    assert_eq!(logs.len(), 2);
+    for log in logs {
+        assert_eq!(log.dishes.len(), 2);
+        for (snapshot, canonical) in log.dishes.iter().zip(&dishes) {
+            assert_eq!(snapshot.id, canonical.id);
+            assert!(canonical.nutrients.is_some());
+            assert_eq!(snapshot.nutrients, canonical.nutrients);
+        }
+    }
+    let text = f.success(&[
+        "meal",
+        "history",
+        "--from",
+        "2026-11-02",
+        "--to",
+        "2026-11-02",
+    ]);
+    assert!(text.contains("Calories: 350 | Protein: 15g | Carbs: 40g | Fat: 12g"));
+    assert!(text.contains("Daily Total: Calories: 700 | Protein: 30g | Carbs: 80g | Fat: 24g"));
 }
 
 #[test]
