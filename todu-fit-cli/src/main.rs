@@ -95,12 +95,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn execute_command(
     command: &Option<Commands>,
     config: &Config,
-    _cli_config_path: Option<PathBuf>,
+    cli_config_path: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(command) = command else {
         println!("Use --help to see available commands");
         return Ok(());
     };
+    if let Commands::Config(cmd) = command {
+        return cmd.run(config, cli_config_path);
+    }
     execute_command_ref(command, config)
 }
 
@@ -165,4 +168,22 @@ fn execute_command_ref(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_init_honors_explicit_new_path_without_daemon() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("new-config.yaml");
+        let cli =
+            Cli::try_parse_from(["fit", "-c", path.to_str().unwrap(), "config", "init"]).unwrap();
+        let config = Config::load(cli.config.clone()).unwrap();
+        execute_command(&cli.command, &config, cli.config).unwrap();
+        assert!(std::fs::read_to_string(path)
+            .unwrap()
+            .contains("created_by:"));
+    }
 }
