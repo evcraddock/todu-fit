@@ -17,8 +17,10 @@ use crate::document_id::DocumentId;
 
 /// Timeout for handshake completion.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-/// How long to wait for any activity on a document before checking exit conditions.
-const DOC_IDLE_TIMEOUT: Duration = Duration::from_secs(2);
+/// Allow slow peers to process a large document without mistaking silence for success.
+const DOC_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Bound the entire exchange, including peers which only send keepalive messages.
+const DOC_SYNC_TIMEOUT: Duration = Duration::from_secs(180);
 /// Short timeout for server health checks.
 const CHECK_SERVER_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -396,9 +398,12 @@ impl SyncClient {
 
         rounds += 1;
 
-        // Sync loop
+        // Silence is not an acknowledgement. Only matching peer heads prove convergence.
+        let deadline = tokio::time::Instant::now() + DOC_SYNC_TIMEOUT;
         loop {
-            match timeout(DOC_IDLE_TIMEOUT, receiver.next()).await {
+            let response_deadline =
+                deadline.min(tokio::time::Instant::now() + DOC_RESPONSE_TIMEOUT);
+            match tokio::time::timeout_at(response_deadline, receiver.next()).await {
                 Ok(Some(Ok(Message::Binary(data)))) => {
                     let msg = match ProtocolMessage::decode(&data) {
                         Ok(m) => m,
@@ -454,8 +459,11 @@ impl SyncClient {
                                     .map_err(|e| SyncError::WebSocketError(e.to_string()))?;
 
                                 rounds += 1;
-                            } else {
-                                // No more messages needed, sync complete
+                            }
+
+                            if sync_state.their_heads.as_ref() == Some(&doc.get_heads())
+                                && sync_state.their_need.as_ref().is_some_and(Vec::is_empty)
+                            {
                                 break;
                             }
                         }
@@ -471,7 +479,9 @@ impl SyncClient {
                     }
                 }
                 Ok(Some(Ok(Message::Close(_)))) => {
-                    break;
+                    return Err(SyncError::ProtocolError(
+                        "Server closed connection before document sync completed".to_string(),
+                    ));
                 }
                 Ok(Some(Ok(Message::Ping(data)))) => {
                     sender
@@ -486,12 +496,11 @@ impl SyncClient {
                     return Err(SyncError::WebSocketError(e.to_string()));
                 }
                 Ok(None) => {
-                    break;
+                    return Err(SyncError::ProtocolError(
+                        "Connection ended before document sync completed".to_string(),
+                    ));
                 }
-                Err(_) => {
-                    // No activity during idle window - sync complete
-                    break;
-                }
+                Err(_) => return Err(SyncError::DocumentSyncTimeout(doc_id_str.clone())),
             }
         }
 
@@ -526,6 +535,101 @@ impl SyncClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn silent_server_is_an_error_not_up_to_date() {
+        let mut doc = AutoCommit::new();
+        let result = SyncClient::new("unused")
+            .sync_document_over_connection(
+                &mut futures::sink::drain(),
+                &mut futures::stream::pending(),
+                &DocumentId::new(),
+                "client",
+                "server",
+                &mut doc,
+            )
+            .await;
+        assert!(matches!(result, Err(SyncError::DocumentSyncTimeout(_))));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_reply_after_the_old_idle_window_is_processed() {
+        let id = DocumentId::new();
+        let mut remote = AutoCommit::new();
+        let data = remote
+            .sync()
+            .generate_sync_message(&mut SyncState::new())
+            .unwrap()
+            .encode();
+        let reply = ProtocolMessage::Sync {
+            document_id: id.to_bs58check(),
+            sender_id: "server".into(),
+            target_id: "client".into(),
+            data,
+        }
+        .encode()
+        .unwrap();
+        let mut receiver = Box::pin(
+            futures::stream::once(async {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                Ok(Message::Binary(reply.into()))
+            })
+            .chain(futures::stream::pending()),
+        );
+        let start = tokio::time::Instant::now();
+        let result = SyncClient::new("unused")
+            .sync_document_over_connection(
+                &mut futures::sink::drain(),
+                &mut receiver,
+                &id,
+                "client",
+                "server",
+                &mut AutoCommit::new(),
+            )
+            .await
+            .unwrap();
+        assert!(tokio::time::Instant::now() - start >= Duration::from_secs(3));
+        assert!(!result.updated);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn keepalives_do_not_extend_the_overall_deadline() {
+        let mut receiver = Box::pin(futures::stream::unfold((), |_| async {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            Some((Ok(Message::Ping(Vec::new().into())), ()))
+        }));
+        let start = tokio::time::Instant::now();
+        let result = SyncClient::new("unused")
+            .sync_document_over_connection(
+                &mut futures::sink::drain(),
+                &mut receiver,
+                &DocumentId::new(),
+                "client",
+                "server",
+                &mut AutoCommit::new(),
+            )
+            .await;
+        assert!(matches!(result, Err(SyncError::DocumentSyncTimeout(_))));
+        assert!(tokio::time::Instant::now() - start >= DOC_SYNC_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn closing_before_acknowledgement_is_an_error() {
+        for message in [Some(Ok(Message::Close(None))), None] {
+            let mut receiver = futures::stream::iter(message);
+            let result = SyncClient::new("unused")
+                .sync_document_over_connection(
+                    &mut futures::sink::drain(),
+                    &mut receiver,
+                    &DocumentId::new(),
+                    "client",
+                    "server",
+                    &mut AutoCommit::new(),
+                )
+                .await;
+            assert!(matches!(result, Err(SyncError::ProtocolError(_))));
+        }
+    }
 
     #[test]
     fn test_build_ws_url() {

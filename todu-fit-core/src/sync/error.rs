@@ -21,6 +21,8 @@ pub enum SyncError {
     CborError(String),
     /// Handshake timeout
     HandshakeTimeout,
+    /// Peer did not acknowledge document convergence before the deadline.
+    DocumentSyncTimeout(String),
 }
 
 impl std::fmt::Display for SyncError {
@@ -42,6 +44,9 @@ impl std::fmt::Display for SyncError {
             }
             SyncError::CborError(e) => write!(f, "CBOR error: {}", e),
             SyncError::HandshakeTimeout => write!(f, "Handshake timed out"),
+            SyncError::DocumentSyncTimeout(doc_id) => {
+                write!(f, "Document sync timed out before completion: {}", doc_id)
+            }
         }
     }
 }
