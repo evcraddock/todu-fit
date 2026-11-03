@@ -118,7 +118,7 @@ fn context_error(e: &core::context::GroupContextError) -> api::ApiError {
 }
 fn selected(path: &Path) -> Result<Option<String>, api::ApiError> {
     match std::fs::read_to_string(path.join("current_group")) {
-        Ok(s) => Ok(Some(s.trim().into())),
+        Ok(s) => Ok((!s.trim().is_empty()).then(|| s.trim().into())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(failure(e)),
     }
@@ -512,9 +512,6 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
             dishes: refs,
             notes,
         } => {
-            if refs.is_empty() {
-                return Err(invalid("At least one dish is required"));
-            }
             for r in refs {
                 resolve_dish(&dishes, r)?;
             }

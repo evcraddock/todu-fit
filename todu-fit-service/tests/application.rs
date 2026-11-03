@@ -335,3 +335,27 @@ fn plan_lookup_by_date_returns_all_matches_and_type_filter_preserves_cli_selecti
     assert_eq!(lunch.as_array().unwrap().len(), 1);
     assert_eq!(lunch[0]["plan"]["meal_type"], "lunch");
 }
+
+#[test]
+fn notes_only_unplanned_meal_preserves_cli_behavior_without_a_group() {
+    let mut f = Fixture::new();
+    f.ok(json!({"type":"identity_create"}));
+    let meal = f.ok(json!({"type":"meal_log_unplanned","date":"2026-11-03","meal_type":"lunch","dishes":[],"notes":"Lunch away from home"}));
+    assert_eq!(meal["log"]["dishes"], json!([]));
+    assert_eq!(meal["log"]["notes"], "Lunch away from home");
+    assert_eq!(meal["nutrients"], json!({}));
+    let history = f.ok(json!({"type":"meals_history","from":"2026-11-03","to":"2026-11-03"}));
+    assert_eq!(history, json!([meal]));
+}
+
+#[test]
+fn empty_legacy_group_selection_uses_the_same_fallback_as_core() {
+    let mut f = Fixture::new();
+    f.init();
+    let mut snapshot = f.store.snapshot().unwrap();
+    snapshot.insert("current_group".into(), b" \n".to_vec());
+    f.store.commit(&snapshot, None).unwrap();
+    assert_eq!(f.ok(json!({"type":"group_get"}))["name"], "Home");
+    f.ok(json!({"type":"dish_create","name":"Soup"}));
+    assert_eq!(f.ok(json!({"type":"dishes_list"}))[0]["name"], "Soup");
+}

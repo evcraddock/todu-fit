@@ -23,6 +23,7 @@ pub struct Dish {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Ingredient {
     pub name: String,
     pub quantity: f64,
@@ -30,6 +31,7 @@ pub struct Ingredient {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Nutrient {
     pub name: String,
     pub amount: f64,
@@ -90,6 +92,7 @@ pub struct HydrationSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ManualItem {
     /// Item name
     pub name: String,

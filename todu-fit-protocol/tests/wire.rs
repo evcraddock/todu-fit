@@ -17,3 +17,14 @@ fn wire_contract_is_application_data_not_cli_options() {
     )
     .is_err());
 }
+
+#[test]
+fn nested_input_fields_are_not_silently_ignored() {
+    for operation in [
+        json!({"type":"dish_add_ingredient","identifier":"Soup","ingredient":{"name":"Salt","quantity":1.0,"unit":"tsp","quanity":2.0}}),
+        json!({"type":"dish_create","name":"Soup","fields":{"nutrients":[{"name":"protein","amount":1.0,"unit":"g","ammount":2.0}]}}),
+        json!({"type":"shopping_add","week":"2026-11-03","item":{"name":"Soap","quanity":"2"}}),
+    ] {
+        assert!(serde_json::from_value::<todu_fit_protocol::Operation>(operation).is_err());
+    }
+}
