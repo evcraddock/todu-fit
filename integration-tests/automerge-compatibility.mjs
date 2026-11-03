@@ -91,6 +91,72 @@ try {
   assert.equal((await readFile(join(data, 'root_doc_id'), 'utf8')).trim(), rootId)
   console.log('PASS Rust update after reconnect -> JS, preserving the identity ID')
 
+  await fit('mealplan', 'create', '--date', '2026-11-01', '--type', 'dinner',
+    '--title', 'CLI Dinner', '--dish', jsDishId, '--leftovers')
+  await fit('sync')
+  const plans = await find(group.mealplans_doc_id)
+  const [planId, plan] = Object.entries(plans.doc()).find(([, value]) => String(value.title) === 'CLI Dinner') ?? []
+  assert(planId)
+  assert.equal(String(plan.dish_ids[0]), jsDishId)
+  assert.equal(plan.uses_leftovers, true)
+  plans.change(doc => { doc[planId].title = new ImmutableString('JS Dinner') })
+  await fit('sync')
+  assert.equal(JSON.parse(await fit('mealplan', 'show', planId, '-f', 'json')).title, 'JS Dinner')
+
+  await fit('meal', 'log', planId, '--notes', 'CLI planned log')
+  await fit('sync')
+  const logs = await find(identity.meallogs_doc_id)
+  const [logId, log] = Object.entries(logs.doc()).find(([, value]) => String(value.mealplan_id) === planId) ?? []
+  assert(logId)
+  assert.equal(String(log.dishes[0].id), jsDishId)
+  assert.equal(String(log.notes), 'CLI planned log')
+  console.log('PASS CLI meal plans/logs -> JS and JS plan update -> CLI')
+
+  const jsPlanId = randomUUID()
+  const jsLogId = randomUUID()
+  plans.change(doc => {
+    doc[jsPlanId] = {
+      date: new ImmutableString('2026-11-02'), meal_type: new ImmutableString('lunch'),
+      title: new ImmutableString('JS Plan'), cook: new ImmutableString('Guest'),
+      dish_ids: [new ImmutableString(dishId)],
+      created_by: new ImmutableString('compatibility-fixture'),
+      created_at: new ImmutableString(timestamp), updated_at: new ImmutableString(timestamp),
+    }
+  })
+  logs.change(doc => {
+    doc[jsLogId] = {
+      date: new ImmutableString('2026-11-02'), meal_type: new ImmutableString('lunch'),
+      created_by: new ImmutableString('compatibility-fixture'), created_at: new ImmutableString(timestamp),
+      dishes: [new ImmutableString(dishId)], dish_portions: { [dishId]: 0.5 },
+      notes: new ImmutableString('JS reference log'),
+    }
+  })
+  await fit('sync')
+  assert.equal(JSON.parse(await fit('mealplan', 'show', jsPlanId, '-f', 'json')).uses_leftovers, false)
+  const history = JSON.parse(await fit('meal', 'history', '--from', '2026-11-02', '--to', '2026-11-02', '-f', 'json'))
+  const referenceLog = history.find(entry => entry.id === jsLogId)
+  assert(referenceLog)
+  assert.equal(referenceLog.dishes[0].name, 'Updated by JavaScript')
+  assert.equal(referenceLog.dish_portions[dishId], 0.5)
+  assert(referenceLog.dishes[0].nutrients.some(nutrient => nutrient.name === 'calories' && nutrient.amount === 200))
+  await fit('mealplan', 'update', jsPlanId, '--leftovers')
+  await fit('sync')
+  assert.equal(plans.doc()[jsPlanId].uses_leftovers, true)
+  console.log('PASS JS meal plans/reference logs -> CLI with defaults, hydration and portions')
+
+  await fit('meal', 'delete', jsLogId, '--yes')
+  await fit('mealplan', 'delete', jsPlanId, '--force')
+  await fit('sync')
+  assert.equal(logs.doc()[jsLogId], undefined)
+  assert.equal(plans.doc()[jsPlanId], undefined)
+  plans.change(doc => { delete doc[planId] })
+  logs.change(doc => { delete doc[logId] })
+  await fit('sync')
+  assert.equal(await fit('mealplan', 'list', '--from', '2026-11-01', '--to', '2026-11-02'), 'No meal plans found\n')
+  assert.equal(await fit('meal', 'history', '--from', '2026-11-01', '--to', '2026-11-02'), 'No meal history found for 2026-11-01 to 2026-11-02\n')
+  assert.equal((await readFile(join(data, 'root_doc_id'), 'utf8')).trim(), rootId)
+  console.log('PASS meal plan/log deletions both directions with unchanged identity')
+
   await fit('dish', 'delete', jsDishId, '--force')
   await fit('sync')
   assert.equal(dishes.doc()[jsDishId], undefined)

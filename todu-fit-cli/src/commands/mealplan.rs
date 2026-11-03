@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::config::Config;
 use crate::models::{MealPlan, MealType};
 use crate::sync::{SyncDishRepository, SyncMealPlanRepository};
+use todu_fit_core::{MealPlanDraft, MealPlanUpdate};
 
 #[derive(Clone, ValueEnum, Default)]
 pub enum OutputFormat {
@@ -164,38 +165,16 @@ impl MealPlanCommand {
                 // Parse meal type
                 let meal_type: MealType = meal_type.parse().map_err(|e: String| e)?;
 
-                // Build title
-                let title = title.clone().unwrap_or_else(|| {
-                    format!("{} on {}", capitalize(&meal_type.to_string()), date)
-                });
-
-                // Build cook
-                let cook = cook
-                    .clone()
-                    .unwrap_or_else(|| config.created_by.value.clone());
-
-                // Create meal plan
-                let mut plan = MealPlan::new(date, meal_type, &title, &config.created_by.value)
-                    .with_cook(&cook)
-                    .with_uses_leftovers(*leftovers);
-
-                // Resolve and add dishes
-                let mut resolved_dish_ids = Vec::new();
-                for dish_ref in dishes {
-                    let dish = if let Ok(uuid) = Uuid::parse_str(dish_ref) {
-                        dish_repo.get_by_id(uuid)?
-                    } else {
-                        dish_repo.get_by_name(dish_ref)?
-                    };
-
-                    match dish {
-                        Some(d) => resolved_dish_ids.push(d.id),
-                        None => return Err(format!("Dish not found: {}", dish_ref).into()),
-                    }
-                }
-                plan.dish_ids = resolved_dish_ids;
-
-                let created = mealplan_repo.create(&plan)?;
+                let draft = MealPlanDraft {
+                    date,
+                    meal_type,
+                    title: title.clone(),
+                    cook: cook.clone(),
+                    dish_references: dishes.clone(),
+                    uses_leftovers: *leftovers,
+                    created_by: config.created_by.value.clone(),
+                };
+                let created = mealplan_repo.create_with_dishes(&draft, dish_repo)?;
                 println!("Created meal plan:");
                 println!("{}", created);
                 Ok(())
@@ -227,12 +206,8 @@ impl MealPlanCommand {
                 };
 
                 // Fetch meal plans
-                let mut plans = mealplan_repo.list_range(from_date, to_date)?;
-
-                // Apply meal type filter
-                if let Some(mt) = meal_type_filter {
-                    plans.retain(|p| p.meal_type == mt);
-                }
+                let plans =
+                    mealplan_repo.list_range_filtered(from_date, to_date, meal_type_filter)?;
 
                 if plans.is_empty() {
                     println!("No meal plans found");
@@ -380,26 +355,30 @@ impl MealPlanCommand {
                     .get_by_id(uuid)?
                     .ok_or_else(|| format!("Meal plan not found: {}", id))?;
 
-                // Apply updates
-                if let Some(d) = date {
-                    plan.date = NaiveDate::parse_from_str(d, "%Y-%m-%d")
-                        .map_err(|_| format!("Invalid date format '{}'. Use YYYY-MM-DD.", d))?;
-                }
-                if let Some(mt) = meal_type {
-                    plan.meal_type = mt.parse().map_err(|e: String| e)?;
-                }
-                if let Some(t) = title {
-                    plan.title = t.clone();
-                }
-                if let Some(c) = cook {
-                    plan.cook = c.clone();
-                }
-                if *leftovers {
-                    plan.uses_leftovers = true;
-                }
-                if *no_leftovers {
-                    plan.uses_leftovers = false;
-                }
+                let updates = MealPlanUpdate {
+                    date: date
+                        .as_ref()
+                        .map(|d| {
+                            NaiveDate::parse_from_str(d, "%Y-%m-%d").map_err(|_| {
+                                format!("Invalid date format '{}'. Use YYYY-MM-DD.", d)
+                            })
+                        })
+                        .transpose()?,
+                    meal_type: meal_type
+                        .as_deref()
+                        .map(str::parse::<MealType>)
+                        .transpose()?,
+                    title: title.clone(),
+                    cook: cook.clone(),
+                    uses_leftovers: if *no_leftovers {
+                        Some(false)
+                    } else if *leftovers {
+                        Some(true)
+                    } else {
+                        None
+                    },
+                };
+                updates.apply_to(&mut plan);
 
                 let updated = mealplan_repo.update(&plan)?;
                 println!("Updated meal plan:");
@@ -488,13 +467,5 @@ impl MealPlanCommand {
                 Ok(())
             }
         }
-    }
-}
-
-fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
     }
 }
