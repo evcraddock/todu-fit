@@ -3,6 +3,8 @@
 //! Shared types and logic for Todu Fit applications.
 
 pub mod automerge;
+pub mod context;
+pub mod dishes;
 pub mod document_id;
 pub mod documents;
 pub mod identity;
@@ -14,6 +16,7 @@ pub use automerge::{
     write_dish, write_hydration_settings, write_meallog, write_mealplan, write_shopping_cart,
     write_water_entry, DocType, DocumentStorage, MultiDocStorage, MultiStorageError, StorageError,
 };
+pub use dishes::{DishError, DishRepository, DishUpdate};
 pub use document_id::{DocumentId, DocumentIdError};
 pub use documents::{GroupDocument, GroupRef, IdentityDocument};
 pub use identity::{Identity, IdentityError, IdentityState};

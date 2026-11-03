@@ -90,6 +90,14 @@ try {
   assert.equal(String(dishes.doc()[jsDishId].instructions), 'Changed after reconnect')
   assert.equal((await readFile(join(data, 'root_doc_id'), 'utf8')).trim(), rootId)
   console.log('PASS Rust update after reconnect -> JS, preserving the identity ID')
+
+  await fit('dish', 'delete', jsDishId, '--force')
+  await fit('sync')
+  assert.equal(dishes.doc()[jsDishId], undefined)
+  dishes.change(doc => { delete doc[dishId] })
+  await fit('sync')
+  assert.equal(await fit('dish', 'list', '--format', 'json'), 'No dishes found\n')
+  console.log('PASS CLI and JS dish deletions converge in both directions')
 } finally {
   if (repo) await repo.shutdown()
   for (const client of server.clients) client.terminate()

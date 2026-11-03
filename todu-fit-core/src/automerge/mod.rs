@@ -18,6 +18,7 @@
 
 mod doc_type;
 mod multi_storage;
+pub mod reader;
 mod storage;
 mod writer;
 
