@@ -62,14 +62,14 @@ Platform-dependent facilities such as credentials, paths and application lifecyc
 
 The existing repository provides useful foundations:
 
-- [`todu-fit-core/src/lib.rs`](../todu-fit-core/src/lib.rs) exports domain/nutrition models, hydration calculations, identity/group types, Automerge storage/readers/writers and sync APIs. [`dishes.rs`](../todu-fit-core/src/dishes.rs) now provides local dish CRUD/query/ingredient operations and field updates; [`context.rs`](../todu-fit-core/src/context.rs) resolves supplied data-root and group selections. These operations do not trigger network sync.
+- [`todu-fit-core/src/lib.rs`](../todu-fit-core/src/lib.rs) exports domain/nutrition models, hydration calculations, identity/group types, Automerge storage/readers/writers and sync APIs. [`dishes.rs`](../todu-fit-core/src/dishes.rs) now provides local dish CRUD/query/ingredient operations and field updates; [`context.rs`](../todu-fit-core/src/context.rs) resolves supplied data-root and group selections. [`meal_plans.rs`](../todu-fit-core/src/meal_plans.rs) and [`meal_logs.rs`](../todu-fit-core/src/meal_logs.rs) share meal-plan CRUD/query/update rules, planned/unplanned logging, food-log history readers, referenced-dish hydration and nutrient aggregation. These operations do not trigger network sync.
 - [`todu-fit-cli/src/sync/`](../todu-fit-cli/src/sync/) contains additional application-facing repositories and orchestration that are not yet reusable through the core alone.
 - [`web/src/`](../web/src/) contains React screens and presentation code that could be adapted for Electron.
 - The separate `todu-fit-ios` repository contains SwiftUI screens and Apple-specific integrations to retain. Its current Swift-owned storage and sync would need a coordinated transition to Rust Core ownership.
 
 The core is therefore a starting point, not already a complete application service suitable for every client. Some CLI-owned behavior would need extracting, and relevant TypeScript-only domain behavior—such as nutrition aggregation in `web/src/meals/mealPlanNutrition.ts`—would need migrating or reconciling with Rust. Reuse must preserve current behavior and existing document compatibility rather than copy implementations into a new adapter.
 
-The [Automerge upgrade notes](AUTOMERGE-COMPATIBILITY.md) record the upgrade to the latest stable Rust/web releases and the compatibility checks. The dependency upgrade preceded the dish extraction. Dish operations are now shared through Core without changing document formats; meal plans, food logs, shopping, hydration and CLI sync orchestration remain follow-up extractions.
+The [Automerge upgrade notes](AUTOMERGE-COMPATIBILITY.md) record the upgrade to the latest stable Rust/web releases and the compatibility checks. The dependency upgrade preceded the dish extraction. Dish, meal-plan and food-log operations are now shared through Core without changing document formats; shopping, hydration and CLI sync orchestration remain follow-up extractions.
 
 An illustrative layout is:
 

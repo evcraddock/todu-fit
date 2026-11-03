@@ -7,6 +7,8 @@ use uuid::Uuid;
 use crate::config::Config;
 use crate::models::{MealLog, MealType};
 use crate::sync::{SyncDishRepository, SyncMealLogRepository, SyncMealPlanRepository};
+use todu_fit_core::meal_logs::{calculate_meal_nutrients, hydrate_referenced_dishes};
+use todu_fit_core::MealLogDraft;
 
 #[derive(Clone, ValueEnum, Default)]
 pub enum OutputFormat {
@@ -125,24 +127,12 @@ impl MealCommand {
             .get_by_id(plan_uuid)?
             .ok_or_else(|| format!("Meal plan not found: {}", mealplan_id))?;
 
-        // Load dishes for the plan (snapshots for the log)
-        let mut plan_dishes = Vec::new();
-        for dish_id in &plan.dish_ids {
-            if let Some(dish) = repos.dish.get_by_id(*dish_id)? {
-                plan_dishes.push(dish);
-            }
-        }
-
-        // Create meal log from plan with dish snapshots
-        let mut log = MealLog::new(plan.date, plan.meal_type, &config.created_by.value)
-            .with_mealplan_id(plan.id)
-            .with_dishes(plan_dishes);
-
-        if let Some(n) = notes {
-            log = log.with_notes(n);
-        }
-
-        let created = repos.meallog.create(&log)?;
+        let created = repos.meallog.log_from_plan(
+            &plan,
+            repos.dish,
+            &config.created_by.value,
+            notes.as_deref(),
+        )?;
 
         println!("Logged meal from plan '{}':", plan.title);
         println!();
@@ -175,30 +165,14 @@ impl MealCommand {
         // Parse meal type
         let parsed_meal_type: MealType = meal_type_str.parse().map_err(|e: String| e)?;
 
-        // Resolve dishes
-        let mut resolved_dishes = Vec::new();
-        for dish_ref in dishes {
-            let dish = if let Ok(uuid) = Uuid::parse_str(dish_ref) {
-                repos.dish.get_by_id(uuid)?
-            } else {
-                repos.dish.get_by_name(dish_ref)?
-            };
-
-            match dish {
-                Some(d) => resolved_dishes.push(d),
-                None => return Err(format!("Dish not found: {}", dish_ref).into()),
-            }
-        }
-
-        // Create meal log
-        let mut log = MealLog::new(parsed_date, parsed_meal_type, &config.created_by.value)
-            .with_dishes(resolved_dishes);
-
-        if let Some(n) = notes {
-            log = log.with_notes(n);
-        }
-
-        let created = repos.meallog.create(&log)?;
+        let draft = MealLogDraft {
+            date: parsed_date,
+            meal_type: parsed_meal_type,
+            dish_references: dishes.to_vec(),
+            notes: notes.clone(),
+            created_by: config.created_by.value.clone(),
+        };
+        let created = repos.meallog.log_unplanned(&draft, repos.dish)?;
 
         println!("Logged unplanned meal:");
         println!();
@@ -229,7 +203,7 @@ impl MealCommand {
 
         // Fetch meal logs
         let mut logs = repos.meallog.list_range(from_date, to_date)?;
-        hydrate_referenced_dishes(&mut logs, repos)?;
+        hydrate_referenced_dishes(&mut logs, repos.dish)?;
 
         if logs.is_empty() {
             println!("No meal history found for {} to {}", from_date, to_date);
@@ -358,47 +332,6 @@ impl MealCommand {
     }
 }
 
-fn hydrate_referenced_dishes(
-    logs: &mut [MealLog],
-    repos: &MealRepos<'_>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    for log in logs {
-        for dish in &mut log.dishes {
-            if is_dish_reference_placeholder(dish) {
-                if let Some(resolved) = repos.dish.get_by_id(dish.id)? {
-                    *dish = resolved;
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn is_dish_reference_placeholder(dish: &crate::models::Dish) -> bool {
-    dish.name == format!("Dish {}", dish.id)
-        && dish.ingredients.is_empty()
-        && dish.instructions.is_empty()
-        && dish.nutrients.is_none()
-        && dish.created_by.is_empty()
-}
-
-/// Calculate total nutrients for a meal by summing all dish nutrients
-fn calculate_meal_nutrients(log: &MealLog) -> HashMap<String, f64> {
-    let mut totals: HashMap<String, f64> = HashMap::new();
-
-    for dish in &log.dishes {
-        let portion = log.portion_for(dish.id);
-        if let Some(nutrients) = &dish.nutrients {
-            for nutrient in nutrients {
-                *totals.entry(nutrient.name.clone()).or_insert(0.0) += nutrient.amount * portion;
-            }
-        }
-    }
-
-    totals
-}
-
 /// Format nutrients for display: "Calories: 650 | Protein: 25g | Carbs: 80g | Fat: 28g"
 fn format_nutrients(nutrients: &HashMap<String, f64>) -> String {
     // Order: calories first, then protein, carbs, fat, then others
@@ -459,45 +392,4 @@ fn print_log_details(log: &MealLog) {
     }
     println!();
     println!("Log ID: {}", log.id);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::{Dish, Nutrient};
-
-    #[test]
-    fn mixed_planned_and_unplanned_history_includes_portioned_nutrients() {
-        let date = NaiveDate::from_ymd_opt(2026, 8, 10).unwrap();
-        let planned_dish = Dish::new("Planned chicken", "test").with_nutrients(vec![
-            Nutrient::new("calories", 600.0, "kcal"),
-            Nutrient::new("protein", 40.0, "g"),
-        ]);
-        let planned_dish_id = planned_dish.id;
-        let planned = MealLog::new(date, MealType::Lunch, "test")
-            .with_mealplan_id(Uuid::new_v4())
-            .with_dishes(vec![planned_dish])
-            .with_dish_portion(planned_dish_id, 0.5);
-
-        let unplanned_dish = Dish::new("Unplanned shake", "test").with_nutrients(vec![
-            Nutrient::new("calories", 200.0, "kcal"),
-            Nutrient::new("protein", 20.0, "g"),
-        ]);
-        let unplanned =
-            MealLog::new(date, MealType::Snack, "test").with_dishes(vec![unplanned_dish]);
-        let logs = vec![planned, unplanned];
-
-        let json = serde_json::to_value(&logs).unwrap();
-        assert_eq!(json[0]["dishes"][0]["nutrients"][0]["amount"], 600.0);
-
-        let mut daily_totals = HashMap::new();
-        for log in &logs {
-            for (name, amount) in calculate_meal_nutrients(log) {
-                *daily_totals.entry(name).or_insert(0.0) += amount;
-            }
-        }
-
-        assert_eq!(daily_totals.get("calories"), Some(&500.0));
-        assert_eq!(daily_totals.get("protein"), Some(&40.0));
-    }
 }

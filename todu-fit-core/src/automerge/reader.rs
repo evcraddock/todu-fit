@@ -1,4 +1,11 @@
-//! Reusable readers for dish documents and their scalar/list fields.
+//! Reusable document readers and their scalar/list fields.
+
+mod meals;
+pub use meals::{
+    get_mealplan_by_date_and_type, get_mealplans_by_date, list_meallogs_by_date_range,
+    list_mealplans_by_date_range, read_all_meallogs, read_all_mealplans, read_meallog_by_id,
+    read_mealplan_by_id,
+};
 
 use automerge::{AutoCommit, ObjId, ReadDoc, ROOT};
 use chrono::{DateTime, Utc};

@@ -8,6 +8,8 @@ pub mod dishes;
 pub mod document_id;
 pub mod documents;
 pub mod identity;
+pub mod meal_logs;
+pub mod meal_plans;
 pub mod models;
 pub mod sync;
 
@@ -20,6 +22,8 @@ pub use dishes::{DishError, DishRepository, DishUpdate};
 pub use document_id::{DocumentId, DocumentIdError};
 pub use documents::{GroupDocument, GroupRef, IdentityDocument};
 pub use identity::{Identity, IdentityError, IdentityState};
+pub use meal_logs::{MealLogDraft, MealLogError, MealLogRepository};
+pub use meal_plans::{MealPlanDraft, MealPlanError, MealPlanRepository, MealPlanUpdate};
 pub use models::{
     aggregate_ingredients, average_daily_ml, average_daily_ml_in_timezone,
     collect_ingredients_from_mealplans, daily_total_ml, daily_total_ml_in_timezone,
