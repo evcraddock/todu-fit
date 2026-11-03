@@ -73,7 +73,7 @@ impl Owner {
             .lock()
             .map_err(|_| "Owner poisoned; restart required")?;
         if let Some(response) = store.receipt(&request.id, &encoded)? {
-            return Ok(response);
+            return Ok(serde_json::from_value(response)?);
         }
         let mut response = Response {
             id: request.id.clone(),
@@ -146,7 +146,10 @@ impl Owner {
             return Ok(response);
         }
         response.revision += 1;
-        store.commit(&after, Some((&request.id, &encoded, &response)))?;
+        store.commit(
+            &after,
+            Some((&request.id, &encoded, &serde_json::to_value(&response)?)),
+        )?;
         Ok(response)
     }
 }
@@ -255,29 +258,13 @@ pub fn serve(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             let _count = Count(active);
             let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
             let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
-            let result = (|| -> Result<Response, Error> {
+            let result = (|| -> Result<Value, Error> {
                 let line = read_frame(&mut stream, Duration::from_secs(5))?;
-                let request: Request = serde_json::from_str(&line)?;
-                if let Operation::Sync = request.operation {
-                    if request.version != 1 || uuid::Uuid::parse_str(&request.id).is_err() {
-                        return Err("INVALID_REQUEST".into());
-                    }
-                    start_sync(owner.clone());
-                    return Ok(Response {
-                        id: request.id,
-                        revision: owner.store.lock().unwrap().revision()?,
-                        value: Some(json!({"sync":"running"})),
-                        error: None,
-                    });
-                }
-                owner.apply(&request)
+                handle_frame(&owner, &line)
             })();
-            let response = result.unwrap_or_else(|e| Response {
-                id: String::new(),
-                revision: 0,
-                value: None,
-                error: Some(e.to_string()),
-            });
+            let response = result.unwrap_or_else(
+                |e| json!({"id":"", "revision":0, "value":null, "error":e.to_string()}),
+            );
             if let Ok(mut bytes) = serde_json::to_vec(&response) {
                 bytes.push(b'\n');
                 let _ = stream.write_all(&bytes);
@@ -386,4 +373,122 @@ fn read_frame(
             return Ok(String::from_utf8(bytes)?);
         }
     }
+}
+
+/// The legacy bridge remains a compatibility adapter. New clients send protocol-v2
+/// application requests directly, independent of the CLI command enum.
+fn handle_frame(owner: &Arc<Owner>, line: &str) -> Result<Value, Error> {
+    use todu_fit_protocol as api;
+    let raw: Value = serde_json::from_str(line)?;
+    if raw.get("version").and_then(Value::as_u64) == Some(1) {
+        let request: Request = serde_json::from_value(raw)?;
+        if request.version != 1 || uuid::Uuid::parse_str(&request.id).is_err() {
+            return Err("INVALID_REQUEST".into());
+        }
+        let response = if matches!(request.operation, Operation::Sync) {
+            start_sync(owner.clone());
+            Response {
+                id: request.id,
+                revision: owner
+                    .store
+                    .lock()
+                    .map_err(|_| "Owner unavailable")?
+                    .revision()?,
+                value: Some(json!({"sync":"running"})),
+                error: None,
+            }
+        } else {
+            owner.apply(&request)?
+        };
+        return Ok(serde_json::to_value(response)?);
+    }
+    let id = raw
+        .get("id")
+        .and_then(Value::as_str)
+        .and_then(|s| uuid::Uuid::parse_str(s).ok())
+        .unwrap_or_default();
+    let rejected = |code, message| api::Response {
+        version: api::VERSION,
+        id,
+        revision: 0,
+        outcome: api::Outcome::Error {
+            error: todu_fit_service::error(code, message),
+        },
+    };
+    if raw.get("version").and_then(Value::as_u64) != Some(u64::from(api::VERSION)) {
+        return Ok(serde_json::to_value(rejected(
+            api::ErrorCode::UnsupportedVersion,
+            "Expected application protocol version 2".into(),
+        ))?);
+    }
+    let request: api::Request = match serde_json::from_value(raw) {
+        Ok(request) => request,
+        Err(e) => {
+            return Ok(serde_json::to_value(rejected(
+                api::ErrorCode::InvalidInput,
+                e.to_string(),
+            ))?)
+        }
+    };
+    let response = (|| -> Result<api::Response, Error> {
+ let response = match &request.operation {
+        api::Operation::ConfigGet => {
+            let value = api::Value::Configuration(api::Configuration {
+                created_by: owner.config.created_by.value.clone(),
+                sync_server_url: owner.config.sync.server_url.clone(),
+                auto_sync: owner.config.sync.auto_sync,
+                default_timezone: crate::commands::detected_system_timezone(),
+            });
+            api::Response {
+                version: api::VERSION,
+                id,
+                revision: owner
+                    .store
+                    .lock()
+                    .map_err(|_| "Owner unavailable")?
+                    .revision()?,
+                outcome: api::Outcome::Ok { value: Box::new(value) },
+            }
+        }
+        api::Operation::SyncStart | api::Operation::Status | api::Operation::Changes { .. } => {
+            if matches!(request.operation, api::Operation::SyncStart) {
+                start_sync(owner.clone());
+            }
+            let revision = owner
+                .store
+                .lock()
+                .map_err(|_| "Owner unavailable")?
+                .revision()?;
+            let state = owner.sync.lock().map_err(|_| "Owner unavailable")?.clone();
+            let sync = match state.as_str() {
+                "idle" => api::SyncState::Idle,
+                "running" => api::SyncState::Running,
+                _ => api::SyncState::Failed {
+                    message: state.strip_prefix("failed: ").unwrap_or(&state).into(),
+                },
+            };
+            let value = api::Value::Status(api::Status {
+                revision,
+                sync,
+                changed: matches!(request.operation,api::Operation::Changes{after} if after<revision),
+            });
+            api::Response {
+                version: api::VERSION,
+                id,
+                revision,
+                outcome: api::Outcome::Ok { value: Box::new(value) },
+            }
+        }
+        _ => {
+            let mut store = owner.store.lock().map_err(|_| "Owner unavailable")?;
+            let context = todu_fit_service::Context {
+                created_by: owner.config.created_by.value.clone(),
+                default_timezone: crate::commands::detected_system_timezone,
+            };
+            todu_fit_service::transact(&mut store, &owner.config.data_dir.value, &context, &request)
+        }
+    };
+ Ok(response)
+ })().unwrap_or_else(|e| rejected(api::ErrorCode::Unavailable,e.to_string()));
+    Ok(serde_json::to_value(response)?)
 }

@@ -1,0 +1,15 @@
+[package]
+name = "todu-fit-service"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+todu-fit-core = { path = "../todu-fit-core" }
+todu-fit-protocol = { path = "../todu-fit-protocol" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+uuid = { version = "1", features = ["v4", "serde"] }
+automerge = "0.12"
+rusqlite = { version = "0.32", features = ["bundled"] }
+tempfile = "3"

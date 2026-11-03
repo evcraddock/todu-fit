@@ -201,3 +201,75 @@ fn existing_store_is_never_adopted_or_changed() {
     );
     assert_eq!(fs::read_dir(legacy).unwrap().count(), 1);
 }
+
+#[test]
+fn application_protocol_v2_coexists_with_legacy_cli_and_dish_bridge() {
+    use todu_fit_protocol as api;
+    let f = Fixture::new();
+    fn send(f: &Fixture, version: u32, operation: Value) -> Value {
+        let mut socket = UnixStream::connect(&f.socket).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        writeln!(
+            socket,
+            "{}",
+            json!({"version":version,"id":uuid::Uuid::new_v4(),"operation":operation})
+        )
+        .unwrap();
+        let mut line = String::new();
+        BufReader::new(socket).read_line(&mut line).unwrap();
+        let raw: Value = serde_json::from_str(&line).unwrap();
+        // Typed client can decode every v2 response, including rejections.
+        let _: api::Response = serde_json::from_value(raw.clone()).unwrap();
+        raw
+    }
+    let unsupported = send(&f, 99, json!({"type":"identity_get"}));
+    assert_eq!(
+        unsupported["outcome"]["error"]["code"],
+        "unsupported_version"
+    );
+    let invalid = send(
+        &f,
+        2,
+        json!({"type":"dish_create","name":"Apple","format":"json"}),
+    );
+    assert_eq!(invalid["outcome"]["error"]["code"], "invalid_input");
+    f.init();
+    let config = send(&f, 2, json!({"type":"config_get"}));
+    assert_eq!(config["outcome"]["value"]["type"], "configuration");
+    let create = send(
+        &f,
+        2,
+        json!({"type":"dish_create","name":"Protocol apple","fields":{"add_tags":["API"]}}),
+    );
+    assert_eq!(create["outcome"]["status"], "ok");
+    let id = create["outcome"]["value"]["data"]["id"].as_str().unwrap();
+    assert!(f
+        .cli(&["dish", "show", id], None)
+        .contains("Protocol apple"));
+    assert_eq!(
+        f.request(json!({"type":"list_dishes"}))["value"][0]["id"],
+        id
+    );
+    f.cli(&["dish", "create", "Legacy banana"], None);
+    let list = send(&f, 2, json!({"type":"dishes_list"}));
+    assert_eq!(
+        list["outcome"]["value"]["data"].as_array().unwrap().len(),
+        2
+    );
+    let changes = send(&f, 2, json!({"type":"changes","after":0}));
+    assert_eq!(changes["outcome"]["value"]["data"]["changed"], true);
+    let state = send(&f, 2, json!({"type":"status"}));
+    assert_eq!(state["outcome"]["value"]["data"]["sync"]["state"], "idle");
+    send(&f, 2, json!({"type":"sync_start"}));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let state = send(&f, 2, json!({"type":"status"}));
+        if state["outcome"]["value"]["data"]["sync"]["state"] == "failed" {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}

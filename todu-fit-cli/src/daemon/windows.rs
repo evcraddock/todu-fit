@@ -83,37 +83,19 @@ fn serve_inner(config: Config) -> Result<(), Error> {
                     if line.len() as u64 > MAX_FRAME || !line.ends_with('\n') {
                         return Err("INVALID_FRAME".into());
                     }
-                    serde_json::from_str::<Request>(&line).map_err(|e| -> Error { e.into() })
+                    Ok::<String, Error>(line)
                 };
                 let Ok(Ok(request)) = tokio::time::timeout(Duration::from_secs(5), read).await
                 else {
                     return;
                 };
-                let id = request.id.clone();
-                let result = tokio::task::spawn_blocking(move || -> Result<Response, Error> {
-                    if request.version != 1 || uuid::Uuid::parse_str(&request.id).is_err() {
-                        return Err("INVALID_REQUEST".into());
-                    }
-                    if matches!(request.operation, Operation::Sync) {
-                        start_sync(owner.clone());
-                        return Ok(Response {
-                            id: request.id,
-                            revision: owner.store.lock().unwrap().revision()?,
-                            value: Some(json!({"sync":"running"})),
-                            error: None,
-                        });
-                    }
-                    owner.apply(&request)
-                })
-                .await;
+                let result =
+                    tokio::task::spawn_blocking(move || handle_frame(&owner, &request)).await;
                 let response = match result {
                     Ok(Ok(response)) => response,
-                    Ok(Err(e)) => Response {
-                        id,
-                        revision: 0,
-                        value: None,
-                        error: Some(e.to_string()),
-                    },
+                    Ok(Err(e)) => {
+                        json!({"id":"", "revision":0, "value":null, "error":e.to_string()})
+                    }
                     Err(_) => return,
                 };
                 if let Ok(mut bytes) = serde_json::to_vec(&response) {

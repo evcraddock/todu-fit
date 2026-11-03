@@ -2196,6 +2196,8 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "todu-fit-core",
+ "todu-fit-protocol",
+ "todu-fit-service",
  "tokio",
  "tokio-tungstenite",
  "tracing",
@@ -2235,6 +2237,32 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "todu-fit-core",
+]
+
+[[package]]
+name = "todu-fit-protocol"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "todu-fit-service"
+version = "0.1.0"
+dependencies = [
+ "automerge",
+ "chrono",
+ "chrono-tz",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "todu-fit-core",
+ "todu-fit-protocol",
+ "uuid",
 ]
 
 [[package]]

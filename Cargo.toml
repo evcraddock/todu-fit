@@ -1,4 +1,4 @@
 [workspace]
-members = ["todu-fit-core", "todu-fit-cli", "adapters/desktop"]
-default-members = ["todu-fit-core", "todu-fit-cli"]
+members = ["todu-fit-core", "todu-fit-cli", "adapters/desktop", "todu-fit-protocol", "todu-fit-service"]
+default-members = ["todu-fit-core", "todu-fit-cli", "todu-fit-protocol", "todu-fit-service"]
 resolver = "2"
