@@ -47,7 +47,7 @@ Local-first meal planning and nutrition tracking with cross-device sync.
 
 ## CLI Installation
 
-### Quick Install (Linux/macOS)
+### Quick Install (Linux x86_64 / macOS Apple Silicon)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/evcraddock/todu-fit/main/install.sh | bash
@@ -57,7 +57,6 @@ curl -fsSL https://raw.githubusercontent.com/evcraddock/todu-fit/main/install.sh
 
 Pre-built binaries on the [releases page](https://github.com/evcraddock/todu-fit/releases):
 - Linux x86_64
-- macOS x86_64 (Intel)
 - macOS aarch64 (Apple Silicon)
 - Windows x86_64
 
