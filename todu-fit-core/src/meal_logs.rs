@@ -1,8 +1,8 @@
 //! Local meal log repository that reads/writes Automerge documents.
 //!
 //! Network synchronization remains an explicit caller responsibility.
-//! Log creation preserves the existing writer's snapshot fields; unrelated
-//! nutrient-persistence fixes are not part of this extraction.
+//! Log creation snapshots dish nutrients so history remains independent of
+//! subsequent canonical dish edits or deletion.
 //!
 //! This module provides a repository layer that uses the user's personal
 //! meallogs document. Identity must be initialized first.

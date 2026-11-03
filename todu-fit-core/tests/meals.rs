@@ -202,8 +202,8 @@ fn log_crud_date_queries_and_portions_retain_existing_writer_behavior() {
     let created = f.logs.create(&log).unwrap();
     assert_eq!(created.dishes[0].id, f.dish.id);
     assert_eq!(created.portion_for(f.dish.id), 0.5);
-    // The existing writer omits snapshot nutrients. That separate known fix is out of scope.
-    assert!(created.dishes[0].nutrients.is_none());
+    assert_eq!(created.dishes[0].nutrients, f.dish.nutrients);
+    assert_eq!(calculate_meal_nutrients(&created)["calories"], 300.0);
     f.logs
         .create(&MealLog::new(day(3), MealType::Lunch, "chef"))
         .unwrap();
@@ -222,6 +222,42 @@ fn log_crud_date_queries_and_portions_retain_existing_writer_behavior() {
 }
 
 #[test]
+fn log_updates_preserve_snapshot_nutrients_and_portions_without_canonical_dishes() {
+    let f = Fixture::new();
+    let dish = Dish::new("Snapshot only", "chef").with_nutrients(vec![
+        Nutrient::new("calories", 250.0, "kcal"),
+        Nutrient::new("protein", 12.5, "g"),
+        Nutrient::new("carbs", 30.0, "g"),
+        Nutrient::new("fat", 8.0, "g"),
+        Nutrient::new("sodium", 123.5, "mg"),
+    ]);
+    let unknown = Dish::new("No nutrients", "chef");
+    let log = MealLog::new(day(1), MealType::Lunch, "chef")
+        .with_dishes(vec![dish.clone(), unknown])
+        .with_dish_portion(dish.id, 0.5);
+    let mut stored = f.logs.create(&log).unwrap();
+    assert_eq!(stored.dishes[0].nutrients, dish.nutrients);
+    assert!(stored.dishes[1].nutrients.is_none());
+    stored.notes = Some("Edited after reload".into());
+    f.logs.update(&stored).unwrap();
+    let reloaded = MealLogRepository::new(f.dir.path().to_path_buf())
+        .get_by_id(log.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(reloaded.dishes[0].nutrients, dish.nutrients);
+    assert!(reloaded.dishes[1].nutrients.is_none());
+    let totals = calculate_meal_nutrients(&reloaded);
+    for nutrient in dish.nutrients.unwrap() {
+        assert_eq!(totals[&nutrient.name], nutrient.amount * 0.5);
+    }
+    // Clearing the snapshot must not leave stale nutrients behind on overwrite.
+    stored.dishes[0].nutrients = None;
+    assert!(f.logs.update(&stored).unwrap().dishes[0]
+        .nutrients
+        .is_none());
+}
+
+#[test]
 fn planned_logging_skips_missing_dishes_and_preserves_snapshot_names() {
     let f = Fixture::new();
     let plan = MealPlan::new(day(1), MealType::Dinner, "Plan", "chef")
@@ -234,12 +270,19 @@ fn planned_logging_skips_missing_dishes_and_preserves_snapshot_names() {
     assert_eq!(log.created_by, "logger");
     assert_eq!(log.notes.as_deref(), Some("Note"));
     assert_eq!(log.dishes.len(), 1);
+    assert_eq!(log.dishes[0].nutrients, f.dish.nutrients);
     let mut changed = f.dish.clone();
     changed.name = "Current name".into();
+    changed.nutrients = Some(vec![Nutrient::new("calories", 900.0, "kcal")]);
     f.dishes.update(&changed).unwrap();
     let mut logs = f.logs.list().unwrap();
     hydrate_referenced_dishes(&mut logs, &f.dishes).unwrap();
     assert_eq!(logs[0].dishes[0].name, "Pasta");
+    assert_eq!(logs[0].dishes[0].nutrients, f.dish.nutrients);
+    f.dishes.delete(f.dish.id).unwrap();
+    let mut logs = f.logs.list().unwrap();
+    hydrate_referenced_dishes(&mut logs, &f.dishes).unwrap();
+    assert_eq!(logs[0].dishes[0].nutrients, f.dish.nutrients);
 }
 
 #[test]
@@ -258,6 +301,9 @@ fn unplanned_logging_resolves_names_and_uuids_and_propagates_original_errors() {
         vec![f.dish.id, f.dish.id]
     );
     assert!(log.mealplan_id.is_none());
+    for dish in &log.dishes {
+        assert_eq!(dish.nutrients, f.dish.nutrients);
+    }
     draft.dish_references = vec!["Missing".into()];
     assert_eq!(
         f.logs
