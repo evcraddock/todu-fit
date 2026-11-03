@@ -18,4 +18,5 @@ pub use meal::{MealCommand, MealSubcommand};
 pub use mealplan::{MealPlanCommand, MealPlanSubcommand};
 pub use shopping::{ShoppingCommand, ShoppingSubcommand};
 pub use sync_cmd::SyncCommand;
+pub(crate) use water::detected_system_timezone;
 pub use water::{WaterCommand, WaterSubcommand};

@@ -23,4 +23,14 @@ Generated on 2026-11-03 for `task-db55972a` with the actual pre-extraction CLI a
 
 [Core meal tests](../meals.rs) verify that reads leave the original bytes unchanged, edits retain previous changes, UUID references and snapshots retain their different semantics, and group/personal document IDs remain stable. The [CLI meal tests](../../../todu-fit-cli/tests/meals.rs) cover output, parsing/validation order, metadata, confirmations and portioned history. These fixtures do not certify arbitrary private documents or a production deployment.
 
+## Shopping and hydration extraction fixtures
+
+Generated on 2026-11-03 for `task-ed608731` with the actual pre-extraction CLI at `8ccab68` (Rust Automerge 0.12.0). All data is synthetic.
+
+- `shopping-before-core.automerge`: cart for Sunday 2026-07-19 with checked `salt`, manual `Paper towels` (quantity `2`, unit `rolls`) and `Soap` with only unit `bars`.
+- `hydration-before-core.automerge`: goal 1000 mL, preferred unit mL, timezone `America/Chicago`, presets 250/500 mL; entries of 250, 500 and 750 mL at 2026-07-25T05:00:00Z, 2026-07-26T03:20:18Z and 2026-07-26T05:00:00Z. The first two belong to July 25 in Chicago.
+- `hydration-legacy-before-core.automerge`: JS Automerge 3.5.0 removed only `settings.timezone` from that snapshot, preserving entry/history data to exercise the existing lazy timezone initialization.
+
+[Core tests](../shopping_hydration.rs) cover real repositories, no-op writes, legacy initialization with an injected detector, history/ID preservation, inclusive/DST dates, group/personal isolation and existing calculation rules. [CLI tests](../../../todu-fit-cli/tests/shopping_water.rs) cover parsing, output, normalization and the real platform-detector adapter. Existing initialization of a missing timezone is intentionally preserved; no new migration is introduced.
+
 Run `make test-cli` and `make web-test` from the repository root.

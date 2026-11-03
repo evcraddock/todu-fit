@@ -7,10 +7,12 @@ pub mod context;
 pub mod dishes;
 pub mod document_id;
 pub mod documents;
+pub mod hydration;
 pub mod identity;
 pub mod meal_logs;
 pub mod meal_plans;
 pub mod models;
+pub mod shopping;
 pub mod sync;
 
 pub use automerge::{
@@ -21,6 +23,7 @@ pub use automerge::{
 pub use dishes::{DishError, DishRepository, DishUpdate};
 pub use document_id::{DocumentId, DocumentIdError};
 pub use documents::{GroupDocument, GroupRef, IdentityDocument};
+pub use hydration::{HydrationError, HydrationRepository, HydrationSettingsUpdate};
 pub use identity::{Identity, IdentityError, IdentityState};
 pub use meal_logs::{MealLogDraft, MealLogError, MealLogRepository};
 pub use meal_plans::{MealPlanDraft, MealPlanError, MealPlanRepository, MealPlanUpdate};
@@ -32,6 +35,7 @@ pub use models::{
     HydrationSettings, HydrationUnit, Ingredient, ManualItem, MealLog, MealPlan, MealType,
     Nutrient, ShoppingCart, ShoppingItem, WaterEntry,
 };
+pub use shopping::{ShoppingError, ShoppingList, ShoppingRepository};
 pub use sync::{check_server, SyncClient, SyncError, SyncResult};
 
 pub fn version() -> &'static str {
