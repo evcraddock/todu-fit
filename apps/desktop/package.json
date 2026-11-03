@@ -1,0 +1,54 @@
+{
+  "name": "todu-fit-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Todu Fit native Core desktop proof",
+  "author": "Todu",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "build:native": "node scripts/build-native.cjs",
+    "build": "npm run build:native && tsc --noEmit && vite build",
+    "package": "npm run build && electron-builder --dir",
+    "test": "node --test tests/native.cjs",
+    "test:packaged": "node tests/packaged.cjs"
+  },
+  "build": {
+    "appId": "com.todu.fit.proof",
+    "productName": "Todu Fit Proof",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "electron/**",
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "native",
+        "to": "native"
+      }
+    ],
+    "mac": {
+      "identity": null,
+      "target": "dir"
+    },
+    "win": {
+      "target": "dir",
+      "signAndEditExecutable": false
+    }
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "electron": "45.2.2",
+    "electron-builder": "26.18.0",
+    "playwright": "1.64.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.5"
+  }
+}

@@ -17,3 +17,9 @@
 /web/dist-server/
 /web/*.sqlite*
 web/tsconfig.node.tsbuildinfo
+
+/apps/desktop/node_modules/
+/apps/desktop/dist/
+/apps/desktop/out/
+/apps/desktop/native/
+/apps/desktop/test-results/

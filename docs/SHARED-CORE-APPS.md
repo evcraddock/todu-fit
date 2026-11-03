@@ -6,7 +6,9 @@ This proposal describes a direction for replacing the todu-fit website with inst
 
 The idea borrowed from Rott is **a portable core with separate application adapters**. The platform direction selected on November 3, 2026 is Electron with React/TypeScript for Windows and macOS, while retaining Swift/SwiftUI for iOS. Both interfaces call the same Rust core through language-appropriate adapters.
 
-The platform direction is approved; the detailed implementation plan remains to be defined. No bridge has been selected or validated for todu-fit, and no existing website, service or user data is changed by this document. Agent integration is deferred and is not a prerequisite for delivering the apps.
+The platform direction is approved; the detailed implementation plan remains to be defined. The initial bridge proof is described below; no existing website, service or user data is changed by this document. Agent integration is deferred and is not a prerequisite for delivering the apps.
+
+The first local native-addon proof is now implemented in [`apps/desktop`](../apps/desktop/README.md), with a thin napi-rs adapter in `adapters/desktop`. The packaged macOS arm64 create/quit/reopen dish flow has passed locally. Windows automation is present but remains unverified and nonblocking for this milestone. The candidate discussion below records the original proposal; the proof uses the native Node addon approach, not a sidecar. This does not establish release or migration readiness.
 
 ## Product direction
 
