@@ -20,7 +20,7 @@ case "$OS" in
         ;;
     darwin)
         case "$ARCH" in
-            x86_64) TARGET="x86_64-apple-darwin" ;;
+            x86_64) echo "Pre-built macOS binaries require Apple Silicon. Run this installer from a native arm64 shell."; exit 1 ;;
             arm64) TARGET="aarch64-apple-darwin" ;;
             *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
         esac

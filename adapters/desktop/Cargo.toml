@@ -1,0 +1,17 @@
+[package]
+name = "todu-fit-desktop"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+todu-fit-core = { path = "../../todu-fit-core" }
+napi = { version = "3", default-features = false, features = ["napi8"] }
+napi-derive = "3"
+fs2 = "0.4"
+
+[build-dependencies]
+napi-build = "2"
