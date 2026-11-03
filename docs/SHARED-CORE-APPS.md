@@ -69,6 +69,8 @@ The existing repository provides useful foundations:
 
 The core is therefore a starting point, not already a complete application service suitable for every client. Some CLI-owned behavior would need extracting, and relevant TypeScript-only domain behavior—such as nutrition aggregation in `web/src/meals/mealPlanNutrition.ts`—would need migrating or reconciling with Rust. Reuse must preserve current behavior and existing document compatibility rather than copy implementations into a new adapter.
 
+The [Automerge compatibility review](AUTOMERGE-COMPATIBILITY.md) records the locked Rust/web versions, interoperability evidence and separate maintenance recommendations. It recommends starting the dish extraction without a dependency upgrade or document migration; broader upgrades remain separate work.
+
 An illustrative layout is:
 
 ```text
