@@ -417,7 +417,7 @@ mod tests {
 
         let (_, plan_obj) = doc.get(ROOT, &id_str).unwrap().unwrap();
         let (uses_leftovers, _) = doc.get(&plan_obj, "uses_leftovers").unwrap().unwrap();
-        assert_eq!(uses_leftovers.to_bool(), Some(true));
+        assert_eq!(uses_leftovers.as_bool(), Some(true));
     }
 
     #[test]
@@ -461,11 +461,11 @@ mod tests {
 
         let (_, entry_obj) = doc.get(ROOT, entry.id.to_string()).unwrap().unwrap();
         let (amount, _) = doc.get(&entry_obj, "amount_ml").unwrap().unwrap();
-        assert_eq!(amount.to_i64(), Some(500));
+        assert_eq!(amount.as_i64(), Some(500));
 
         let (_, settings_obj) = doc.get(ROOT, "settings").unwrap().unwrap();
         let (goal, _) = doc.get(&settings_obj, "daily_goal_ml").unwrap().unwrap();
-        assert_eq!(goal.to_i64(), Some(2000));
+        assert_eq!(goal.as_i64(), Some(2000));
     }
 
     #[test]

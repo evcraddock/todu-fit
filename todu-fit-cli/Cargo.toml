@@ -2,10 +2,11 @@
 name = "todu-fit-cli"
 version = "2.8.0"
 edition = "2021"
+rust-version = "1.90"
 
 [dependencies]
 todu-fit-core = { path = "../todu-fit-core" }
-automerge = "0.7"
+automerge = "0.12"
 axum = "0.8"  # Used for local callback server in auth
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
