@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { openBridge } = require('./bridge.cjs');
+const { openDaemonBridge } = require('./daemon-bridge.cjs');
 
 // Separate proof app storage; tests always override this with a fresh temporary root.
 if (process.env.TODU_FIT_PROOF_DATA) {
@@ -14,10 +14,8 @@ const pageUrl = pathToFileURL(page).href;
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.whenReady().then(async () => {
-    bridge = openBridge(
-      path.join(app.isPackaged ? process.resourcesPath : path.resolve(__dirname, '..'), 'native/core.node'),
-      path.join(app.getPath('userData'), 'core-proof')
-    );
+    if (!process.env.FIT_DAEMON_ENDPOINT) throw new Error('Set FIT_DAEMON_ENDPOINT to the shared daemon socket');
+    bridge = openDaemonBridge(process.env.FIT_DAEMON_ENDPOINT);
     await bridge.ready;
     function handler(operation) {
       return async (event, name) => {
@@ -30,11 +28,15 @@ else {
           return { ok: true, value: await (operation === 'create' ? bridge.create(name) : bridge.list()) };
         } catch (error) {
           const code = /^(INVALID_INPUT|CLOSED|STORE_BUSY|STORAGE|WORKER_FAILED):/.exec(error.message)?.[1] || 'STORAGE';
-          return { ok: false, error: { code, message: 'The local operation could not be completed.' } };
+          return { ok: false, error: { code, message: error.message } };
         }
       };
     }
     ipcMain.handle('dishes:list', handler('list'));
+    ipcMain.handle('daemon:status', async event => {
+      if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== pageUrl) throw new Error('Request denied');
+      return bridge.status();
+    });
     ipcMain.handle('dishes:create', handler('create'));
     window = new BrowserWindow({ width: 760, height: 640, webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true,
@@ -43,8 +45,8 @@ else {
     window.webContents.on('will-navigate', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     await window.loadFile(page);
-  }).catch(() => {
-    dialog.showErrorBox('Unable to open local storage', 'The proof store could not be opened. It may be in use or damaged.');
+  }).catch(error => {
+    dialog.showErrorBox('Unable to connect to shared daemon', error.message);
     app.quit();
   });
 }

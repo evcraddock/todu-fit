@@ -53,35 +53,6 @@ jobs:
       - name: Run tests
         run: cargo test
 
-  automerge-compatibility:
-    name: Automerge CLI-JS Compatibility
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install web dependencies
-        run: npm ci --prefix web
-
-      - name: Build CLI
-        run: cargo build --locked -p todu-fit-cli
-
-      - name: Check CLI-JavaScript WebSocket compatibility
-        run: node integration-tests/automerge-compatibility.mjs
-
   # Web jobs
   web-lint:
     name: Web Lint

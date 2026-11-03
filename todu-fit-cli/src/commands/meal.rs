@@ -10,7 +10,7 @@ use crate::sync::{SyncDishRepository, SyncMealLogRepository, SyncMealPlanReposit
 use todu_fit_core::meal_logs::{calculate_meal_nutrients, hydrate_referenced_dishes};
 use todu_fit_core::MealLogDraft;
 
-#[derive(Clone, ValueEnum, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, ValueEnum, Default)]
 pub enum OutputFormat {
     #[default]
     Text,
@@ -24,13 +24,13 @@ pub struct MealRepos<'a> {
     pub dish: &'a SyncDishRepository,
 }
 
-#[derive(Args)]
+#[derive(serde::Serialize, serde::Deserialize, Args)]
 pub struct MealCommand {
     #[command(subcommand)]
     pub command: MealSubcommand,
 }
 
-#[derive(Subcommand)]
+#[derive(serde::Serialize, serde::Deserialize, Subcommand)]
 pub enum MealSubcommand {
     /// Log a meal (from plan or unplanned)
     Log {
@@ -318,7 +318,7 @@ impl MealCommand {
             io::stdout().flush()?;
 
             let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
+            crate::output::read_confirmation(&mut input)?;
 
             if !input.trim().eq_ignore_ascii_case("y") {
                 println!("Deletion cancelled.");

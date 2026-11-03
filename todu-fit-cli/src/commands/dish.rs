@@ -8,20 +8,20 @@ use crate::models::{Dish, Ingredient, Nutrient};
 use crate::sync::SyncDishRepository;
 use todu_fit_core::DishUpdate;
 
-#[derive(Clone, ValueEnum, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, ValueEnum, Default)]
 pub enum OutputFormat {
     #[default]
     Text,
     Json,
 }
 
-#[derive(Args)]
+#[derive(serde::Serialize, serde::Deserialize, Args)]
 pub struct DishCommand {
     #[command(subcommand)]
     pub command: DishSubcommand,
 }
 
-#[derive(Subcommand)]
+#[derive(serde::Serialize, serde::Deserialize, Subcommand)]
 pub enum DishSubcommand {
     /// Create a new dish
     Create {
@@ -421,7 +421,7 @@ impl DishCommand {
                     io::stdout().flush()?;
 
                     let mut input = String::new();
-                    io::stdin().read_line(&mut input)?;
+                    crate::output::read_confirmation(&mut input)?;
 
                     if !input.trim().eq_ignore_ascii_case("y") {
                         println!("Deletion cancelled.");

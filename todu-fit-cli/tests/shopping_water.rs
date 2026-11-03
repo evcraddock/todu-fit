@@ -1,6 +1,7 @@
+mod support;
 use automerge::AutoCommit;
 use chrono::NaiveDate;
-use std::process::{Command, Output};
+use std::process::Output;
 use tempfile::TempDir;
 use todu_fit_core::{
     Dish, DishRepository, HydrationRepository, HydrationSettings, HydrationUnit, Identity,
@@ -71,14 +72,7 @@ impl Fixture {
         }
     }
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_fit"))
-            .arg("-c")
-            .arg(self.dir.path().join("config.yaml"))
-            .args(args)
-            .env("FIT_DATA_DIR", self.dir.path())
-            .env_remove("FIT_SYNC_URL")
-            .output()
-            .unwrap()
+        support::run(self.dir.path(), args)
     }
     fn success(&self, args: &[&str]) -> String {
         let output = self.run(args);

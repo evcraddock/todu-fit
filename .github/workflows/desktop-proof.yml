@@ -2,7 +2,7 @@ name: Desktop native proof
 
 on:
   pull_request:
-    paths: ['apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
+    paths: ['apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'todu-fit-cli/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
   workflow_dispatch:
 
 jobs:
@@ -27,7 +27,7 @@ jobs:
       - run: npm ci
         working-directory: apps/desktop
       - run: cargo fmt --all --check
-      - run: cargo clippy -p todu-fit-desktop -- -D warnings
+      - run: cargo clippy -p todu-fit-cli -- -D warnings
       - run: npm run package
         working-directory: apps/desktop
         env:

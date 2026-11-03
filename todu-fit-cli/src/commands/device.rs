@@ -7,13 +7,13 @@ use todu_fit_core::{Identity, IdentityState, MultiDocStorage};
 use crate::config::Config;
 
 /// Manage device identity
-#[derive(Args)]
+#[derive(serde::Serialize, serde::Deserialize, Args)]
 pub struct DeviceCommand {
     #[command(subcommand)]
     command: DeviceSubcommand,
 }
 
-#[derive(Subcommand)]
+#[derive(serde::Serialize, serde::Deserialize, Subcommand)]
 enum DeviceSubcommand {
     /// Show identity document ID for sharing with other devices
     Show,

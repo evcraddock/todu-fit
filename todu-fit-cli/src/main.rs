@@ -1,3 +1,6 @@
+#[macro_use]
+mod output;
+mod daemon;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -7,14 +10,13 @@ mod models;
 mod sync;
 
 use commands::{
-    meal::MealRepos, ConfigCommand, DeviceCommand, DishCommand, DishSubcommand, GroupCommand,
-    GroupSubcommand, InitCommand, MealCommand, MealPlanCommand, MealPlanSubcommand, MealSubcommand,
-    ShoppingCommand, ShoppingSubcommand, SyncCommand, WaterCommand, WaterSubcommand,
+    meal::MealRepos, ConfigCommand, DeviceCommand, DishCommand, GroupCommand, InitCommand,
+    MealCommand, MealPlanCommand, ShoppingCommand, SyncCommand, WaterCommand,
 };
 use config::Config;
 use sync::{
-    try_auto_sync, SyncDishRepository, SyncHydrationRepository, SyncMealLogRepository,
-    SyncMealPlanRepository, SyncShoppingRepository,
+    SyncDishRepository, SyncHydrationRepository, SyncMealLogRepository, SyncMealPlanRepository,
+    SyncShoppingRepository,
 };
 
 #[derive(Parser)]
@@ -30,8 +32,10 @@ struct Cli {
     command: Option<Commands>,
 }
 
-#[derive(Subcommand)]
+#[derive(serde::Serialize, serde::Deserialize, Subcommand)]
 enum Commands {
+    /// Run the shared local owner (explicit startup; no store adoption)
+    Daemon,
     /// Initialize identity (new or join existing)
     Init(InitCommand),
 
@@ -79,20 +83,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration
     let config = Config::load(cli.config)?;
 
-    // Auto-sync BEFORE read commands
-    if is_read_command(&cli.command) {
-        try_auto_sync(&config);
+    if matches!(cli.command, Some(Commands::Daemon)) {
+        return daemon::serve(config);
     }
-
-    // Execute the command
-    let result = execute_command(&cli.command, &config, cli_config_path);
-
-    // Auto-sync AFTER commands that write or may migrate settings (only if command succeeded)
-    if result.is_ok() && is_write_command(&cli.command) {
-        try_auto_sync(&config);
+    if matches!(cli.command, Some(Commands::Config(_)) | None) {
+        return execute_command(&cli.command, &config, cli_config_path);
     }
-
-    result
+    daemon::call_cli(cli.command.unwrap(), &config)
 }
 
 fn execute_command(
@@ -100,21 +97,37 @@ fn execute_command(
     config: &Config,
     cli_config_path: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(command) = command else {
+        println!("Use --help to see available commands");
+        return Ok(());
+    };
+    if let Commands::Config(cmd) = command {
+        return cmd.run(config, cli_config_path);
+    }
+    execute_command_ref(command, config)
+}
+
+fn execute_command_ref(
+    command: &Commands,
+    config: &Config,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cli_config_path = config.config_file.clone();
     match command {
-        Some(Commands::Init(cmd)) => {
+        Commands::Daemon => return Err("Nested daemon request denied".into()),
+        Commands::Init(cmd) => {
             cmd.run(config)?;
         }
-        Some(Commands::Device(cmd)) => {
+        Commands::Device(cmd) => {
             cmd.run(config)?;
         }
-        Some(Commands::Group(cmd)) => {
+        Commands::Group(cmd) => {
             cmd.run(config)?;
         }
-        Some(Commands::Dish(cmd)) => {
+        Commands::Dish(cmd) => {
             let repo = SyncDishRepository::new(config.data_dir.value.clone());
             cmd.run(&repo, config)?;
         }
-        Some(Commands::Meal(cmd)) => {
+        Commands::Meal(cmd) => {
             let data_dir = config.data_dir.value.clone();
             let meallog_repo = SyncMealLogRepository::new(data_dir.clone());
             let mealplan_repo = SyncMealPlanRepository::new(data_dir.clone());
@@ -126,115 +139,51 @@ fn execute_command(
             };
             cmd.run(repos, config)?;
         }
-        Some(Commands::Mealplan(cmd)) => {
+        Commands::Mealplan(cmd) => {
             let data_dir = config.data_dir.value.clone();
             let mealplan_repo = SyncMealPlanRepository::new(data_dir.clone());
             let dish_repo = SyncDishRepository::new(data_dir);
             cmd.run(&mealplan_repo, &dish_repo, config)?;
         }
-        Some(Commands::Shopping(cmd)) => {
+        Commands::Shopping(cmd) => {
             let data_dir = config.data_dir.value.clone();
             let shopping_repo = SyncShoppingRepository::new(data_dir.clone());
             let mealplan_repo = SyncMealPlanRepository::new(data_dir.clone());
             let dish_repo = SyncDishRepository::new(data_dir);
             cmd.run(&shopping_repo, &mealplan_repo, &dish_repo, config)?;
         }
-        Some(Commands::Water(cmd)) => {
+        Commands::Water(cmd) => {
             let repo = SyncHydrationRepository::with_timezone_provider(
                 config.data_dir.value.clone(),
                 commands::detected_system_timezone,
             );
             cmd.run(&repo)?;
         }
-        Some(Commands::Config(cmd)) => {
+        Commands::Config(cmd) => {
             cmd.run(config, cli_config_path)?;
         }
-        Some(Commands::Sync(cmd)) => {
+        Commands::Sync(cmd) => {
             cmd.run(config)?;
-        }
-        None => {
-            println!("Use --help to see available commands");
         }
     }
 
     Ok(())
 }
 
-/// Returns true if the command is a read operation that should sync before execution.
-fn is_read_command(cmd: &Option<Commands>) -> bool {
-    matches!(
-        cmd,
-        Some(Commands::Dish(d)) if matches!(d.command,
-            DishSubcommand::List { .. } | DishSubcommand::Show { .. })
-    ) || matches!(
-        cmd,
-        Some(Commands::Meal(m)) if matches!(m.command,
-            MealSubcommand::History { .. })
-    ) || matches!(
-        cmd,
-        Some(Commands::Mealplan(mp)) if matches!(mp.command,
-            MealPlanSubcommand::List { .. } | MealPlanSubcommand::Show { .. })
-    ) || matches!(
-        cmd,
-        Some(Commands::Group(g)) if matches!(g.command,
-            GroupSubcommand::List | GroupSubcommand::Show)
-    ) || matches!(
-        cmd,
-        Some(Commands::Shopping(s)) if matches!(s.command,
-            ShoppingSubcommand::List { .. })
-    ) || matches!(
-        cmd,
-        Some(Commands::Water(w)) if matches!(w.command,
-            WaterSubcommand::Today { .. }
-            | WaterSubcommand::Recent { .. }
-            | WaterSubcommand::History { .. }
-            | WaterSubcommand::Settings { .. })
-    )
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-/// Returns true if the command is a write operation that should sync after execution.
-fn is_write_command(cmd: &Option<Commands>) -> bool {
-    matches!(
-        cmd,
-        Some(Commands::Dish(d)) if matches!(d.command,
-            DishSubcommand::Create { .. }
-            | DishSubcommand::Update { .. }
-            | DishSubcommand::Delete { .. }
-            | DishSubcommand::AddIngredient { .. }
-            | DishSubcommand::RemoveIngredient { .. })
-    ) || matches!(
-        cmd,
-        Some(Commands::Meal(m)) if matches!(m.command,
-            MealSubcommand::Log { .. })
-    ) || matches!(
-        cmd,
-        Some(Commands::Mealplan(mp)) if matches!(mp.command,
-            MealPlanSubcommand::Create { .. }
-            | MealPlanSubcommand::Update { .. }
-            | MealPlanSubcommand::Delete { .. })
-    ) || matches!(
-        cmd,
-        Some(Commands::Group(g)) if matches!(g.command,
-            GroupSubcommand::Create { .. }
-            | GroupSubcommand::Join { .. }
-            | GroupSubcommand::Leave { .. })
-    ) || matches!(
-        cmd,
-        Some(Commands::Shopping(s)) if matches!(s.command,
-            ShoppingSubcommand::Add { .. }
-            | ShoppingSubcommand::Remove { .. }
-            | ShoppingSubcommand::Check { .. }
-            | ShoppingSubcommand::Uncheck { .. }
-            | ShoppingSubcommand::ClearChecked { .. })
-    ) || matches!(
-        cmd,
-        Some(Commands::Water(w)) if matches!(w.command,
-            WaterSubcommand::Add { .. }
-            | WaterSubcommand::Today { .. }
-            | WaterSubcommand::Recent { .. }
-            | WaterSubcommand::History { .. }
-            | WaterSubcommand::Settings { .. }
-            | WaterSubcommand::Set { .. }
-            | WaterSubcommand::Delete { .. })
-    )
+    #[test]
+    fn config_init_honors_explicit_new_path_without_daemon() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("new-config.yaml");
+        let cli =
+            Cli::try_parse_from(["fit", "-c", path.to_str().unwrap(), "config", "init"]).unwrap();
+        let config = Config::load(cli.config.clone()).unwrap();
+        execute_command(&cli.command, &config, cli.config).unwrap();
+        assert!(std::fs::read_to_string(path)
+            .unwrap()
+            .contains("created_by:"));
+    }
 }

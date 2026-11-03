@@ -6,19 +6,22 @@ use crate::config::Config;
 use crate::sync::{SyncClient, SyncClientError};
 
 /// Sync with remote server
-#[derive(Debug, Args)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Args)]
 pub struct SyncCommand {
     #[command(subcommand)]
     command: Option<SyncSubcommand>,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Subcommand)]
 enum SyncSubcommand {
     /// Show sync configuration and server status
     Status,
 }
 
 impl SyncCommand {
+    pub fn is_status(&self) -> bool {
+        self.command.is_some()
+    }
     pub fn run(&self, config: &Config) -> Result<(), SyncCommandError> {
         // Use tokio runtime for async operations
         let rt = tokio::runtime::Runtime::new()
