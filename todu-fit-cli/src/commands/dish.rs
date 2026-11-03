@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::config::Config;
 use crate::models::{Dish, Ingredient, Nutrient};
 use crate::sync::SyncDishRepository;
+use todu_fit_core::DishUpdate;
 
 #[derive(Clone, ValueEnum, Default)]
 pub enum OutputFormat {
@@ -271,17 +272,10 @@ impl DishCommand {
             }
 
             DishSubcommand::List { format, tag } => {
-                let dishes = repo.list()?;
-
-                // Filter by tag if specified
-                let dishes: Vec<_> = if let Some(tag) = tag {
-                    let tag_lower = tag.to_lowercase();
-                    dishes
-                        .into_iter()
-                        .filter(|d| d.tags.iter().any(|t| t.to_lowercase() == tag_lower))
-                        .collect()
+                let dishes = if let Some(tag) = tag {
+                    repo.filter_by_tag(tag)?
                 } else {
-                    dishes
+                    repo.list()?
                 };
 
                 if dishes.is_empty() {
@@ -388,51 +382,19 @@ impl DishCommand {
                     None => return Err(format!("Dish not found: {}", identifier).into()),
                 };
 
-                // Apply updates
-                if let Some(new_name) = name {
-                    dish.name = new_name.clone();
-                }
-                if let Some(new_instructions) = instructions {
-                    dish.instructions = new_instructions.clone();
-                }
-                if let Some(new_prep_time) = prep_time {
-                    dish.prep_time = Some(*new_prep_time);
-                }
-                if let Some(new_cook_time) = cook_time {
-                    dish.cook_time = Some(*new_cook_time);
-                }
-                if let Some(new_servings) = servings {
-                    dish.servings = Some(*new_servings);
-                }
-                if let Some(new_image_url) = image_url {
-                    dish.image_url = Some(new_image_url.clone());
-                }
-                if let Some(new_source_url) = source_url {
-                    dish.source_url = Some(new_source_url.clone());
-                }
-
-                // Handle tag additions
-                for tag in add_tags {
-                    if !dish
-                        .tags
-                        .iter()
-                        .any(|t| t.to_lowercase() == tag.to_lowercase())
-                    {
-                        dish.tags.push(tag.clone());
-                    }
-                }
-
-                // Handle tag removals
-                for tag in remove_tags {
-                    let tag_lower = tag.to_lowercase();
-                    dish.tags.retain(|t| t.to_lowercase() != tag_lower);
-                }
-
-                // Handle nutrients (replaces existing)
-                if let Some(nutrients_json) = nutrients {
-                    let parsed = parse_nutrients(nutrients_json)?;
-                    dish.nutrients = Some(parsed);
-                }
+                let updates = DishUpdate {
+                    name: name.clone(),
+                    instructions: instructions.clone(),
+                    prep_time: *prep_time,
+                    cook_time: *cook_time,
+                    servings: *servings,
+                    image_url: image_url.clone(),
+                    source_url: source_url.clone(),
+                    add_tags: add_tags.clone(),
+                    remove_tags: remove_tags.clone(),
+                    nutrients: nutrients.as_deref().map(parse_nutrients).transpose()?,
+                };
+                updates.apply_to(&mut dish);
 
                 let updated = repo.update(&dish)?;
                 println!("Updated dish:");

@@ -23,7 +23,6 @@
 
 pub mod auto_sync;
 pub mod client;
-pub mod dish_sync;
 pub mod group_context;
 pub mod hydration_sync;
 pub mod meallog_sync;
@@ -36,9 +35,9 @@ pub mod writer;
 
 pub use auto_sync::try_auto_sync;
 pub use client::{SyncClient, SyncClientError};
-pub use dish_sync::SyncDishRepository;
 #[allow(unused_imports)]
 pub use hydration_sync::SyncHydrationRepository;
 pub use meallog_sync::SyncMealLogRepository;
 pub use mealplan_sync::SyncMealPlanRepository;
 pub use shopping_sync::SyncShoppingRepository;
+pub use todu_fit_core::DishRepository as SyncDishRepository;
