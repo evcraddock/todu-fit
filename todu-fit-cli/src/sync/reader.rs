@@ -751,7 +751,7 @@ fn get_bool(doc: &AutoCommit, obj_id: &ObjId, key: &str) -> Result<Option<bool>,
         .get(obj_id, key)
         .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
     {
-        Ok(value.to_bool())
+        Ok(value.as_bool())
     } else {
         Ok(None)
     }
@@ -762,7 +762,7 @@ fn get_i64(doc: &AutoCommit, obj_id: &ObjId, key: &str) -> Result<Option<i64>, R
         .get(obj_id, key)
         .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
     {
-        Ok(value.to_i64())
+        Ok(value.as_i64())
     } else {
         Ok(None)
     }
@@ -774,9 +774,9 @@ fn get_f64(doc: &AutoCommit, obj_id: &ObjId, key: &str) -> Result<Option<f64>, R
         .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
     {
         // Try f64 first, then fall back to i64 (for values stored as integers)
-        if let Some(f) = value.to_f64() {
+        if let Some(f) = value.as_f64() {
             Ok(Some(f))
-        } else if let Some(i) = value.to_i64() {
+        } else if let Some(i) = value.as_i64() {
             Ok(Some(i as f64))
         } else {
             Ok(None)
@@ -794,11 +794,11 @@ fn get_quantity(doc: &AutoCommit, obj_id: &ObjId, key: &str) -> Result<Option<f6
         .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
     {
         // Try f64 first (CLI writes this format)
-        if let Some(f) = value.to_f64() {
+        if let Some(f) = value.as_f64() {
             return Ok(Some(f));
         }
         // Try i64 (integers stored numerically)
-        if let Some(i) = value.to_i64() {
+        if let Some(i) = value.as_i64() {
             return Ok(Some(i as f64));
         }
         // Try scalar strings (web writes this format for ingredient quantities)
@@ -836,7 +836,7 @@ fn read_i64_list(doc: &AutoCommit, obj_id: &ObjId, key: &str) -> Result<Vec<i64>
                 .get(&list_id, i)
                 .map_err(|e| ReaderError::AutomergeError(e.to_string()))?
             {
-                if let Some(n) = value.to_i64() {
+                if let Some(n) = value.as_i64() {
                     result.push(n);
                 }
             }
