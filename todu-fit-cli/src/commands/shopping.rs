@@ -2,14 +2,13 @@
 //!
 //! Manage weekly shopping carts with items from meal plans and manual additions.
 
-use chrono::{Datelike, Local, NaiveDate};
+use chrono::{Local, NaiveDate};
 use clap::{Args, Subcommand, ValueEnum};
 
 use crate::config::Config;
 use crate::sync::{SyncDishRepository, SyncMealPlanRepository, SyncShoppingRepository};
-use todu_fit_core::{
-    aggregate_ingredients, collect_ingredients_from_mealplans, Ingredient, ManualItem, ShoppingItem,
-};
+use todu_fit_core::shopping::{week_start as get_week_start, ShoppingList};
+use todu_fit_core::ManualItem;
 
 #[derive(Clone, ValueEnum, Default)]
 pub enum OutputFormat {
@@ -105,40 +104,8 @@ impl ShoppingCommand {
             ShoppingSubcommand::List { week, format } => {
                 let week_start = parse_week_or_current(week.as_deref())?;
                 let week_str = week_start.to_string();
-                let week_end = week_start + chrono::Duration::days(6);
-
-                // Get shopping cart (checked items and manual items)
-                let cart = shopping_repo.get_or_create(&week_str)?;
-
-                // Get ingredients from meal plans for this week
-                let ingredients =
-                    collect_ingredients_for_week(mealplan_repo, dish_repo, week_start, week_end)?;
-
-                // Aggregate and deduplicate ingredients
-                let aggregated = aggregate_ingredients(&ingredients);
-
-                // Build shopping items with checked status
-                let mut items: Vec<ShoppingItem> = aggregated
-                    .iter()
-                    .map(|ing| ShoppingItem::from_ingredient(ing, cart.is_checked(&ing.name)))
-                    .collect();
-
-                // Add manual items
-                for manual in &cart.manual_items {
-                    items.push(ShoppingItem::from_manual(
-                        manual,
-                        cart.is_checked(&manual.name),
-                    ));
-                }
-
-                // Sort: unchecked first, then alphabetical
-                items.sort_by(|a, b| {
-                    if a.checked != b.checked {
-                        a.checked.cmp(&b.checked) // unchecked (false) comes first
-                    } else {
-                        a.name.to_lowercase().cmp(&b.name.to_lowercase())
-                    }
-                });
+                let ShoppingList { cart, items } =
+                    shopping_repo.list_for_week(week_start, mealplan_repo, dish_repo)?;
 
                 match format {
                     OutputFormat::Json => {
@@ -242,14 +209,6 @@ impl ShoppingCommand {
                     return Err("Item name cannot be empty".into());
                 }
 
-                let mut cart = shopping_repo.get_or_create(&week_str)?;
-
-                // Check for existing item
-                if cart.find_manual_item(name).is_some() {
-                    println!("Warning: '{}' already exists in the cart, skipping", name);
-                    return Ok(());
-                }
-
                 let item = match (qty, unit) {
                     (Some(q), Some(u)) => ManualItem::with_quantity(name, q, u),
                     (Some(q), None) => ManualItem::with_quantity(name, q, ""),
@@ -261,8 +220,10 @@ impl ShoppingCommand {
                     (None, None) => ManualItem::new(name),
                 };
 
-                cart.add_manual_item(item);
-                shopping_repo.save(&cart)?;
+                if !shopping_repo.add_manual_item(&week_str, item)? {
+                    println!("Warning: '{}' already exists in the cart, skipping", name);
+                    return Ok(());
+                }
 
                 println!(
                     "Added '{}' to shopping cart for week of {}",
@@ -276,10 +237,7 @@ impl ShoppingCommand {
                 let week_start = parse_week_or_current(week.as_deref())?;
                 let week_str = week_start.to_string();
 
-                let mut cart = shopping_repo.get_or_create(&week_str)?;
-
-                if cart.remove_manual_item(name) {
-                    shopping_repo.save(&cart)?;
+                if shopping_repo.remove_manual_item(&week_str, name)? {
                     println!("Removed '{}' from shopping cart", name);
                 } else {
                     return Err(format!(
@@ -294,13 +252,9 @@ impl ShoppingCommand {
                 let week_start = parse_week_or_current(week.as_deref())?;
                 let week_str = week_start.to_string();
 
-                let mut cart = shopping_repo.get_or_create(&week_str)?;
-
-                if cart.is_checked(name) {
+                if !shopping_repo.set_checked(&week_str, name, true)? {
                     println!("'{}' is already checked", name);
                 } else {
-                    cart.check(name);
-                    shopping_repo.save(&cart)?;
                     println!("Checked '{}' ✓", name);
                 }
                 Ok(())
@@ -310,13 +264,9 @@ impl ShoppingCommand {
                 let week_start = parse_week_or_current(week.as_deref())?;
                 let week_str = week_start.to_string();
 
-                let mut cart = shopping_repo.get_or_create(&week_str)?;
-
-                if !cart.is_checked(name) {
+                if !shopping_repo.set_checked(&week_str, name, false)? {
                     println!("'{}' is not checked", name);
                 } else {
-                    cart.uncheck(name);
-                    shopping_repo.save(&cart)?;
                     println!("Unchecked '{}'", name);
                 }
                 Ok(())
@@ -326,14 +276,10 @@ impl ShoppingCommand {
                 let week_start = parse_week_or_current(week.as_deref())?;
                 let week_str = week_start.to_string();
 
-                let mut cart = shopping_repo.get_or_create(&week_str)?;
-
-                let count = cart.checked.len();
+                let count = shopping_repo.clear_checked(&week_str)?;
                 if count == 0 {
                     println!("No checked items to clear");
                 } else {
-                    cart.clear_checked();
-                    shopping_repo.save(&cart)?;
                     println!("Cleared {} checked items", count);
                 }
                 Ok(())
@@ -354,12 +300,6 @@ fn parse_week_or_current(week_str: Option<&str>) -> Result<NaiveDate, Box<dyn st
     }
 }
 
-/// Get the Sunday that starts the week containing the given date.
-fn get_week_start(date: NaiveDate) -> NaiveDate {
-    let days_since_sunday = date.weekday().num_days_from_sunday();
-    date - chrono::Duration::days(days_since_sunday as i64)
-}
-
 /// Format the week start date for display (e.g., "Jan 11, 2026").
 fn format_week_display(date: &NaiveDate) -> String {
     date.format("%b %d, %Y").to_string()
@@ -374,23 +314,10 @@ fn format_quantity(qty: f64) -> String {
     }
 }
 
-/// Collect all ingredients from meal plans for a week.
-fn collect_ingredients_for_week(
-    mealplan_repo: &SyncMealPlanRepository,
-    dish_repo: &SyncDishRepository,
-    from: NaiveDate,
-    to: NaiveDate,
-) -> Result<Vec<Ingredient>, Box<dyn std::error::Error>> {
-    let plans = mealplan_repo.list_range(from, to)?;
-
-    Ok(collect_ingredients_from_mealplans(&plans, |dish_id| {
-        dish_repo.get_by_id(dish_id).ok().flatten()
-    }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use todu_fit_core::{aggregate_ingredients, Ingredient};
 
     #[test]
     fn test_get_week_start_from_sunday() {

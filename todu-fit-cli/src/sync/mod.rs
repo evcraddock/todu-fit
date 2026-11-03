@@ -23,20 +23,16 @@
 
 pub mod auto_sync;
 pub mod client;
-pub mod group_context;
-pub mod hydration_sync;
-pub mod reader;
 #[cfg(test)]
 pub mod schema;
-pub mod shopping_sync;
 pub mod writer;
 
 pub use auto_sync::try_auto_sync;
 pub use client::{SyncClient, SyncClientError};
-#[allow(unused_imports)]
-pub use hydration_sync::SyncHydrationRepository;
-pub use shopping_sync::SyncShoppingRepository;
 pub use todu_fit_core::DishRepository as SyncDishRepository;
+pub use todu_fit_core::{
+    HydrationRepository as SyncHydrationRepository, ShoppingRepository as SyncShoppingRepository,
+};
 pub use todu_fit_core::{
     MealLogRepository as SyncMealLogRepository, MealPlanRepository as SyncMealPlanRepository,
 };

@@ -1,11 +1,18 @@
 //! Reusable document readers and their scalar/list fields.
 
+mod hydration;
 mod meals;
+mod shopping;
+pub use hydration::{
+    read_all_water_entries, read_hydration_settings, read_hydration_timezone,
+    read_water_entry_by_id,
+};
 pub use meals::{
     get_mealplan_by_date_and_type, get_mealplans_by_date, list_meallogs_by_date_range,
     list_mealplans_by_date_range, read_all_meallogs, read_all_mealplans, read_meallog_by_id,
     read_mealplan_by_id,
 };
+pub use shopping::{read_all_shopping_carts, read_shopping_cart_by_week};
 
 use automerge::{AutoCommit, ObjId, ReadDoc, ROOT};
 use chrono::{DateTime, Utc};

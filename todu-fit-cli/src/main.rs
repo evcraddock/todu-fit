@@ -140,7 +140,10 @@ fn execute_command(
             cmd.run(&shopping_repo, &mealplan_repo, &dish_repo, config)?;
         }
         Some(Commands::Water(cmd)) => {
-            let repo = SyncHydrationRepository::new(config.data_dir.value.clone());
+            let repo = SyncHydrationRepository::with_timezone_provider(
+                config.data_dir.value.clone(),
+                commands::detected_system_timezone,
+            );
             cmd.run(&repo)?;
         }
         Some(Commands::Config(cmd)) => {

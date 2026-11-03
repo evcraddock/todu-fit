@@ -51,6 +51,12 @@ try {
   await fit('init', '--new')
   await fit('group', 'create', 'Compatibility fixtures')
   await fit('dish', 'create', 'CLI Café 🥗', '--nutrients', '{"calories": 200, "protein": 10}')
+  // Exercise feature interoperability with initialized stores. Discovering a store
+  // that was previously empty can produce doc-unavailable with the baseline CLI too;
+  // this fixture does not claim to validate that separate sync-discovery behavior.
+  await fit('shopping', 'add', 'Soap', '--qty', '2', '--unit', 'bars', '--week', '2026-07-19')
+  await fit('shopping', 'check', 'Soap', '--week', '2026-07-19')
+  await fit('water', 'set', '--goal', '1000', '--unit', 'ml', '--display-unit', 'ml', '--timezone', 'America/Chicago', '--presets', '250,500')
   await fit('sync')
   const rootId = (await readFile(join(data, 'root_doc_id'), 'utf8')).trim()
   const identity = metadata(await find(rootId))
@@ -156,6 +162,64 @@ try {
   assert.equal(await fit('meal', 'history', '--from', '2026-11-01', '--to', '2026-11-02'), 'No meal history found for 2026-11-01 to 2026-11-02\n')
   assert.equal((await readFile(join(data, 'root_doc_id'), 'utf8')).trim(), rootId)
   console.log('PASS meal plan/log deletions both directions with unchanged identity')
+
+  const week = '2026-07-19'
+  await fit('mealplan', 'create', '--date', '2026-07-21', '--type', 'dinner', '--dish', jsDishId)
+  await fit('mealplan', 'create', '--date', '2026-07-22', '--type', 'dinner', '--dish', jsDishId, '--leftovers')
+  await fit('shopping', 'add', 'Soap', '--qty', '2', '--unit', 'bars', '--week', week)
+  await fit('shopping', 'check', 'Soap', '--week', week)
+  await fit('sync')
+  const carts = await find(group.shopping_carts_doc_id)
+  assert.equal(String(carts.doc()[week].manual_items[0].name), 'Soap')
+  assert(carts.doc()[week].checked.some(name => String(name) === 'soap'))
+  carts.change(doc => {
+    doc[week].manual_items.push({ name: new ImmutableString('Paper towels'), quantity: new ImmutableString('2'), unit: new ImmutableString('rolls') })
+    doc[week].checked.push(new ImmutableString('chickpeas'))
+  })
+  await fit('sync')
+  const shopping = JSON.parse(await fit('shopping', 'list', '--week', week, '-f', 'json'))
+  assert(shopping.manual_items.some(item => item.name === 'Paper towels' && item.quantity === '2'))
+  const chickpeas = shopping.items.find(item => item.name === 'Chickpeas')
+  assert(chickpeas)
+  assert.equal(chickpeas.quantity, 3.5)
+  assert.equal(chickpeas.checked, true)
+  await fit('shopping', 'remove', 'Paper towels', '--week', week)
+  await fit('shopping', 'uncheck', 'Chickpeas', '--week', week)
+  await fit('sync')
+  assert(!carts.doc()[week].manual_items.some(item => String(item.name) === 'Paper towels'))
+  assert(!carts.doc()[week].checked.some(name => String(name) === 'chickpeas'))
+  console.log('PASS shopping manual/checked edits both directions and derived ingredients exclude leftovers')
+
+  await fit('water', 'set', '--goal', '1000', '--unit', 'ml', '--display-unit', 'ml', '--timezone', 'America/Chicago', '--presets', '250,500')
+  await fit('water', 'add', '500', '--unit', 'ml', '--at', '2026-07-26T03:20:18Z')
+  await fit('sync')
+  const hydration = await find(identity.hydration_doc_id)
+  assert.equal(String(hydration.doc().settings.timezone), 'America/Chicago')
+  const [waterId] = Object.entries(hydration.doc()).find(([key, value]) => key !== 'settings' && value.amount_ml === 500) ?? []
+  assert(waterId)
+  const jsWaterId = randomUUID()
+  hydration.change(doc => {
+    doc.settings.daily_goal_ml = 1500
+    doc[jsWaterId] = {
+      amount_ml: 250, consumed_at: new ImmutableString('2026-07-25T05:00:00Z'),
+      created_at: new ImmutableString(timestamp), updated_at: new ImmutableString(timestamp),
+    }
+  })
+  await fit('sync')
+  const waterHistory = JSON.parse(await fit('water', 'history', '--from', '2026-07-25', '--to', '2026-07-25', '-f', 'json'))
+  assert.equal(waterHistory.timezone, 'America/Chicago')
+  assert.equal(waterHistory.days[0].total_ml, 750)
+  assert.equal(waterHistory.days[0].goal_progress, 0.5)
+  assert.equal(waterHistory.entries.length, 2)
+  await fit('water', 'delete', jsWaterId)
+  await fit('sync')
+  assert.equal(hydration.doc()[jsWaterId], undefined)
+  hydration.change(doc => { delete doc[waterId] })
+  await fit('sync')
+  assert.equal(await fit('water', 'recent', '-f', 'json'), 'No water entries found\n')
+  assert.equal(metadata(await find(rootId)).hydration_doc_id, identity.hydration_doc_id)
+  assert.equal((await readFile(join(data, 'root_doc_id'), 'utf8')).trim(), rootId)
+  console.log('PASS personal hydration settings/entries, timezone totals and deletions both directions')
 
   await fit('dish', 'delete', jsDishId, '--force')
   await fit('sync')

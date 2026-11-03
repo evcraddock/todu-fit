@@ -4,6 +4,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use uuid::Uuid;
 
 use crate::sync::SyncHydrationRepository;
+use todu_fit_core::hydration::{entries_in_date_range, HydrationSettingsUpdate};
 use todu_fit_core::{
     average_daily_ml_in_timezone, daily_total_ml_in_timezone, entries_for_date_in_timezone,
     goal_progress_in_timezone, streak_days_in_timezone, HydrationSettings, HydrationUnit,
@@ -254,9 +255,7 @@ impl WaterCommand {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let settings = repo.get_settings()?;
         let timezone = settings_timezone(&settings)?;
-        let mut entries = repo.list_entries()?;
-        entries.sort_by_key(|entry| std::cmp::Reverse(entry.consumed_at));
-        entries.truncate(limit);
+        let entries = repo.recent_entries(limit)?;
 
         if entries.is_empty() {
             println!("No water entries found");
@@ -410,39 +409,20 @@ impl WaterCommand {
         presets: &[f64],
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut settings = repo.get_settings()?;
-        let numeric_unit = unit
-            .map(HydrationUnit::from)
-            .unwrap_or(settings.preferred_unit);
-
-        if let Some(goal_value) = goal {
-            settings.daily_goal_ml = match numeric_unit {
-                HydrationUnit::Ml => goal_value.round() as i32,
-                HydrationUnit::Oz => todu_fit_core::ml_from_oz(goal_value),
-            };
-        }
-
-        if !presets.is_empty() {
-            settings.quick_add_presets_ml = presets
-                .iter()
-                .map(|preset| match numeric_unit {
-                    HydrationUnit::Ml => preset.round() as i32,
-                    HydrationUnit::Oz => todu_fit_core::ml_from_oz(*preset),
-                })
-                .collect();
-            settings.normalize_presets();
-        }
-
-        if let Some(display) = display_unit {
-            settings.preferred_unit = display.into();
-        }
-
         if let Some(timezone) = timezone {
             timezone
                 .parse::<Tz>()
                 .map_err(|_| format!("Invalid IANA timezone: {}", timezone))?;
-            settings.timezone = timezone.clone();
         }
 
+        HydrationSettingsUpdate {
+            goal,
+            unit: unit.map(HydrationUnit::from),
+            display_unit: display_unit.map(HydrationUnit::from),
+            timezone: timezone.clone(),
+            presets: presets.to_vec(),
+        }
+        .apply_to(&mut settings);
         let saved = repo.save_settings(&settings)?;
         println!("Updated water settings:");
         println!("  Preferred unit: {}", format_unit(saved.preferred_unit));
@@ -476,20 +456,11 @@ impl WaterCommand {
     }
 }
 
-fn entries_in_date_range(
-    entries: &[WaterEntry],
-    from: NaiveDate,
-    to: NaiveDate,
-    timezone: Tz,
-) -> Vec<WaterEntry> {
-    entries
-        .iter()
-        .filter(|entry| {
-            let date = entry.consumed_at.with_timezone(&timezone).date_naive();
-            date >= from && date <= to
-        })
-        .cloned()
-        .collect()
+pub(crate) fn detected_system_timezone() -> String {
+    iana_time_zone::get_timezone()
+        .ok()
+        .filter(|timezone| timezone.parse::<chrono_tz::Tz>().is_ok())
+        .unwrap_or_else(|| "UTC".to_string())
 }
 
 fn parse_date_or_default(
