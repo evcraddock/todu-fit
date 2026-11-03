@@ -8,7 +8,7 @@ if (process.env.TODU_FIT_PROOF_DATA) {
   if (!path.isAbsolute(process.env.TODU_FIT_PROOF_DATA)) throw new Error('Test data path must be absolute');
   app.setPath('userData', process.env.TODU_FIT_PROOF_DATA);
 }
-let bridge, window, quitting = false;
+let bridge, window, shutdown, readyToQuit = false;
 const page = path.resolve(__dirname, '../dist/index.html');
 const pageUrl = pathToFileURL(page).href;
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -50,8 +50,11 @@ else {
 }
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', event => {
-  if (quitting || !bridge) return;
+  if (readyToQuit || !bridge) return;
   event.preventDefault();
-  quitting = true;
-  bridge.close().catch(() => { process.exitCode = 1; }).finally(() => app.quit());
+  if (shutdown) return;
+  shutdown = bridge.close().catch(() => { process.exitCode = 1; }).finally(() => {
+    readyToQuit = true;
+    app.quit();
+  });
 });

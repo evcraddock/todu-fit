@@ -47,3 +47,53 @@ test('worker serializes concurrent writes and drains accepted work on close', as
     await second.close();
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+
+test('repeated quit requests cannot bypass the pending storage drain', async () => {
+  const vm = require('node:vm');
+  const { readFileSync } = require('node:fs');
+  const handlers = new Map();
+  let finishClose;
+  let closes = 0;
+  let quits = 0;
+  const bridge = {
+    ready: Promise.resolve(),
+    close: () => { closes++; return new Promise(resolve => { finishClose = resolve; }); },
+  };
+  const app = {
+    requestSingleInstanceLock: () => true,
+    whenReady: () => Promise.resolve(),
+    getPath: () => '/unused-proof-test',
+    on: (name, handler) => handlers.set(name, handler),
+    quit: () => { quits++; },
+  };
+  class BrowserWindow {
+    constructor() {
+      this.webContents = {
+        setWindowOpenHandler() {}, on() {},
+        session: { setPermissionRequestHandler() {} },
+      };
+    }
+    loadFile() { return Promise.resolve(); }
+  }
+  vm.runInNewContext(readFileSync(path.resolve(__dirname, '../electron/main.cjs'), 'utf8'), {
+    __dirname: path.resolve(__dirname, '../electron'),
+    process: { env: {} },
+    require: name => name === 'electron' ? {
+      app, BrowserWindow, ipcMain: { handle() {} }, dialog: { showErrorBox() {} },
+    } : name === './bridge.cjs' ? { openBridge: () => bridge } : require(name),
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  let prevented = 0;
+  const event = { preventDefault() { prevented++; } };
+  handlers.get('before-quit')(event);
+  handlers.get('before-quit')(event);
+  assert.equal(prevented, 2);
+  assert.equal(closes, 1);
+  assert.equal(quits, 0);
+  finishClose();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(quits, 1);
+  handlers.get('before-quit')(event);
+  assert.equal(prevented, 2);
+});
