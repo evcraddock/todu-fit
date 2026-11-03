@@ -93,8 +93,7 @@ to inspect the current state.
 
 - Push branches to GitHub.
 - Use pull requests for review and integration whenever possible.
-- Wait for explicit human merge approval.
-- Never auto-merge.
+- Merge after required checks and review pass; separate human merge approval is not required.
 
 ## When stuck
 
