@@ -123,3 +123,11 @@ reads and preserved IDs, history, and field encodings after scoped edits. `npm t
 Unix sockets or Windows pipes; use `FIT_TEST_BINARY` to select a freshly built debug binary.
 Windows runtime results require the Windows CI runner. The optional manual JavaScript sync
 server compatibility script remains outside automatic CI and release gates.
+
+## Desktop form operations
+
+Desktop forms also use optional `DishFields.ingredients` to replace the ingredient list atomically, and `PlanFields.dishes` to replace dish references with the plan fields in one transaction. Omitted fields retain their prior meanings. `clear_prep_time`, `clear_cook_time`, and `clear_servings` explicitly remove those optional values (and take precedence over supplied numbers); null/omission continues to mean unchanged for existing update fields.
+
+`meal_save` takes an optional existing log `id`, `date`, `meal_type`, dish references, a UUID-keyed `portions` map, notes and optional `plan_id`. Existing selected snapshots survive editing, even if their canonical dish has changed or been deleted; newly selected dishes snapshot current values. Portions must be positive, finite and refer to selected dishes. An unchanged historical plan link is retained even after its plan is deleted or the group changes. Newly assigned links must resolve. `shopping_edit` atomically replaces one manual item identified by name and retains its checked state while rejecting collisions with other manual items.
+
+These operations use the existing transaction/receipt mechanism and existing Automerge schemas. Desktop tests cover invalid-input rollback, historical snapshot editing, unit-preserving summaries, and logical request identities across separate saves/groups.

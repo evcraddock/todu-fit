@@ -47,11 +47,7 @@ invalidate a successful local save. A network exchange does not hold the local-o
 
 ## Existing reusable work
 
-Core already shares dish CRUD/ingredients, meal-plan/log operations, referenced-dish hydration
-and nutrients, shopping aggregation/cart updates, water/settings calculations, identity/group
-handling, and `SyncCoordinator`. The daemon calls these implementations. Existing React
-screens can be adapted incrementally; the current desktop slice remains list/create dishes.
-Remaining desktop screens are separate work.
+Core shares dish CRUD/ingredients, meal-plan/log operations, referenced-dish hydration and nutrients, shopping aggregation/cart updates, water/settings calculations, identity/group handling, and `SyncCoordinator`. The daemon calls these implementations. The desktop now includes dishes, weekly meal plans, portioned food logs, shopping, hydration and settings through protocol v2. Its presentation adapts the existing web workflows, with no browser-owned document store. See [desktop coverage and validation](../apps/desktop/README.md).
 
 The old napi-rs adapter and dedicated worker remain available as historical isolated proof
 code. They are not used by normal desktop startup. Their previous packaged macOS arm64
@@ -78,13 +74,11 @@ background sync and binding selection are outside this daemon task. Android is o
 Agent integrations, Pi extensions and remote daemon access are deferred. No public HTTP or
 remote-control interface is introduced.
 
-Signing, updates, supported OS/CPU matrices, service installation, remaining feature screens,
-large-store optimizations and persistent desktop retry intents remain separate decisions.
+Signing, updates, supported OS/CPU matrices, service installation, large-store optimizations and persistent desktop retry intents remain separate decisions.
 The current change must be validated and reviewed before any release or adoption of user data.
 
 ## Typed daemon application API
 
 [Protocol version 2](DAEMON-API.md) covers the CLI application surface using independent
 DTOs in `todu-fit-protocol` and Core-backed durable transactions in `todu-fit-service`.
-The CLI still uses the version 1 compatibility bridge and links Core. Client conversion,
-automatic daemon startup, and iOS bindings remain separate work.
+The CLI still uses the version 1 compatibility bridge and links Core; the desktop uses protocol version 2. CLI conversion, automatic daemon startup, and iOS bindings remain separate work.
