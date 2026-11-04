@@ -5,6 +5,8 @@ edition = "2021"
 rust-version = "1.90"
 
 [dependencies]
+todu-fit-protocol = { path = "../todu-fit-protocol" }
+todu-fit-service = { path = "../todu-fit-service" }
 todu-fit-core = { path = "../todu-fit-core" }
 automerge = "0.12"
 axum = "0.8"  # Used for local callback server in auth
@@ -28,10 +30,9 @@ urlencoding = "2"
 
 sha2 = "0.10"
 fs2 = "0.4"
+[dev-dependencies]
 rusqlite = { version = "0.32", features = ["bundled"] }
 tempfile = "3"
-
-[dev-dependencies]
 
 [[bin]]
 name = "fit"

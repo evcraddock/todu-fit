@@ -81,3 +81,10 @@ remote-control interface is introduced.
 Signing, updates, supported OS/CPU matrices, service installation, remaining feature screens,
 large-store optimizations and persistent desktop retry intents remain separate decisions.
 The current change must be validated and reviewed before any release or adoption of user data.
+
+## Typed daemon application API
+
+[Protocol version 2](DAEMON-API.md) covers the CLI application surface using independent
+DTOs in `todu-fit-protocol` and Core-backed durable transactions in `todu-fit-service`.
+The CLI still uses the version 1 compatibility bridge and links Core. Client conversion,
+automatic daemon startup, and iOS bindings remain separate work.

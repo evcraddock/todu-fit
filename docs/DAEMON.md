@@ -69,8 +69,9 @@ active local/sync operation.
 
 Request IDs are UUIDs. Repeating a committed mutation with the same ID and payload returns
 its saved response (including generated domain IDs), even after restart. Reusing that ID
-with a different payload fails. Receipts are not pruned in this version. Read-only/no-change
-requests do not allocate receipts. Errors before commit are retryable; clients must retain
+with a different payload fails. Receipts are not pruned in this version. Version 1 read-only/no-change
+requests do not allocate receipts. Version 2 records successful mutation no-ops as well;
+see [the application API contract](DAEMON-API.md). Errors before commit are retryable; clients must retain
 the same ID if the response is lost. CLI timeout/transport errors print an explicit
 `FIT_REQUEST_ID=<id>` retry hint. The desktop retains an uncertain create's ID for a retry
 of the same name during its session. After losing the whole desktop session, inspect the
@@ -98,6 +99,10 @@ remain local; sync failure appears in status and the desktop. There is no promis
 successful local save has already reached the remote server.
 
 ## Protocol and compatibility
+
+New clients can use [application protocol version 2](DAEMON-API.md), with independent typed
+DTOs in `todu-fit-protocol` and reusable transactions in `todu-fit-service`. The CLI and
+existing desktop dish bridge still use the version 1 compatibility adapter.
 
 Version 1 uses newline-delimited UTF-8 JSON, one request/response per connection:
 
@@ -147,7 +152,7 @@ folders rather than silently copying, moving, deleting or replacing them.
 
 ## Validation
 
-`cargo test -p todu-fit-cli` covers request replay, response loss, acknowledged-write survival
+`cargo test` covers request replay, response loss, acknowledged-write survival
 across SIGKILL, process exit during an uncommitted multidocument transaction, injected SQL
 write failure, concurrent-merge preservation, offline saves, and owner exclusion. Existing
 CLI feature fixtures now run through IPC with test-only database import/export.
