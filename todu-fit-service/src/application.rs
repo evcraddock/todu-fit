@@ -210,6 +210,15 @@ fn apply_dish(
     if let Some(n) = &n {
         name(n)?;
     }
+    if let Some(ingredients) = &fields.ingredients {
+        for ingredient in ingredients {
+            name(&ingredient.name)?;
+            if !ingredient.quantity.is_finite() || ingredient.quantity <= 0.0 {
+                return Err(invalid("Quantity must be a positive number"));
+            }
+        }
+        dish.ingredients = convert(ingredients)?;
+    }
     core::dishes::DishUpdate {
         name: n,
         instructions: fields.instructions.clone(),
@@ -223,6 +232,15 @@ fn apply_dish(
         nutrients: convert(&fields.nutrients)?,
     }
     .apply_to(dish);
+    if fields.clear_prep_time {
+        dish.prep_time = None;
+    }
+    if fields.clear_cook_time {
+        dish.cook_time = None;
+    }
+    if fields.clear_servings {
+        dish.servings = None;
+    }
     Ok(())
 }
 fn mutation(changed: bool, count: usize) -> V {
@@ -470,6 +488,14 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
         }
         Op::PlanUpdate { id, fields } => {
             let mut p = plan(&plans, *id)?;
+            if let Some(refs) = &fields.dishes {
+                p.dish_ids = refs
+                    .iter()
+                    .map(|r| resolve_dish(&dishes, r).map(|d| d.id))
+                    .collect::<Result<_, _>>()?;
+                p.dish_ids.sort();
+                p.dish_ids.dedup();
+            }
             core::meal_plans::MealPlanUpdate {
                 date: fields.date,
                 meal_type: convert(fields.meal_type)?,
@@ -526,6 +552,63 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                 logs.log_unplanned(&draft, &dishes).map_err(failure)?,
             )?))
         }
+        Op::MealSave {
+            id,
+            date,
+            meal_type,
+            dishes: refs,
+            portions,
+            notes,
+            plan_id,
+        } => {
+            let mut log = if let Some(id) = id {
+                logs.get_by_id(*id)
+                    .map_err(failure)?
+                    .ok_or_else(|| error(Code::NotFound, "Meal log not found"))?
+            } else {
+                core::MealLog::new(*date, convert(meal_type)?, &context.created_by)
+            };
+            let mut snapshots = vec![];
+            for reference in refs {
+                // Preserve historical snapshots when editing; newly selected dishes snapshot now.
+                let d = if let Some(d) = log.dishes.iter().find(|d| d.id.to_string() == *reference)
+                {
+                    d.clone()
+                } else {
+                    resolve_dish(&dishes, reference)?
+                };
+                if snapshots.iter().any(|s: &core::Dish| s.id == d.id) {
+                    return Err(invalid("A dish may only be selected once"));
+                }
+                snapshots.push(d);
+            }
+            for (id, amount) in portions {
+                if !amount.is_finite() || *amount <= 0.0 || !snapshots.iter().any(|d| d.id == *id) {
+                    return Err(invalid(
+                        "Portions must be positive and refer to selected dishes",
+                    ));
+                }
+            }
+            if *plan_id != log.mealplan_id {
+                if let Some(id) = plan_id {
+                    plan(&plans, *id)?;
+                }
+            }
+            log.date = *date;
+            log.meal_type = convert(meal_type)?;
+            log.dishes = snapshots;
+            log.dish_portions = portions.clone();
+            log.notes = notes.clone();
+            log.mealplan_id = *plan_id;
+            Ok(V::Meal(meal_view(
+                if id.is_some() {
+                    logs.update(&log)
+                } else {
+                    logs.create(&log)
+                }
+                .map_err(failure)?,
+            )?))
+        }
         Op::MealsHistory { from, to } => {
             dates(*from, *to)?;
             let mut found = logs.list_range(*from, *to).map_err(failure)?;
@@ -557,6 +640,40 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                 .add_manual_item(&week_start(*week)?.to_string(), convert(item)?)
                 .map_err(failure)?;
             Ok(mutation(changed, usize::from(changed)))
+        }
+        Op::ShoppingEdit {
+            week,
+            name: old,
+            item,
+        } => {
+            name(&item.name)?;
+            let mut cart = shopping
+                .get_or_create(&week_start(*week)?.to_string())
+                .map_err(failure)?;
+            let index = cart
+                .manual_items
+                .iter()
+                .position(|i| i.name.eq_ignore_ascii_case(old))
+                .ok_or_else(|| error(Code::NotFound, "Manual item not found"))?;
+            if cart
+                .manual_items
+                .iter()
+                .enumerate()
+                .any(|(i, v)| i != index && v.name.eq_ignore_ascii_case(&item.name))
+            {
+                return Err(error(
+                    Code::Conflict,
+                    "An item with that name already exists",
+                ));
+            }
+            cart.manual_items[index] = convert(item)?;
+            for checked in &mut cart.checked {
+                if checked.eq_ignore_ascii_case(old) {
+                    *checked = item.name.to_lowercase();
+                }
+            }
+            shopping.save(&cart).map_err(failure)?;
+            Ok(mutation(true, 1))
         }
         Op::ShoppingRemove { week, name } => {
             let changed = shopping

@@ -55,6 +55,10 @@ impl std::error::Error for ApiError {}
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct DishFields {
+    pub clear_prep_time: bool,
+    pub clear_cook_time: bool,
+    pub clear_servings: bool,
+    pub ingredients: Option<Vec<Ingredient>>,
     pub instructions: Option<String>,
     pub prep_time: Option<i32>,
     pub cook_time: Option<i32>,
@@ -68,6 +72,7 @@ pub struct DishFields {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct PlanFields {
+    pub dishes: Option<Vec<String>>,
     pub date: Option<NaiveDate>,
     pub meal_type: Option<MealType>,
     pub title: Option<String>,
@@ -187,6 +192,16 @@ pub enum Operation {
         dishes: Vec<String>,
         notes: Option<String>,
     },
+    MealSave {
+        id: Option<Uuid>,
+        date: NaiveDate,
+        meal_type: MealType,
+        dishes: Vec<String>,
+        #[serde(default)]
+        portions: HashMap<Uuid, f64>,
+        notes: Option<String>,
+        plan_id: Option<Uuid>,
+    },
     MealsHistory {
         from: NaiveDate,
         to: NaiveDate,
@@ -199,6 +214,11 @@ pub enum Operation {
     },
     ShoppingAdd {
         week: NaiveDate,
+        item: ManualItem,
+    },
+    ShoppingEdit {
+        week: NaiveDate,
+        name: String,
         item: ManualItem,
     },
     ShoppingRemove {

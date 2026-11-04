@@ -53,3 +53,20 @@ test('version 2 application protocol shares the owner on Unix sockets and Window
     assert.equal((await request({ type: 'changes', after: 0 })).changed, true);
   } finally { await f.close(); }
 });
+
+test('application bridge preserves logical retries without collapsing independent identical saves', async () => {
+  const { openApplicationBridge } = require('../electron/application-bridge.cjs');
+  const { randomUUID } = require('node:crypto');
+  const f = await fixture();const bridge=openApplicationBridge(f.endpoint);
+  try {
+    const id=randomUUID();const operation={type:'dish_create',name:'Same payload'};
+    const first=await bridge.request(operation,id);const retried=await bridge.request(operation,id);
+    assert.equal(first.data.id,retried.data.id);
+    const second=await bridge.request(operation,randomUUID());assert.notEqual(first.data.id,second.data.id);
+    assert.throws(()=>bridge.request({type:'identity_create',replace:true}),/Unsupported/);
+    assert.throws(()=>bridge.request(operation,'not-a-uuid'),/Invalid request ID/);
+    await bridge.request({type:'group_create',name:'Second'});await bridge.request({type:'group_select',name:'Second'});
+    const third=await bridge.request(operation,randomUUID());assert.notEqual(third.data.id,first.data.id);
+    assert.equal((await bridge.request({type:'dishes_list'})).data.length,1);
+  } finally {await bridge.close();await f.close();}
+});

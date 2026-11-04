@@ -359,3 +359,62 @@ fn empty_legacy_group_selection_uses_the_same_fallback_as_core() {
     f.ok(json!({"type":"dish_create","name":"Soup"}));
     assert_eq!(f.ok(json!({"type":"dishes_list"}))[0]["name"], "Soup");
 }
+
+#[test]
+fn desktop_form_saves_are_atomic_and_preserve_historical_snapshots() {
+    let mut f = Fixture::new();
+    f.init();
+    let dish = f.ok(json!({"type":"dish_create","name":"Soup","fields":{"ingredients":[{"name":"Lentils","quantity":2,"unit":"cup"}],"nutrients":[{"name":"calories","amount":300,"unit":"kcal"}]}}));
+    let id = dish["id"].as_str().unwrap();
+    let before = f.store.snapshot().unwrap();
+    assert!(matches!(f.send(json!({"type":"dish_update","identifier":id,"name":"Should not save","fields":{"ingredients":[{"name":"Bad","quantity":-1,"unit":"cup"}]}})).outcome, Outcome::Error { .. }));
+    assert_eq!(f.store.snapshot().unwrap(), before);
+    let plan =
+        f.ok(json!({"type":"plan_create","date":"2026-11-04","meal_type":"dinner","dishes":[id]}));
+    let pid = &plan["plan"]["id"];
+    let before = f.store.snapshot().unwrap();
+    assert!(matches!(f.send(json!({"type":"plan_update","id":pid,"fields":{"title":"Should not save","dishes":["missing dish"]}})).outcome, Outcome::Error { .. }));
+    assert_eq!(f.store.snapshot().unwrap(), before);
+    let meal = f.ok(json!({"type":"meal_save","date":"2026-11-04","meal_type":"dinner","dishes":[id],"portions":{id:0.5},"plan_id":pid}));
+    assert_eq!(meal["nutrients"]["calories"], 150.0);
+    f.ok(json!({"type":"dish_update","identifier":id,"fields":{"nutrients":[{"name":"calories","amount":900,"unit":"kcal"}]}}));
+    f.ok(json!({"type":"dish_delete","identifier":id}));
+    let cleared =
+        f.ok(json!({"type":"plan_update","id":pid,"fields":{"dishes":[],"uses_leftovers":true}}));
+    assert_eq!(cleared["plan"]["dish_ids"], json!([]));
+    f.ok(json!({"type":"plan_delete","id":pid}));
+    let edited = f.ok(json!({"type":"meal_save","plan_id":pid,"id":meal["log"]["id"],"date":"2026-11-04","meal_type":"lunch","dishes":[id],"portions":{id:2},"notes":"Updated notes"}));
+    assert_eq!(edited["log"]["mealplan_id"], *pid);
+    assert_eq!(edited["nutrients"]["calories"], 600.0);
+    assert_eq!(edited["log"]["dishes"][0]["name"], "Soup");
+    let before = f.store.snapshot().unwrap();
+    assert!(matches!(f.send(json!({"type":"meal_save","date":"2026-11-04","meal_type":"dinner","dishes":[],"portions":{id:1}})).outcome, Outcome::Error { .. }));
+    assert_eq!(f.store.snapshot().unwrap(), before);
+}
+
+#[test]
+fn desktop_manual_item_edits_keep_check_state_and_reject_collisions() {
+    let mut f = Fixture::new();
+    f.init();
+    for name in ["Paper", "Soap"] {
+        f.ok(json!({"type":"shopping_add","week":"2026-11-04","item":{"name":name}}));
+    }
+    f.ok(json!({"type":"shopping_set_checked","week":"2026-11-04","name":"Paper","checked":true}));
+    f.ok(json!({"type":"shopping_edit","week":"2026-11-04","name":"Paper","item":{"name":"Towels","quantity":"a few","unit":"rolls"}}));
+    let cart = f.ok(json!({"type":"shopping_list","week":"2026-11-04"}));
+    assert_eq!(cart["cart"]["checked"], json!(["towels"]));
+    let before = f.store.snapshot().unwrap();
+    assert!(matches!(f.send(json!({"type":"shopping_edit","week":"2026-11-04","name":"Towels","item":{"name":"soap"}})).outcome,Outcome::Error{..}));
+    assert_eq!(f.store.snapshot().unwrap(), before);
+}
+
+#[test]
+fn desktop_can_explicitly_clear_optional_dish_numbers() {
+    let mut f = Fixture::new();
+    f.init();
+    let d=f.ok(json!({"type":"dish_create","name":"Optional fields","fields":{"prep_time":10,"cook_time":20,"servings":4}}));
+    let updated=f.ok(json!({"type":"dish_update","identifier":d["id"],"fields":{"clear_prep_time":true,"clear_cook_time":true,"clear_servings":true}}));
+    for field in ["prep_time", "cook_time", "servings"] {
+        assert!(updated[field].is_null());
+    }
+}
