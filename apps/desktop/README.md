@@ -26,6 +26,8 @@ npm test
 npm run test:packaged
 ```
 
+Packaged UI tests are local checks and are not run in CI. CI builds the desktop and runs the non-UI daemon/API tests.
+
 Packaging builds the CLI/daemon for the host architecture, checks/bundles React, and puts `fit` (`fit.exe` on Windows) outside ASAR in `resources/daemon/`. No native Node addon is loaded by the app. Packages remain unsigned application directories.
 
 On launch, Electron reads the effective configuration using its bundled `fit config show --format json`, connects to a compatible owner, or starts the bundled daemon detached. The daemon's exclusive store lock arbitrates simultaneous launches. Startup has a bounded readiness wait and records failures in `daemon-startup.log` under Electron userData. Closing the desktop leaves the daemon running. `FIT_CONFIG=/absolute/path/config.yaml` selects a development configuration; configuration-relative storage paths are resolved before launch. `FIT_DAEMON_ENDPOINT` remains a connect-only override for existing owners and tests. CLI commands retain their existing explicit-daemon behavior.

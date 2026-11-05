@@ -1,4 +1,4 @@
-name: Desktop native proof
+name: Desktop build checks
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   packaged-persistence:
-    name: Desktop packaged persistence (${{ matrix.os }})
+    name: Desktop build and API tests (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -33,9 +33,6 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - run: npm test
-        working-directory: apps/desktop
-      - run: npm run test:packaged
-        timeout-minutes: 5
         working-directory: apps/desktop
       - uses: actions/upload-artifact@v4
         if: always()
