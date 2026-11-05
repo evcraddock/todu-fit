@@ -72,11 +72,15 @@ impl SyncAllResult {
     }
 }
 
+type ProgressReporter = Box<dyn Fn(&str, usize) + Send + Sync>;
+
 /// Coordinates identity-based document discovery, synchronization and persistence.
-#[derive(Debug)]
 pub struct SyncCoordinator {
     core: SyncClient,
     storage: MultiDocStorage,
+    progress: Option<ProgressReporter>,
+    completed: usize,
+    strict: bool,
 }
 
 impl SyncCoordinator {
@@ -86,7 +90,20 @@ impl SyncCoordinator {
         Self {
             core: SyncClient::new(server_url),
             storage,
+            progress: None,
+            completed: 0,
+            strict: false,
         }
+    }
+
+    /// Require all referenced metadata and report initial download progress.
+    pub fn initial_download(
+        mut self,
+        progress: impl Fn(&str, usize) + Send + Sync + 'static,
+    ) -> Self {
+        self.strict = true;
+        self.progress = Some(Box::new(progress));
+        self
     }
 
     /// Syncs all documents based on identity.
@@ -164,7 +181,7 @@ impl SyncCoordinator {
             .list_groups()
             .map_err(|e| SyncCoordinatorError::IdentityError(e.to_string()))?;
 
-        if groups.is_empty() {
+        if groups.is_empty() && !self.strict {
             return Err(SyncCoordinatorError::NoGroups);
         }
 
@@ -197,8 +214,10 @@ impl SyncCoordinator {
                             .await?,
                     );
                 }
-                Err(_) => {
-                    // Group document not synced yet, will get it next time
+                Err(e) => {
+                    if self.strict {
+                        return Err(SyncCoordinatorError::IdentityError(e.to_string()));
+                    }
                 }
             }
         }
@@ -212,6 +231,9 @@ impl SyncCoordinator {
         doc_id: &DocumentId,
         name: &str,
     ) -> Result<DocSyncResult, SyncCoordinatorError> {
+        if let Some(progress) = &self.progress {
+            progress(name, self.completed);
+        }
         // Load or create local document
         let mut doc = self
             .storage
@@ -233,6 +255,10 @@ impl SyncCoordinator {
             .save(doc_id, &bytes)
             .map_err(|e| SyncCoordinatorError::StorageError(e.to_string()))?;
 
+        self.completed += 1;
+        if let Some(progress) = &self.progress {
+            progress(name, self.completed);
+        }
         Ok(DocSyncResult {
             name: name.to_string(),
             updated: result.updated,
@@ -243,5 +269,14 @@ impl SyncCoordinator {
     /// Returns the server URL.
     pub fn server_url(&self) -> &str {
         self.core.server_url()
+    }
+}
+
+impl std::fmt::Debug for SyncCoordinator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SyncCoordinator")
+            .field("core", &self.core)
+            .field("storage", &self.storage)
+            .finish_non_exhaustive()
     }
 }

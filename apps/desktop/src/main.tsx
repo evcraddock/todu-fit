@@ -7,13 +7,9 @@ import { Shopping } from "./Shopping";
 import { Water } from "./Water";
 import { Settings } from "./Settings";
 import "./style.css";
+import { Setup, type SetupState } from "./Setup";
 type Page =
-  | "Dishes"
-  | "Meal plans"
-  | "Food log"
-  | "Shopping"
-  | "Water"
-  | "Settings";
+  "Dishes" | "Meal plans" | "Food log" | "Shopping" | "Water" | "Settings";
 function App() {
   const [page, setPage] = useState<Page>("Dishes");
   const [revision, setRevision] = useState(0);
@@ -25,6 +21,7 @@ function App() {
     data: [],
   });
   const dishes = dishResult.scope === scopeOf(identity) ? dishResult.data : [];
+  const [setup, setSetup] = useState<SetupState>();
   const [status, setStatus] = useState<Status>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -33,16 +30,20 @@ function App() {
     let active = true;
     (async () => {
       try {
-        const [id, state] = await Promise.all([
+        const [id, state, setupState] = await Promise.all([
           call<Identity>({ type: "identity_get" }, "identity"),
           call<Status>({ type: "status" }, "status"),
+          call<SetupState>({ type: "setup_status" }, "setup"),
         ]);
         if (active) {
+          setSetup(setupState);
           setIdentity(id);
           setStatus(state);
         }
         const ds =
-          id.state === "initialized" && id.groups.length
+          setupState.state === "ready" &&
+          id.state === "initialized" &&
+          id.groups.length
             ? await call<Dish[]>({ type: "dishes_list" }, "dishes")
             : [];
         if (active) {
@@ -67,10 +68,14 @@ function App() {
     let previous = -1;
     const poll = async () => {
       try {
-        const s = await call<Status>({ type: "status" }, "status");
+        const [s, setupState] = await Promise.all([
+          call<Status>({ type: "status" }, "status"),
+          call<SetupState>({ type: "setup_status" }, "setup"),
+        ]);
         if (active) {
+          setSetup(setupState);
           setStatus(s);
-          if (previous !== -1 && previous !== s.revision) refresh();
+          if (previous !== s.revision) refresh();
           previous = s.revision;
         }
       } catch (e) {
@@ -138,27 +143,18 @@ function App() {
           <p>Connecting to your data…</p>
         ) : !identity ? (
           <p>Unable to load your data. Retry when the daemon is available.</p>
-        ) : !available ? (
-          <section>
-            <h1>
-              {identity.state === "pending_sync"
-                ? "Waiting for sync"
-                : "Set up your identity"}
-            </h1>
-            <p>
-              {identity.state === "pending_sync"
-                ? "Your identity is waiting for its documents to sync."
-                : "Initialize an identity in the daemon before using the desktop app."}
-            </p>
-            <button onClick={() => setPage("Settings")}>Open settings</button>
-            {page === "Settings" && (
-              <Settings
-                identity={identity}
-                revision={revision}
-                refresh={refresh}
-              />
-            )}
-          </section>
+        ) : setup?.state !== "ready" || !available ? (
+          <Setup
+            identity={identity}
+            state={
+              setup ?? {
+                state: "required",
+                message: "",
+                completed_documents: 0,
+              }
+            }
+            onChange={setSetup}
+          />
         ) : (
           <div key={`${identity.root_id}:${group?.id ?? ""}`}>
             {page === "Settings" ? (

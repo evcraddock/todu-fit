@@ -1,5 +1,6 @@
 //! Shared local owner. Transport is versioned, bounded newline-delimited JSON.
 //! CLI adapters execute against disposable workspaces; only this owner commits.
+mod setup;
 mod store;
 #[cfg(windows)]
 mod windows;
@@ -61,6 +62,7 @@ struct Owner {
     store: Mutex<Store>,
     config: Config,
     sync: Mutex<String>,
+    setup: Mutex<setup::Activity>,
 }
 impl Owner {
     fn apply(&self, request: &Request) -> Result<Response, Error> {
@@ -154,6 +156,9 @@ impl Owner {
     }
 }
 fn start_sync(owner: Arc<Owner>) {
+    if setup::status(&owner).is_ok_and(|s| s.state == "running") {
+        return;
+    }
     let mut status = owner.sync.lock().unwrap();
     if *status == "running" {
         return;
@@ -162,12 +167,7 @@ fn start_sync(owner: Arc<Owner>) {
     drop(status);
     std::thread::spawn(move || {
         let result = (|| -> Result<(), Error> {
-            let url = owner
-                .config
-                .sync
-                .server_url
-                .clone()
-                .ok_or("Sync server not configured")?;
+            let url = setup::server_url(&owner)?.ok_or("Sync server not configured")?;
             let snapshot = owner.store.lock().unwrap().snapshot()?;
             let workspace = materialize(&snapshot, &owner.config.data_dir.value)?;
             let mut coordinator =
@@ -217,6 +217,7 @@ pub fn serve(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     lock.try_lock_exclusive()
         .map_err(|_| "Daemon already owns this store")?;
     let store = Store::open(&path.join("daemon.sqlite")).map_err(|e| e.to_string())?;
+    fs::write(path.join("daemon.pid"), std::process::id().to_string())?;
     store::clean_workspaces(path).map_err(|e| e.to_string())?;
     let socket = endpoint(path);
     if socket.exists() {
@@ -231,11 +232,14 @@ pub fn serve(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         store: Mutex::new(store),
         config,
         sync: Mutex::new("idle".into()),
+        setup: Mutex::new(None),
     });
-    if owner.config.sync.auto_sync {
+    {
         let background = owner.clone();
         std::thread::spawn(move || loop {
-            start_sync(background.clone());
+            if setup::auto_sync(&background) {
+                start_sync(background.clone());
+            }
             std::thread::sleep(Duration::from_secs(30));
         });
     }
@@ -432,11 +436,15 @@ fn handle_frame(owner: &Arc<Owner>, line: &str) -> Result<Value, Error> {
     };
     let response = (|| -> Result<api::Response, Error> {
  let response = match &request.operation {
+        api::Operation::SetupStatus | api::Operation::SetupStart { .. } => {
+            let state = if matches!(request.operation, api::Operation::SetupStatus) { setup::status(owner)? } else { setup::start(owner, &request)? };
+            api::Response { version: api::VERSION, id, revision: owner.store.lock().map_err(|_| "Owner unavailable")?.revision()?, outcome: api::Outcome::Ok { value: Box::new(api::Value::Setup(state)) } }
+        }
         api::Operation::ConfigGet => {
             let value = api::Value::Configuration(api::Configuration {
                 created_by: owner.config.created_by.value.clone(),
-                sync_server_url: owner.config.sync.server_url.clone(),
-                auto_sync: owner.config.sync.auto_sync,
+                sync_server_url: setup::server_url(owner)?,
+                auto_sync: setup::auto_sync(owner),
                 default_timezone: crate::commands::detected_system_timezone(),
             });
             api::Response {
