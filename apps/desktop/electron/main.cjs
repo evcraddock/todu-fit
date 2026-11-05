@@ -73,6 +73,7 @@ else {
       await window.loadFile(page);
     })
     .catch((error) => {
+      console.error("Unable to connect to shared daemon:", error.message);
       dialog.showErrorBox("Unable to connect to shared daemon", error.message);
       app.quit();
     });

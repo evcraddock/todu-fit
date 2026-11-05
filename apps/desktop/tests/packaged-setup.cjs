@@ -41,8 +41,12 @@ async function main() {
     delete env.FIT_DAEMON_ENDPOINT;
     delete env.FIT_SYNC_URL;
     app = await electron.launch({ executablePath, env, timeout: 30000 });
-    const page = await app.firstWindow();
+    app.process().stderr?.on("data", (chunk) => process.stderr.write(chunk));
+    console.log(`Electron launched: ${name}`);
+    const page = await app.firstWindow({ timeout: 30000 });
+    page.setDefaultTimeout(30000);
     page.on("pageerror", (e) => errors.push(e.message));
+    console.log(`Opened packaged setup window: ${name}`);
     return page;
   }
   async function bridge(name) {
@@ -60,6 +64,7 @@ async function main() {
         .fill(process.env.FIT_SETUP_TEST_SYNC_URL);
     await page.getByRole("button", { name: "Create my data" }).click();
     await page.getByRole("button", { name: "New dish", exact: true }).waitFor();
+    console.log("Closing packaged window");
     await app.close();
     app = null;
     let b = await bridge("new");
@@ -83,6 +88,7 @@ async function main() {
       await page.getByRole("heading", { name: "Welcome to Fit" }).count(),
       0,
     );
+    console.log("Closing packaged window");
     await app.close();
     app = null;
     if (process.env.FIT_SETUP_TEST_SYNC_URL) {
