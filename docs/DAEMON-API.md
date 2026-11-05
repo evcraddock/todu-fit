@@ -4,7 +4,7 @@ Protocol version 2 exposes structured application operations independently of th
 parser, terminal output, and Core types. The existing version 1 CLI and desktop dish bridge
 remain supported by the same owner. The CLI still uses that compatibility bridge and still
 links Core; this change supplies its future replacement API, not a completed client migration.
-The executable remains `fit daemon`. Automatic client startup is separate work.
+The executable remains `fit daemon`. Electron now connects or starts it automatically; CLI auto-start remains deferred.
 
 ## Package boundaries
 
