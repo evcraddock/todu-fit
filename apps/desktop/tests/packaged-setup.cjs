@@ -57,12 +57,24 @@ async function main() {
   try {
     let page = await launch("new");
     await page.getByRole("heading", { name: "Welcome to Fit" }).waitFor();
-    await page.getByLabel("Group name").fill("My test household");
+    assert.equal(await page.getByRole("navigation").count(), 0);
+    await page.getByRole("button", { name: /Use existing data/ }).click();
+    await page.getByLabel("Root document ID").waitFor();
+    assert.equal(
+      await page.getByRole("textbox", { name: /^Group name/ }).count(),
+      0,
+    );
+    await page.getByRole("button", { name: "Back" }).click();
+    await page.getByRole("button", { name: /Start fresh/ }).click();
+    assert.equal(await page.getByLabel("Root document ID").count(), 0);
+    await page
+      .getByRole("textbox", { name: /^Group name/ })
+      .fill("My test household");
     if (process.env.FIT_SETUP_TEST_SYNC_URL)
       await page
         .getByLabel(/Sync server address/)
         .fill(process.env.FIT_SETUP_TEST_SYNC_URL);
-    await page.getByRole("button", { name: "Create my data" }).click();
+    await page.getByRole("button", { name: "Create my space" }).click();
     await page.getByRole("button", { name: "New dish", exact: true }).waitFor();
     console.log("Closing packaged window");
     await app.close();

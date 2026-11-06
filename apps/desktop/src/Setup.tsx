@@ -14,7 +14,9 @@ export function Setup({
   identity: Identity;
   onChange: (state: SetupState) => void;
 }) {
-  const [mode, setMode] = useState(identity.root_id ? "join" : "new");
+  const [mode, setMode] = useState<"new" | "join" | null>(
+    identity.root_id ? "join" : null,
+  );
   const [server, setServer] = useState("");
   const [root, setRoot] = useState(identity.root_id ?? "");
   const [group, setGroup] = useState("My household");
@@ -56,89 +58,147 @@ export function Setup({
     }
   }
   const busy = sending || state.state === "running";
+  if (!mode && !busy)
+    return (
+      <section className="setup setup-choice">
+        <p className="eyebrow">LET’S GET YOU STARTED</p>
+        <h1>Welcome to Fit</h1>
+        <p className="setup-intro">
+          A home for your dishes, meal plans, and daily nutrition.
+        </p>
+        <div className="setup-paths">
+          <button className="setup-path" onClick={() => setMode("new")}>
+            <span className="setup-symbol" aria-hidden="true">
+              ＋
+            </span>
+            <strong>Start fresh</strong>
+            <span>Create a new space for yourself or your household.</span>
+            <span className="setup-path-action" aria-hidden="true">
+              Get started →
+            </span>
+          </button>
+          <button className="setup-path" onClick={() => setMode("join")}>
+            <span className="setup-symbol" aria-hidden="true">
+              ↗
+            </span>
+            <strong>Use existing data</strong>
+            <span>Bring your Fit data over from another device.</span>
+            <span className="setup-path-action" aria-hidden="true">
+              Connect your data →
+            </span>
+          </button>
+        </div>
+        <p className="setup-footnote">
+          Your data stays with you. Choose how you want to begin.
+        </p>
+      </section>
+    );
   return (
-    <section className="setup">
-      <h1>Welcome to Fit</h1>
-      <p>Start fresh or connect to the data you already use.</p>
+    <section className="setup setup-form">
+      {!busy && !identity.root_id && (
+        <button
+          className="setup-back"
+          type="button"
+          onClick={() => {
+            setMode(null);
+            setError("");
+          }}
+        >
+          ← Back
+        </button>
+      )}
+      <p className="eyebrow">
+        {busy
+          ? "SETTING UP FIT"
+          : mode === "join"
+            ? "YOUR EXISTING SPACE"
+            : "A NEW SPACE"}
+      </p>
+      <h1>
+        {busy
+          ? "Getting your data ready"
+          : mode === "join"
+            ? "Use existing data"
+            : "Start fresh"}
+      </h1>
+      <p className="setup-intro">
+        {mode === "join"
+          ? "Enter the root document ID and sync server from your existing Fit setup."
+          : "Give your shared collection of dishes, meal plans, and shopping lists a name."}
+      </p>
       {error && <p role="alert">{error}</p>}
       {state.state === "failed" && <p role="alert">{state.message}</p>}
-      {state.state === "running" && (
-        <div role="status" aria-live="polite">
+      {busy ? (
+        <div className="setup-progress" role="status" aria-live="polite">
           <progress aria-label="Setting up your data" />
-          <p>{state.message}</p>
-          <p>
-            {state.completed_documents} documents downloaded. Discovering
-            related data as we go.
-          </p>
+          <p>{state.state === "running" ? state.message : "Starting setup…"}</p>
+          {mode === "join" && (
+            <small>
+              {state.completed_documents} documents downloaded. We’ll open Fit
+              when everything is ready.
+            </small>
+          )}
         </div>
-      )}
-      <form onSubmit={submit}>
-        <fieldset disabled={busy}>
-          <legend>Set up your data</legend>
-          <label>
-            <input
-              type="radio"
-              name="setup-mode"
-              checked={mode === "new"}
-              disabled={!!identity.root_id}
-              onChange={() => setMode("new")}
-            />{" "}
-            Start fresh
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="setup-mode"
-              checked={mode === "join"}
-              onChange={() => setMode("join")}
-            />{" "}
-            Connect to existing data
-          </label>
-          {mode === "join" ? (
-            <label>
-              Root document ID
+      ) : (
+        <form onSubmit={submit}>
+          <fieldset disabled={busy}>
+            <legend className="sr-only">
+              {mode === "join" ? "Connect to existing data" : "Create new data"}
+            </legend>
+            {mode === "join" ? (
+              <label className="field">
+                Root document ID
+                <input
+                  required
+                  value={root}
+                  readOnly={!!identity.root_id}
+                  onChange={(e) => setRoot(e.target.value)}
+                  placeholder="Paste your root document ID"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                />
+                <small>
+                  This identifies your existing Fit data. It isn’t a group name.
+                </small>
+              </label>
+            ) : (
+              <label className="field">
+                Group name
+                <input
+                  required
+                  maxLength={512}
+                  value={group}
+                  onChange={(e) => setGroup(e.target.value)}
+                />
+                <small>For example, “My household” or your own name.</small>
+              </label>
+            )}
+            <label className="field">
+              Sync server address{mode === "new" && " (optional)"}
               <input
-                required
-                value={root}
-                readOnly={!!identity.root_id}
-                onChange={(e) => setRoot(e.target.value)}
-              />
-            </label>
-          ) : (
-            <label>
-              Group name
-              <input
-                required
-                maxLength={512}
-                value={group}
-                onChange={(e) => setGroup(e.target.value)}
+                required={mode === "join"}
+                placeholder="wss://your-sync-server"
+                value={server}
+                onChange={(e) => setServer(e.target.value)}
+                autoCapitalize="none"
+                spellCheck={false}
               />
               <small>
-                A shared collection of dishes, meal plans, and shopping lists.
+                {mode === "join"
+                  ? "Use the server where your existing data is stored."
+                  : "Leave blank to use Fit only on this computer."}
               </small>
             </label>
-          )}
-          <label>
-            Sync server address{mode === "new" && " (optional)"}
-            <input
-              required={mode === "join"}
-              placeholder="wss://your-sync-server"
-              value={server}
-              onChange={(e) => setServer(e.target.value)}
-            />
-          </label>
-          {mode === "new" && <p>Leave the server blank to use Fit locally.</p>}
-          <button type="submit">
-            {busy
-              ? "Setting up…"
-              : state.state === "failed"
+            <button className="primary setup-submit" type="submit">
+              {state.state === "failed"
                 ? "Retry setup"
                 : mode === "join"
                   ? "Connect and download"
-                  : "Create my data"}
-          </button>
-        </fieldset>
-      </form>
+                  : "Create my space"}
+            </button>
+          </fieldset>
+        </form>
+      )}
     </section>
   );
 }

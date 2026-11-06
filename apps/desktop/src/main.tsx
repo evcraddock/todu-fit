@@ -91,6 +91,47 @@ function App() {
   }, []);
   const group = identity?.groups.find((g) => g.selected);
   const available = identity?.state === "initialized";
+  if (loading || !identity || setup?.state !== "ready" || !available) {
+    return (
+      <div className="onboarding">
+        <div className="onboarding-brand brand">
+          todu<span>fit</span>
+        </div>
+        <main className="onboarding-main">
+          {error && (
+            <p role="alert">
+              {error} <button onClick={refresh}>Retry connection</button>
+            </p>
+          )}
+          {loading ? (
+            <section className="setup">
+              <h1>Opening Fit…</h1>
+              <p>Connecting to your data.</p>
+            </section>
+          ) : !identity ? (
+            <section className="setup">
+              <h1>Unable to connect</h1>
+              <p>Check the connection and try again.</p>
+              <button onClick={refresh}>Retry connection</button>
+            </section>
+          ) : (
+            <Setup
+              identity={identity}
+              state={
+                setup ?? {
+                  state: "required",
+                  message: "",
+                  completed_documents: 0,
+                }
+              }
+              onChange={setSetup}
+            />
+          )}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <aside>
