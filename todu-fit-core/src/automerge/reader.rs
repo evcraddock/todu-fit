@@ -63,7 +63,7 @@ pub fn read_all_dishes(doc: &AutoCommit) -> Result<Vec<Dish>, ReaderError> {
 
 /// Reads a single dish by ID from an Automerge document.
 pub fn read_dish_by_id(doc: &AutoCommit, id: Uuid) -> Result<Option<Dish>, ReaderError> {
-    let key = id.to_string();
+    let key = existing_uuid_key(doc, id).unwrap_or_else(|| id.to_string());
 
     if let Some((_, obj_id)) = doc
         .get(ROOT, &key)
@@ -73,6 +73,22 @@ pub fn read_dish_by_id(doc: &AutoCommit, id: Uuid) -> Result<Option<Dish>, Reade
     } else {
         Ok(None)
     }
+}
+
+/// Original UUID key spellings for cross-document references.
+pub(crate) fn uuid_keys(doc: &AutoCommit) -> std::collections::HashMap<Uuid, String> {
+    doc.keys(ROOT)
+        .filter_map(|key| Uuid::parse_str(&key).ok().map(|id| (id, key)))
+        .collect()
+}
+
+/// Preserve the original key spelling used by peers such as Swift UUID strings.
+pub(crate) fn existing_uuid_key(doc: &AutoCommit, id: Uuid) -> Option<String> {
+    let canonical = id.to_string();
+    doc.keys(ROOT).find(|key| key == &canonical).or_else(|| {
+        doc.keys(ROOT)
+            .find(|key| Uuid::parse_str(key).ok() == Some(id))
+    })
 }
 
 /// Searches dishes by name, tags, or ingredient names (case-insensitive partial match).
@@ -288,7 +304,7 @@ pub fn get_quantity(
     {
         // Try f64 first (CLI writes this format)
         if let Some(f) = value.as_f64() {
-            return Ok(Some(f));
+            return finite_quantity(f).map(Some);
         }
         // Try i64 (integers stored numerically)
         if let Some(i) = value.as_i64() {
@@ -296,9 +312,7 @@ pub fn get_quantity(
         }
         // Try scalar strings (web writes this format for ingredient quantities)
         if let Ok(s) = value.clone().into_string() {
-            if let Ok(f) = s.trim().parse::<f64>() {
-                return Ok(Some(f));
-            }
+            return parse_quantity(&s).map(Some);
         }
         // Check if it's a Text object (UI can write this format)
         if value.is_object() {
@@ -306,14 +320,57 @@ pub fn get_quantity(
             let text = doc
                 .text(&obj_id_value)
                 .map_err(|e| ReaderError::AutomergeError(format!("Failed to read text: {}", e)))?;
-            if let Ok(f) = text.trim().parse::<f64>() {
-                return Ok(Some(f));
-            }
+            return parse_quantity(&text).map(Some);
         }
         Ok(None)
     } else {
         Ok(None)
     }
+}
+
+fn finite_quantity(value: f64) -> Result<f64, ReaderError> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(ReaderError::MalformedData(
+            "Ingredient quantity must be finite".into(),
+        ))
+    }
+}
+
+fn parse_quantity(value: &str) -> Result<f64, ReaderError> {
+    let value = value.trim();
+    if let Ok(number) = value.parse::<f64>() {
+        return finite_quantity(number);
+    }
+    let fraction = |text: &str| -> Option<f64> {
+        let (numerator, denominator) = text.split_once('/')?;
+        let numerator = numerator.trim().parse::<f64>().ok()?;
+        let denominator = denominator.trim().parse::<f64>().ok()?;
+        (numerator.is_finite() && denominator.is_finite() && denominator != 0.0)
+            .then_some(numerator / denominator)
+    };
+    if let Some(number) = fraction(value) {
+        return finite_quantity(number);
+    }
+    let parts: Vec<_> = value.split_whitespace().collect();
+    if let [whole, part] = parts.as_slice() {
+        if let (Ok(whole), Some(part)) = (whole.parse::<f64>(), fraction(part)) {
+            if part >= 0.0 {
+                return finite_quantity(
+                    whole
+                        + if whole.is_sign_negative() {
+                            -part
+                        } else {
+                            part
+                        },
+                );
+            }
+        }
+    }
+    Err(ReaderError::MalformedData(format!(
+        "Unsupported ingredient quantity '{value}'; expected a number or fraction"
+    )))
 }
 
 /// Read scalar strings from a list, skipping non-string values.

@@ -30,3 +30,5 @@ pub use writer::{
     write_dish, write_hydration_settings, write_meallog, write_mealplan, write_shopping_cart,
     write_water_entry,
 };
+
+pub(crate) use writer::{write_meallog_with_references, write_mealplan_with_references};

@@ -2,16 +2,57 @@
 //!
 //! These functions handle converting Rust structs into Automerge document structure.
 
-use automerge::{transaction::Transactable, AutoCommit, ObjType, ROOT};
+use automerge::{transaction::Transactable, AutoCommit, ObjType, ReadDoc, ROOT};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::models::{Dish, HydrationSettings, MealLog, MealPlan, ShoppingCart, WaterEntry};
+
+// UUID models normalize case, but iOS resolves references as exact string keys.
+// Keep the spellings already stored in a record when it is edited.
+fn existing_references(doc: &AutoCommit, key: &str) -> HashMap<Uuid, String> {
+    let mut references = HashMap::new();
+    let Some((_, object)) = doc.get(ROOT, key).unwrap() else {
+        return references;
+    };
+    let mut remember = |value: String| {
+        if let Ok(id) = Uuid::parse_str(&value) {
+            references.entry(id).or_insert(value);
+        }
+    };
+    if let Some(value) = super::reader::get_string(doc, &object, "mealplan_id").unwrap() {
+        remember(value);
+    }
+    for value in super::reader::read_string_list(doc, &object, "dish_ids").unwrap() {
+        remember(value);
+    }
+    if let Some((_, dishes)) = doc.get(&object, "dishes").unwrap() {
+        for index in 0..doc.length(&dishes) {
+            if let Some((value, dish)) = doc.get(&dishes, index).unwrap() {
+                if let Ok(value) = value.into_string() {
+                    remember(value);
+                } else if let Some(value) = super::reader::get_string(doc, &dish, "id").unwrap() {
+                    remember(value);
+                }
+            }
+        }
+    }
+    references
+}
+
+fn reference_key(references: &HashMap<Uuid, String>, id: Uuid) -> String {
+    references
+        .get(&id)
+        .cloned()
+        .unwrap_or_else(|| id.to_string())
+}
 
 /// Writes a dish to an Automerge document.
 ///
 /// The dish is stored at root[dish.id.to_string()].
 pub fn write_dish(doc: &mut AutoCommit, dish: &Dish) {
-    let id_str = dish.id.to_string();
+    let id_str =
+        super::reader::existing_uuid_key(doc, dish.id).unwrap_or_else(|| dish.id.to_string());
 
     // Create or overwrite the dish object
     let dish_id = doc
@@ -86,7 +127,7 @@ pub fn write_dish(doc: &mut AutoCommit, dish: &Dish) {
 
 /// Deletes a dish from an Automerge document.
 pub fn delete_dish(doc: &mut AutoCommit, id: Uuid) {
-    let id_str = id.to_string();
+    let id_str = super::reader::existing_uuid_key(doc, id).unwrap_or_else(|| id.to_string());
     let _ = doc.delete(ROOT, &id_str);
 }
 
@@ -95,7 +136,18 @@ pub fn delete_dish(doc: &mut AutoCommit, id: Uuid) {
 /// The meal plan is stored at root[mealplan.id.to_string()].
 /// Dishes are stored as a list of UUIDs (references to be resolved at display time).
 pub fn write_mealplan(doc: &mut AutoCommit, mealplan: &MealPlan) {
-    let id_str = mealplan.id.to_string();
+    write_mealplan_with_references(doc, mealplan, &HashMap::new());
+}
+
+pub(crate) fn write_mealplan_with_references(
+    doc: &mut AutoCommit,
+    mealplan: &MealPlan,
+    supplied: &HashMap<Uuid, String>,
+) {
+    let id_str = super::reader::existing_uuid_key(doc, mealplan.id)
+        .unwrap_or_else(|| mealplan.id.to_string());
+    let mut references = supplied.clone();
+    references.extend(existing_references(doc, &id_str));
 
     let plan_id = doc
         .put_object(ROOT, &id_str, ObjType::Map)
@@ -131,14 +183,18 @@ pub fn write_mealplan(doc: &mut AutoCommit, mealplan: &MealPlan) {
     // Dish IDs as list of UUIDs (references, resolved at display time)
     let dish_ids_obj = doc.put_object(&plan_id, "dish_ids", ObjType::List).unwrap();
     for (i, dish_id) in mealplan.dish_ids.iter().enumerate() {
-        doc.insert(&dish_ids_obj, i, dish_id.to_string().as_str())
-            .unwrap();
+        doc.insert(
+            &dish_ids_obj,
+            i,
+            reference_key(&references, *dish_id).as_str(),
+        )
+        .unwrap();
     }
 }
 
 /// Deletes a meal plan from an Automerge document.
 pub fn delete_mealplan(doc: &mut AutoCommit, id: Uuid) {
-    let id_str = id.to_string();
+    let id_str = super::reader::existing_uuid_key(doc, id).unwrap_or_else(|| id.to_string());
     let _ = doc.delete(ROOT, &id_str);
 }
 
@@ -147,7 +203,18 @@ pub fn delete_mealplan(doc: &mut AutoCommit, id: Uuid) {
 /// The meal log is stored at root[meallog.id.to_string()].
 /// Dishes are stored as full snapshots (embedded data, not references) for historical accuracy.
 pub fn write_meallog(doc: &mut AutoCommit, meallog: &MealLog) {
-    let id_str = meallog.id.to_string();
+    write_meallog_with_references(doc, meallog, &HashMap::new());
+}
+
+pub(crate) fn write_meallog_with_references(
+    doc: &mut AutoCommit,
+    meallog: &MealLog,
+    supplied: &HashMap<Uuid, String>,
+) {
+    let id_str =
+        super::reader::existing_uuid_key(doc, meallog.id).unwrap_or_else(|| meallog.id.to_string());
+    let mut references = supplied.clone();
+    references.extend(existing_references(doc, &id_str));
 
     let log_id = doc
         .put_object(ROOT, &id_str, ObjType::Map)
@@ -167,8 +234,12 @@ pub fn write_meallog(doc: &mut AutoCommit, meallog: &MealLog) {
     .unwrap();
 
     if let Some(ref plan_id) = meallog.mealplan_id {
-        doc.put(&log_id, "mealplan_id", plan_id.to_string().as_str())
-            .unwrap();
+        doc.put(
+            &log_id,
+            "mealplan_id",
+            reference_key(&references, *plan_id).as_str(),
+        )
+        .unwrap();
     }
 
     if let Some(ref notes) = meallog.notes {
@@ -180,13 +251,28 @@ pub fn write_meallog(doc: &mut AutoCommit, meallog: &MealLog) {
     for (i, dish) in meallog.dishes.iter().enumerate() {
         let dish_obj = doc.insert_object(&dishes_list, i, ObjType::Map).unwrap();
 
-        doc.put(&dish_obj, "id", dish.id.to_string().as_str())
-            .unwrap();
+        doc.put(
+            &dish_obj,
+            "id",
+            reference_key(&references, dish.id).as_str(),
+        )
+        .unwrap();
         doc.put(&dish_obj, "name", dish.name.as_str()).unwrap();
         doc.put(&dish_obj, "instructions", dish.instructions.as_str())
             .unwrap();
         doc.put(&dish_obj, "created_by", dish.created_by.as_str())
             .unwrap();
+
+        doc.put(&dish_obj, "created_at", dish.created_at.to_rfc3339())
+            .unwrap();
+        doc.put(&dish_obj, "updated_at", dish.updated_at.to_rfc3339())
+            .unwrap();
+        if let Some(url) = &dish.image_url {
+            doc.put(&dish_obj, "image_url", url.as_str()).unwrap();
+        }
+        if let Some(url) = &dish.source_url {
+            doc.put(&dish_obj, "source_url", url.as_str()).unwrap();
+        }
 
         // Tags
         let tags_id = doc.put_object(&dish_obj, "tags", ObjType::List).unwrap();
@@ -236,7 +322,7 @@ pub fn write_meallog(doc: &mut AutoCommit, meallog: &MealLog) {
             .put_object(&log_id, "dish_portions", ObjType::Map)
             .unwrap();
         for (dish_id, portion) in &meallog.dish_portions {
-            doc.put(&portions_id, dish_id.to_string(), *portion)
+            doc.put(&portions_id, reference_key(&references, *dish_id), *portion)
                 .unwrap();
         }
     }
@@ -244,13 +330,14 @@ pub fn write_meallog(doc: &mut AutoCommit, meallog: &MealLog) {
 
 /// Deletes a meal log from an Automerge document.
 pub fn delete_meallog(doc: &mut AutoCommit, id: Uuid) {
-    let id_str = id.to_string();
+    let id_str = super::reader::existing_uuid_key(doc, id).unwrap_or_else(|| id.to_string());
     let _ = doc.delete(ROOT, &id_str);
 }
 
 /// Writes a water entry to an Automerge document.
 pub fn write_water_entry(doc: &mut AutoCommit, entry: &WaterEntry) {
-    let id_str = entry.id.to_string();
+    let id_str =
+        super::reader::existing_uuid_key(doc, entry.id).unwrap_or_else(|| entry.id.to_string());
 
     let entry_id = doc
         .put_object(ROOT, &id_str, ObjType::Map)
@@ -308,7 +395,7 @@ pub fn write_hydration_settings(doc: &mut AutoCommit, settings: &HydrationSettin
 
 /// Deletes a water entry from an Automerge document.
 pub fn delete_water_entry(doc: &mut AutoCommit, id: Uuid) {
-    let id_str = id.to_string();
+    let id_str = super::reader::existing_uuid_key(doc, id).unwrap_or_else(|| id.to_string());
     let _ = doc.delete(ROOT, &id_str);
 }
 

@@ -166,6 +166,23 @@ impl MealLogRepository {
         Ok((doc, doc_id))
     }
 
+    fn reference_keys(&self) -> Result<HashMap<Uuid, String>, MealLogError> {
+        let mut keys = HashMap::new();
+        // Personal historical logs remain editable after all groups are removed.
+        let ctx = match crate::context::resolve_group_context(&self.data_dir, None) {
+            Ok(ctx) => ctx,
+            Err(_) => return Ok(keys),
+        };
+        for id in [ctx.dishes_doc_id, ctx.mealplans_doc_id] {
+            if let Some(bytes) = self.storage.load(&id)? {
+                let doc = AutoCommit::load(&bytes)
+                    .map_err(|e| ReaderError::AutomergeError(e.to_string()))?;
+                keys.extend(crate::automerge::reader::uuid_keys(&doc));
+            }
+        }
+        Ok(keys)
+    }
+
     /// Saves the document to storage.
     fn save_doc(&self, doc: &mut AutoCommit, doc_id: &DocumentId) -> Result<(), MealLogError> {
         let bytes = doc.save();
@@ -178,7 +195,7 @@ impl MealLogRepository {
         let (mut doc, doc_id) = self.load_or_create_doc()?;
 
         // Write to Automerge
-        writer::write_meallog(&mut doc, log);
+        writer::write_meallog_with_references(&mut doc, log, &self.reference_keys()?);
 
         // Save
         self.save_doc(&mut doc, &doc_id)?;
@@ -193,7 +210,7 @@ impl MealLogRepository {
         let (mut doc, doc_id) = self.load_or_create_doc()?;
 
         // Write updated log to Automerge (overwrites existing)
-        writer::write_meallog(&mut doc, log);
+        writer::write_meallog_with_references(&mut doc, log, &self.reference_keys()?);
 
         // Save
         self.save_doc(&mut doc, &doc_id)?;

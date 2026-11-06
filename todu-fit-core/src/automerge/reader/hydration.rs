@@ -33,7 +33,7 @@ pub fn read_water_entry_by_id(
     doc: &AutoCommit,
     id: Uuid,
 ) -> Result<Option<WaterEntry>, ReaderError> {
-    let key = id.to_string();
+    let key = super::existing_uuid_key(doc, id).unwrap_or_else(|| id.to_string());
 
     if let Some((_, obj_id)) = doc
         .get(ROOT, &key)
