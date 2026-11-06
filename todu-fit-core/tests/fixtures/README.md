@@ -34,3 +34,16 @@ Generated on 2026-11-03 for `task-ed608731` with the actual pre-extraction CLI a
 [Core tests](../shopping_hydration.rs) cover real repositories, no-op writes, legacy initialization with an injected detector, history/ID preservation, inclusive/DST dates, group/personal isolation and existing calculation rules. [CLI tests](../../../todu-fit-cli/tests/shopping_water.rs) cover parsing, output, normalization and the real platform-detector adapter. Existing initialization of a missing timezone is intentionally preserved; no new migration is introduced.
 
 Run `make test-cli` and `make web-test` from the repository root.
+
+## iOS compatibility fixtures
+
+`ios-0.7.2-*.automerge` fixtures were generated on 2026-11-06 using the actual
+Swift Codable models and AutomergeEncoder in todu-fit-ios (Automerge Swift
+0.7.2). All values and IDs are synthetic. They cover dishes, meal plans, food
+logs with portions and full recipe snapshots, shopping, water, and wrapped
+identity/group documents. Record UUID keys use Swift's uppercase spelling.
+
+The `*-return` files are iOS re-edits of Rust Core's updates, including a shared
+hydration timezone. `ios_document_compatibility.rs` verifies both sets, preserves
+references and snapshot metadata, and checks edits/deletes without duplicate keys.
+These are document-format tests; they do not replace network/UI workflow tests.

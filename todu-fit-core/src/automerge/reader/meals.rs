@@ -30,7 +30,7 @@ pub fn read_all_mealplans(doc: &AutoCommit) -> Result<Vec<MealPlan>, ReaderError
 
 /// Reads a single meal plan by ID.
 pub fn read_mealplan_by_id(doc: &AutoCommit, id: Uuid) -> Result<Option<MealPlan>, ReaderError> {
-    let key = id.to_string();
+    let key = super::existing_uuid_key(doc, id).unwrap_or_else(|| id.to_string());
 
     if let Some((_, obj_id)) = doc
         .get(ROOT, &key)
@@ -165,7 +165,7 @@ pub fn read_all_meallogs(doc: &AutoCommit) -> Result<Vec<MealLog>, ReaderError> 
 
 /// Reads a single meal log by ID.
 pub fn read_meallog_by_id(doc: &AutoCommit, id: Uuid) -> Result<Option<MealLog>, ReaderError> {
-    let key = id.to_string();
+    let key = super::existing_uuid_key(doc, id).unwrap_or_else(|| id.to_string());
 
     if let Some((value, obj_id)) = doc
         .get(ROOT, &key)
@@ -334,11 +334,17 @@ fn read_dish_snapshots(doc: &AutoCommit, obj_id: &ObjId) -> Result<Vec<Dish>, Re
                     cook_time,
                     servings,
                     tags,
-                    image_url: None,
-                    source_url: None,
+                    image_url: get_string(doc, &dish_id, "image_url")?,
+                    source_url: get_string(doc, &dish_id, "source_url")?,
                     created_by,
-                    created_at: Utc::now(),
-                    updated_at: Utc::now(),
+                    created_at: get_string(doc, &dish_id, "created_at")?
+                        .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(Utc::now),
+                    updated_at: get_string(doc, &dish_id, "updated_at")?
+                        .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(Utc::now),
                 });
             }
         }

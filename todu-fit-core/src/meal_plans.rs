@@ -216,6 +216,20 @@ impl MealPlanRepository {
         Ok((doc, doc_id))
     }
 
+    fn dish_reference_keys(
+        &self,
+    ) -> Result<std::collections::HashMap<Uuid, String>, MealPlanError> {
+        let ctx = resolve_group_context(&self.data_dir, self.group_override.as_deref())?;
+        match self.storage.load(&ctx.dishes_doc_id)? {
+            Some(bytes) => {
+                let doc = AutoCommit::load(&bytes)
+                    .map_err(|e| ReaderError::AutomergeError(e.to_string()))?;
+                Ok(crate::automerge::reader::uuid_keys(&doc))
+            }
+            None => Ok(Default::default()),
+        }
+    }
+
     /// Saves the document to storage.
     fn save_doc(&self, doc: &mut AutoCommit, doc_id: &DocumentId) -> Result<(), MealPlanError> {
         let bytes = doc.save();
@@ -228,7 +242,7 @@ impl MealPlanRepository {
         let (mut doc, doc_id) = self.load_or_create_doc()?;
 
         // Write to Automerge
-        writer::write_mealplan(&mut doc, plan);
+        writer::write_mealplan_with_references(&mut doc, plan, &self.dish_reference_keys()?);
 
         // Save
         self.save_doc(&mut doc, &doc_id)?;
@@ -243,7 +257,7 @@ impl MealPlanRepository {
         let (mut doc, doc_id) = self.load_or_create_doc()?;
 
         // Write updated plan to Automerge (overwrites existing)
-        writer::write_mealplan(&mut doc, plan);
+        writer::write_mealplan_with_references(&mut doc, plan, &self.dish_reference_keys()?);
 
         // Save
         self.save_doc(&mut doc, &doc_id)?;
