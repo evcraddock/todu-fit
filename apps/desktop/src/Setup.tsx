@@ -122,9 +122,11 @@ export function Setup({
             : "Start fresh"}
       </h1>
       <p className="setup-intro">
-        {mode === "join"
-          ? "Enter the root document ID and sync server from your existing Fit setup."
-          : "Give your shared collection of dishes, meal plans, and shopping lists a name."}
+        {busy
+          ? "You can leave Fit open while we prepare your data."
+          : mode === "join"
+            ? "Enter the root document ID and sync server from your existing Fit setup."
+            : "Give your shared collection of dishes, meal plans, and shopping lists a name."}
       </p>
       {error && <p role="alert">{error}</p>}
       {state.state === "failed" && <p role="alert">{state.message}</p>}
@@ -132,7 +134,7 @@ export function Setup({
         <div className="setup-progress" role="status" aria-live="polite">
           <progress aria-label="Setting up your data" />
           <p>{state.state === "running" ? state.message : "Starting setup…"}</p>
-          {mode === "join" && (
+          {state.state === "running" && (
             <small>
               {state.completed_documents} documents downloaded. We’ll open Fit
               when everything is ready.

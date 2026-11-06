@@ -105,9 +105,7 @@ async function main() {
     app = null;
     if (process.env.FIT_SETUP_TEST_SYNC_URL) {
       page = await launch("joined");
-      await page
-        .getByLabel("Connect to existing data", { exact: true })
-        .check();
+      await page.getByRole("button", { name: /Use existing data/ }).click();
       await page.getByLabel("Root document ID").fill(identity.root_id);
       await page.getByLabel(/Sync server address/).fill("ws://127.0.0.1:1");
       await page.getByRole("button", { name: "Connect and download" }).click();
