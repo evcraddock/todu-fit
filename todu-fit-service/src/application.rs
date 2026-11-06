@@ -801,7 +801,12 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                 settings: convert(settings)?,
             }))
         }
-        Op::ConfigGet | Op::SyncStart | Op::Status | Op::Changes { .. } => Err(error(
+        Op::SetupStatus
+        | Op::SetupStart { .. }
+        | Op::ConfigGet
+        | Op::SyncStart
+        | Op::Status
+        | Op::Changes { .. } => Err(error(
             Code::Unavailable,
             "Host operation must be handled by the daemon",
         )),

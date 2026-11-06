@@ -13,6 +13,7 @@ let bridge,
   window,
   shutdown,
   readyToQuit = false;
+const { connectOrStart } = require("./daemon-startup.cjs");
 const page = path.resolve(__dirname, "../dist/index.html");
 const pageUrl = pathToFileURL(page).href;
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -20,9 +21,18 @@ else {
   app
     .whenReady()
     .then(async () => {
-      if (!process.env.FIT_DAEMON_ENDPOINT)
-        throw new Error("Set FIT_DAEMON_ENDPOINT to the shared daemon socket");
-      bridge = openApplicationBridge(process.env.FIT_DAEMON_ENDPOINT);
+      const binary = path.join(
+        app.isPackaged ? process.resourcesPath : path.resolve(__dirname, ".."),
+        "daemon",
+        process.platform === "win32" ? "fit.exe" : "fit",
+      );
+      const endpoint = await connectOrStart({
+        binary,
+        config: process.env.FIT_CONFIG,
+        endpoint: process.env.FIT_DAEMON_ENDPOINT,
+        logPath: path.join(app.getPath("userData"), "daemon-startup.log"),
+      });
+      bridge = openApplicationBridge(endpoint);
       ipcMain.handle(
         "application:request",
         async (event, operation, requestId) => {
@@ -63,6 +73,7 @@ else {
       await window.loadFile(page);
     })
     .catch((error) => {
+      console.error("Unable to connect to shared daemon:", error.message);
       dialog.showErrorBox("Unable to connect to shared daemon", error.message);
       app.quit();
     });

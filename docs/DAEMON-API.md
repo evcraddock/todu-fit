@@ -4,7 +4,7 @@ Protocol version 2 exposes structured application operations independently of th
 parser, terminal output, and Core types. The existing version 1 CLI and desktop dish bridge
 remain supported by the same owner. The CLI still uses that compatibility bridge and still
 links Core; this change supplies its future replacement API, not a completed client migration.
-The executable remains `fit daemon`. Automatic client startup is separate work.
+The executable remains `fit daemon`. Electron now connects or starts it automatically; CLI auto-start remains deferred.
 
 ## Package boundaries
 
@@ -131,3 +131,12 @@ Desktop forms also use optional `DishFields.ingredients` to replace the ingredie
 `meal_save` takes an optional existing log `id`, `date`, `meal_type`, dish references, a UUID-keyed `portions` map, notes and optional `plan_id`. Existing selected snapshots survive editing, even if their canonical dish has changed or been deleted; newly selected dishes snapshot current values. Portions must be positive, finite and refer to selected dishes. An unchanged historical plan link is retained even after its plan is deleted or the group changes. Newly assigned links must resolve. `shopping_edit` atomically replaces one manual item identified by name and retains its checked state while rejecting collisions with other manual items.
 
 These operations use the existing transaction/receipt mechanism and existing Automerge schemas. Desktop tests cover invalid-input rollback, historical snapshot editing, unit-preserving summaries, and logical request identities across separate saves/groups.
+
+
+## Desktop first-run setup
+
+`setup_status` returns `{type: "setup", data: {state, message, completed_documents}}`; state is `required`, `running`, `failed`, or `ready`. Progress counts completed documents as references are discovered rather than reporting a fabricated percentage.
+
+`setup_start` accepts `root_id`, `server_url`, and `group_name` (each nullable). A new identity requires a group name and optionally a `ws://` or `wss://` server. Joining requires a root ID and server. The operation returns promptly and work continues in the daemon. Poll `setup_status` until ready or failed. Reuse the UUID when retrying the same uncertain request. Completed setup and its receipt are committed atomically; another payload with that UUID is rejected. Setup cannot replace initialized data. Concurrent mutations cause staged setup to fail rather than overwrite them.
+
+Initial joins have a five-minute overall deadline and the normal per-document network timeouts. Every referenced group must decode and every referenced document must finish syncing before success. An unavailable root or child keeps setup incomplete. The selected server is daemon-owned metadata committed alongside the setup documents; it is available through `config_get` and survives restart. Normal CLI configuration files and CLI launch behavior are unchanged.

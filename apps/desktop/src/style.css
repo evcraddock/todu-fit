@@ -336,3 +336,151 @@ progress {
     font-size: 27px;
   }
 }
+
+/* First-run setup has its own shell; navigation appears after setup completes. */
+.onboarding {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse at 12% 0%, #e6eee1 0%, transparent 55%), #f5f6f2;
+}
+.onboarding-brand {
+  padding: 30px 44px;
+}
+.onboarding-main {
+  padding: 32px 32px 64px;
+}
+.setup {
+  width: 100%;
+  max-width: 760px;
+}
+.setup h1 {
+  font-size: 42px;
+  line-height: 1.15;
+  margin: 14px 0 16px;
+  letter-spacing: -1.5px;
+}
+.setup-intro {
+  color: #596f64;
+  font-size: 16px;
+  margin: 0 0 32px;
+  max-width: 580px;
+}
+.setup-paths {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.setup-path {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 16px;
+  padding: 28px;
+  border: 1px solid #cddbcf;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 4px 18px #263e3010;
+}
+.setup-path:hover {
+  background: #f9fcf7;
+  border-color: #588165;
+}
+.setup-symbol {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #edf3e8;
+  font-size: 27px;
+}
+.setup-path strong {
+  font-size: 22px;
+  letter-spacing: -0.4px;
+}
+.setup-path > span:not(.setup-symbol):not(.setup-path-action) {
+  font-size: 15px;
+  color: #617267;
+  line-height: 1.6;
+}
+.setup-path-action {
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.setup-footnote {
+  color: #6d7e72;
+  font-size: 13px;
+  margin-top: 28px;
+}
+.setup-form {
+  max-width: 560px;
+  background: #fff;
+  border: 1px solid #dce5d8;
+  padding: 32px 40px;
+  border-radius: 20px;
+  box-shadow: 0 8px 32px #263e300a;
+}
+.setup-form h1 {
+  font-size: 34px;
+}
+.setup-back {
+  border: 0;
+  padding: 0;
+  margin-bottom: 28px;
+  background: transparent;
+  color: #596f64;
+}
+.setup-form .field {
+  gap: 10px;
+  margin: 0 0 26px;
+  font-weight: 600;
+}
+.setup-form small {
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.setup-form input {
+  padding: 13px 14px;
+  font-weight: 400;
+}
+.setup-submit {
+  width: 100%;
+  padding: 14px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+.setup-progress {
+  padding: 20px 0;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 680px) {
+  .onboarding-brand {
+    padding: 24px;
+  }
+  .onboarding-main {
+    padding: 16px 24px 40px;
+  }
+  .setup-paths {
+    grid-template-columns: 1fr;
+  }
+  .setup-form {
+    padding: 28px;
+  }
+  .setup h1 {
+    font-size: 32px;
+  }
+}

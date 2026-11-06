@@ -33,17 +33,21 @@ fn serve_inner(config: Config) -> Result<(), Error> {
         .open(path.join("daemon.lock"))?;
     lock.try_lock_exclusive()?;
     let store = Store::open(&path.join("daemon.sqlite"))?;
+    fs::write(path.join("daemon.pid"), std::process::id().to_string())?;
     store::clean_workspaces(path)?;
     let endpoint = pipe_path(path)?;
     let owner = Arc::new(Owner {
         store: Mutex::new(store),
         config,
         sync: Mutex::new("idle".into()),
+        setup: Mutex::new(None),
     });
-    if owner.config.sync.auto_sync {
+    {
         let background = owner.clone();
         std::thread::spawn(move || loop {
-            start_sync(background.clone());
+            if setup::auto_sync(&background) {
+                start_sync(background.clone());
+            }
             std::thread::sleep(Duration::from_secs(30));
         });
     }

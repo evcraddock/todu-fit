@@ -233,6 +233,9 @@ impl Identity {
             .save(&group_doc.mealplans_doc_id, &mealplans_bytes)
             .map_err(IdentityError::StorageError)?;
 
+        // Initialize shopping storage before publishing its reference.
+        self.create_empty_personal_doc(&group_doc.shopping_carts_doc_id)?;
+
         // Add group reference to identity
         let mut identity = self.load_identity()?;
         identity.add_group(GroupRef::new(&name, group_doc_id));
@@ -689,9 +692,17 @@ mod tests {
         let group_doc = identity.load_group(&group_id).unwrap();
         assert_eq!(group_doc.name, "Family");
 
-        // Should have dishes and mealplans documents
+        // Every published feature reference must have initialized storage.
         assert!(identity.storage.exists(&group_doc.dishes_doc_id));
         assert!(identity.storage.exists(&group_doc.mealplans_doc_id));
+        let shopping = identity
+            .storage
+            .load(&group_doc.shopping_carts_doc_id)
+            .unwrap()
+            .unwrap();
+        let mut shopping = AutoCommit::load(&shopping).unwrap();
+        assert!(!shopping.get_heads().is_empty());
+        assert_eq!(shopping.keys(automerge::ROOT).count(), 0);
     }
 
     #[test]

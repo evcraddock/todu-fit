@@ -18,6 +18,21 @@ impl Store {
             INSERT OR IGNORE INTO state VALUES(1,0);")?;
         Ok(Self { db })
     }
+    pub fn document(&self, name: &str) -> Result<Option<Vec<u8>>, Error> {
+        Ok(self
+            .db
+            .query_row("SELECT bytes FROM documents WHERE name=?", [name], |r| {
+                r.get(0)
+            })
+            .optional()?)
+    }
+    pub fn contains(&self, name: &str) -> Result<bool, Error> {
+        Ok(self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM documents WHERE name=?)",
+            [name],
+            |r| r.get(0),
+        )?)
+    }
     pub fn snapshot(&self) -> Result<Snapshot, Error> {
         let mut stmt = self.db.prepare("SELECT name,bytes FROM documents")?;
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
@@ -92,7 +107,11 @@ pub fn collect(path: &Path) -> Result<Snapshot, Error> {
             .file_name()
             .into_string()
             .map_err(|_| "Invalid store filename")?;
-        if name == "root_doc_id" || name == "current_group" || name.ends_with(".automerge") {
+        if name == "setup.json"
+            || name == "root_doc_id"
+            || name == "current_group"
+            || name.ends_with(".automerge")
+        {
             snapshot.insert(name, fs::read(entry.path())?);
         } else {
             return Err("Unexpected file in operation workspace".into());

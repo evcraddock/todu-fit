@@ -1,6 +1,8 @@
 const net = require("node:net");
 const { randomUUID } = require("node:crypto");
 const allowed = new Set([
+  "setup_status",
+  "setup_start",
   "identity_get",
   "groups_list",
   "group_create",
@@ -48,7 +50,7 @@ function validate(operation) {
   if (Buffer.byteLength(JSON.stringify(operation)) > 1024 * 1024)
     throw new Error("Request too large");
 }
-function openApplicationBridge(endpoint) {
+function openApplicationBridge(endpoint, timeoutMs = 15000) {
   let closed = false;
   const pending = new Set();
   function request(operation, id = randomUUID()) {
@@ -87,7 +89,7 @@ function openApplicationBridge(endpoint) {
               "No response. Save outcome may be unknown. Retry the same action to recover its result.",
             ),
           ),
-        15000,
+        timeoutMs,
       );
       pending.add(cancel);
       socket.on("error", () =>

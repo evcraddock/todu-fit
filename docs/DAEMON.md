@@ -1,8 +1,7 @@
 # Shared local daemon
 
-The CLI and Electron client use one explicitly started Rust owner: `fit daemon`.
-Closing Electron leaves that process running. There is no automatic service installation,
-startup, shutdown, migration, or fallback to direct client writes. No web login is used.
+The CLI and Electron client use one Rust owner: `fit daemon`. Electron connects or starts it automatically; CLI auto-start remains deferred.
+Closing Electron leaves that process running. There is no automatic service installation, shutdown, migration, or fallback to direct client writes. No web login is used.
 
 ## Isolated setup
 
@@ -36,7 +35,7 @@ Electron accepts `FIT_DAEMON_ENDPOINT`, the contents of `<data_dir>/daemon.endpo
 On Unix this is `<data_dir>/daemon.sock`; on Windows it is the named pipe printed at startup.
 The app never opens that directory's documents. Its bundled `resources/daemon/fit`
 (`fit.exe` on Windows) can be started explicitly with the same configuration; an already
-running compatible daemon can also serve it. The packaged client does not start a second owner.
+running compatible daemon can also serve it. Without an explicit endpoint, the packaged client resolves the effective configuration and connects or starts its bundled owner, waiting for readiness with a bounded timeout. The store lock prevents duplicate owners.
 
 The daemon reads configuration at startup. `fit config` still manages the client-side
 configuration file locally. Restarting a user-managed daemon to apply configuration changes

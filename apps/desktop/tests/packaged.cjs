@@ -32,7 +32,9 @@ async function main() {
       },
       timeout: 30000,
     });
-    page = await app.firstWindow();
+    page = await app.firstWindow({ timeout: 30000 });
+    console.log("Opened packaged workflow window");
+    page.setDefaultTimeout(30000);
     page.on("pageerror", (e) => errors.push(e.message));
   };
   const nav = async (name) =>

@@ -91,6 +91,12 @@ pub struct HydrationFields {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Operation {
+    SetupStatus,
+    SetupStart {
+        root_id: Option<String>,
+        server_url: Option<String>,
+        group_name: Option<String>,
+    },
     IdentityGet,
     IdentityCreate {
         #[serde(default)]
@@ -279,6 +285,8 @@ impl Operation {
                 | Self::WaterSettingsGet
                 | Self::Status
                 | Self::Changes { .. }
+                | Self::SetupStatus
+                | Self::SetupStart { .. }
                 | Self::SyncStart
         )
     }
@@ -357,6 +365,7 @@ pub struct Status {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum Value {
+    Setup(SetupStatus),
     Identity(Identity),
     Groups(Vec<Group>),
     Group(Group),
@@ -375,4 +384,12 @@ pub enum Value {
     WaterReport(WaterReport),
     Mutation { changed: bool, count: usize },
     Status(Status),
+}
+
+/// Initial setup remains staged until every required document is available.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetupStatus {
+    pub state: String,
+    pub message: String,
+    pub completed_documents: usize,
 }

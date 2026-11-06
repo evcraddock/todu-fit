@@ -13,7 +13,7 @@ async function fixture(binary = process.env.FIT_TEST_BINARY || path.resolve(__di
   const child = spawn(binary, ['-c', config, 'daemon'], { env, stdio: ['ignore', 'ignore', 'inherit'] });
   let spawnError; child.on('error', error => { spawnError = error; });
   const close = async () => {
-    if (child.exitCode === null && !child.killed) {
+    if (child.exitCode === null && child.signalCode === null && !child.killed) {
       const exited = new Promise(resolve => child.once('exit', resolve));
       child.kill('SIGKILL'); await exited;
     }
@@ -25,7 +25,7 @@ async function fixture(binary = process.env.FIT_TEST_BINARY || path.resolve(__di
     while (!endpoint) {
       try { endpoint = await fs.readFile(path.join(data, 'daemon.endpoint'), 'utf8'); } catch {}
       if (spawnError) throw spawnError;
-      if (child.exitCode !== null || Date.now() > deadline) throw new Error('Test daemon failed to start');
+      if (child.exitCode !== null || child.signalCode !== null || Date.now() > deadline) throw new Error('Test daemon failed to start');
       if (!endpoint) await new Promise(resolve => setTimeout(resolve, 20));
     }
     const cli = async (...args) => (await exec(binary, ['-c', config, ...args], { env, timeout: 20000 })).stdout;
