@@ -62,20 +62,38 @@ pub struct Response {
 struct Owner {
     store: Mutex<Store>,
     config: Config,
-    sync: Mutex<String>,
-    live_error: Mutex<Option<String>>,
+    sync: Mutex<SyncStatus>,
     sync_changed: tokio::sync::Notify,
     setup: Mutex<setup::Activity>,
 }
-impl Owner {
-    fn sync_status(&self) -> String {
-        let manual = self.sync.lock().unwrap().clone();
-        if manual == "idle" {
-            if let Some(error) = self.live_error.lock().unwrap().as_ref() {
-                return format!("failed: {error}");
-            }
+struct SyncStatus {
+    manual: String,
+    automatic: Option<String>,
+}
+
+impl Default for SyncStatus {
+    fn default() -> Self {
+        Self {
+            manual: "idle".into(),
+            automatic: None,
         }
-        manual
+    }
+}
+
+impl SyncStatus {
+    fn display(&self) -> &str {
+        if self.manual == "running" {
+            &self.manual
+        } else {
+            self.automatic.as_deref().unwrap_or(&self.manual)
+        }
+    }
+}
+
+impl Owner {
+    fn report_live_sync(&self, error: Option<String>) {
+        self.sync.lock().unwrap().automatic =
+            Some(error.map_or_else(|| "idle".into(), |error| format!("failed: {error}")));
     }
 
     fn apply(&self, request: &Request) -> Result<Response, Error> {
@@ -98,9 +116,9 @@ impl Owner {
         };
         match &request.operation {
             Operation::Status | Operation::Changes { .. } => {
-                let manual = self.sync.lock().unwrap().clone();
+                let sync = self.sync.lock().unwrap();
                 response.value = Some(
-                    json!({"sync": self.sync_status(), "manual_sync": manual, "revision": response.revision, "changed": matches!(request.operation, Operation::Changes { after } if after < response.revision)}),
+                    json!({"sync": sync.display(), "manual_sync": sync.manual, "revision": response.revision, "changed": matches!(request.operation, Operation::Changes { after } if after < response.revision)}),
                 );
                 return Ok(response);
             }
@@ -175,10 +193,10 @@ fn start_sync(owner: Arc<Owner>) {
         return;
     }
     let mut status = owner.sync.lock().unwrap();
-    if *status == "running" {
+    if status.manual == "running" {
         return;
     }
-    *status = "running".into();
+    status.manual = "running".into();
     drop(status);
     std::thread::spawn(move || {
         let result = (|| -> Result<(), Error> {
@@ -195,22 +213,21 @@ fn start_sync(owner: Arc<Owner>) {
             })??;
             let remote = collect(workspace.path())?;
             let mut store = owner.store.lock().unwrap();
-            let before = store.snapshot()?;
-            let mut current = before.clone();
+            let mut current = store.snapshot()?;
             if current.get("root_doc_id") != snapshot.get("root_doc_id") {
                 return Err("Identity changed during sync; discarded obsolete result".into());
             }
             store::merge(&mut current, remote)?;
-            if current != before {
-                store.commit(&current, None)?;
-                owner.sync_changed.notify_one();
-            }
+            store.commit(&current, None)?;
             Ok(())
         })();
-        *owner.sync.lock().unwrap() = match result {
+        let mut status = owner.sync.lock().unwrap();
+        status.manual = match result {
             Ok(()) => "idle".into(),
             Err(e) => format!("failed: {e}"),
         };
+        drop(status);
+        owner.sync_changed.notify_one();
     });
 }
 #[cfg(unix)]
@@ -250,8 +267,7 @@ pub fn serve(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let owner = Arc::new(Owner {
         store: Mutex::new(store),
         config,
-        sync: Mutex::new("idle".into()),
-        live_error: Mutex::new(None),
+        sync: Mutex::new(SyncStatus::default()),
         sync_changed: tokio::sync::Notify::new(),
         setup: Mutex::new(None),
     });
@@ -480,7 +496,7 @@ fn handle_frame(owner: &Arc<Owner>, line: &str) -> Result<Value, Error> {
                 .lock()
                 .map_err(|_| "Owner unavailable")?
                 .revision()?;
-            let state = owner.sync_status();
+            let state = owner.sync.lock().unwrap().display().to_owned();
             let sync = match state.as_str() {
                 "idle" => api::SyncState::Idle,
                 "running" => api::SyncState::Running,

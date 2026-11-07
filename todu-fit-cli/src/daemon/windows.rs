@@ -39,8 +39,7 @@ fn serve_inner(config: Config) -> Result<(), Error> {
     let owner = Arc::new(Owner {
         store: Mutex::new(store),
         config,
-        sync: Mutex::new("idle".into()),
-        live_error: Mutex::new(None),
+        sync: Mutex::new(SyncStatus::default()),
         sync_changed: tokio::sync::Notify::new(),
         setup: Mutex::new(None),
     });

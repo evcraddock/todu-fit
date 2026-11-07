@@ -317,11 +317,17 @@ test(
         (await a.request({ type: "status" })).data.sync.state === "failed",
         "Disconnect was not reported",
       );
+      await a.request({ type: "sync_start" });
+      await eventually(async () =>
+        (await a.request({ type: "status" })).data.sync.state === "failed",
+        "Manual sync failure was not reported",
+      );
       await a.request({ type: "dish_create", name: "Offline local commit" });
       await b.request({ type: "dish_create", name: "Offline peer commit" });
       online = true;
       await eventually(() => hasDish(a, "Offline peer commit"), "Reconnect did not catch up");
       await eventually(() => hasDish(b, "Offline local commit"), "Reconnect did not publish local edit");
+      assert.equal((await a.request({ type: "status" })).data.sync.state, "idle");
       assert.equal(connections, 2);
     } finally {
       await a?.close();

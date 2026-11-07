@@ -23,11 +23,20 @@ pub(super) fn start(owner: Arc<Owner>) -> std::io::Result<()> {
 }
 
 fn server(owner: &Owner) -> Result<Option<String>, Error> {
-    if setup::auto_sync(owner) {
+    if !setup_running(owner) && setup::auto_sync(owner) {
         setup::server_url(owner)
     } else {
         Ok(None)
     }
+}
+
+fn setup_running(owner: &Owner) -> bool {
+    owner
+        .setup
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|(_, status)| status.state == "running")
 }
 
 async fn run(owner: Arc<Owner>) {
@@ -35,14 +44,14 @@ async fn run(owner: Arc<Owner>) {
         let result = match server(&owner) {
             Ok(Some(url)) => session(&owner, &url).await,
             Ok(None) => {
-                *owner.live_error.lock().unwrap() = None;
+                owner.sync.lock().unwrap().automatic = None;
                 owner.sync_changed.notified().await;
                 continue;
             }
             Err(error) => Err(error),
         };
-        *owner.live_error.lock().unwrap() = result.err().map(|error| error.to_string());
-        if owner.live_error.lock().unwrap().is_some() {
+        if let Err(error) = result {
+            owner.report_live_sync(Some(error.to_string()));
             tokio::time::sleep(RETRY_DELAY).await;
         }
     }
@@ -56,8 +65,16 @@ async fn session(owner: &Owner, url: &str) -> Result<(), Error> {
         .clone();
     let mut connection = SyncClient::new(url).connect().await?;
     let mut states = HashMap::new();
-    refresh(owner, &mut connection, &snapshot, &mut states).await?;
-    *owner.live_error.lock().unwrap() = None;
+    let mut unavailable = HashSet::new();
+    refresh(
+        owner,
+        &mut connection,
+        &snapshot,
+        &mut states,
+        &mut unavailable,
+    )
+    .await?;
+    report_availability(owner, &unavailable);
     let mut last_received = tokio::time::Instant::now();
     let mut heartbeat = tokio::time::interval_at(last_received + HEARTBEAT, HEARTBEAT);
     loop {
@@ -67,7 +84,8 @@ async fn session(owner: &Owner, url: &str) -> Result<(), Error> {
                 if snapshot.get("root_doc_id") != Some(&root) || server(owner)?.as_deref() != Some(url) {
                     return Ok(());
                 }
-                refresh(owner, &mut connection, &snapshot, &mut states).await?;
+                refresh(owner, &mut connection, &snapshot, &mut states, &mut unavailable).await?;
+                report_availability(owner, &unavailable);
             }
             result = connection.receive() => {
                 last_received = tokio::time::Instant::now();
@@ -75,22 +93,30 @@ async fn session(owner: &Owner, url: &str) -> Result<(), Error> {
                     Some(ProtocolMessage::Request { document_id, data, .. }
                         | ProtocolMessage::Sync { document_id, data, .. }) => {
                         let Some(state) = states.get_mut(&document_id) else { continue };
-                        let Some((mut doc, changed)) = apply(owner, &root, &document_id, state, &data)? else {
-                            return Ok(());
+                        let (response, changed) = match apply(owner, &root, &document_id, state, &data)? {
+                            Applied::Document(response, changed) => (response, changed),
+                            Applied::Obsolete => return Ok(()),
+                            Applied::Unavailable => {
+                                unavailable.insert(document_id);
+                                report_availability(owner, &unavailable);
+                                continue;
+                            }
                         };
-                        if let Some(message) = doc.sync().generate_sync_message(state) {
+                        if let Some(message) = response {
                             connection.send(&document_id, message, false).await?;
                         }
                         if changed {
+                            unavailable.remove(&document_id);
                             owner.sync_changed.notify_one();
                         }
+                        report_availability(owner, &unavailable);
                     }
                     Some(ProtocolMessage::DocUnavailable { document_id, .. }) if states.contains_key(&document_id) => {
                         // Keep listening. A peer may publish this referenced document later.
                         let name = format!("{document_id}.automerge");
                         if !owner.store.lock().unwrap().contains(&name)? {
-                            *owner.live_error.lock().unwrap() =
-                                Some(format!("Sync server does not have document {document_id}"));
+                            unavailable.insert(document_id);
+                            report_availability(owner, &unavailable);
                         }
                     }
                     _ => {}
@@ -111,6 +137,7 @@ async fn refresh(
     connection: &mut SyncConnection,
     snapshot: &Snapshot,
     states: &mut HashMap<String, State>,
+    unavailable: &mut HashSet<String>,
 ) -> Result<(), Error> {
     // Discover only documents reachable from the current identity. Old group
     // files can remain in storage after leaving a group or changing identity.
@@ -136,7 +163,15 @@ async fn refresh(
         .map(|id: DocumentId| id.to_bs58check())
         .collect();
     states.retain(|id, _| ids.contains(id));
+    unavailable.retain(|id| ids.contains(id));
     for id in ids {
+        if unavailable.contains(&id) {
+            if !snapshot.contains_key(&format!("{id}.automerge")) {
+                continue;
+            }
+            unavailable.remove(&id);
+            states.remove(&id);
+        }
         let mut doc = load(snapshot, &id)?;
         let request = !states.contains_key(&id);
         let state = states.entry(id.clone()).or_default();
@@ -148,6 +183,16 @@ async fn refresh(
     Ok(())
 }
 
+fn report_availability(owner: &Owner, unavailable: &HashSet<String>) {
+    let error = unavailable.iter().min().map(|id| {
+        format!(
+            "Sync server does not have document {id} ({} unavailable)",
+            unavailable.len()
+        )
+    });
+    owner.report_live_sync(error);
+}
+
 fn load(snapshot: &Snapshot, id: &str) -> Result<AutoCommit, Error> {
     let name = format!("{id}.automerge");
     match snapshot.get(&name) {
@@ -156,27 +201,56 @@ fn load(snapshot: &Snapshot, id: &str) -> Result<AutoCommit, Error> {
     }
 }
 
+enum Applied {
+    Document(Option<Message>, bool),
+    Obsolete,
+    Unavailable,
+}
+
 fn apply(
     owner: &Owner,
     root: &[u8],
     id: &str,
     state: &mut State,
     bytes: &[u8],
-) -> Result<Option<(AutoCommit, bool)>, Error> {
+) -> Result<Applied, Error> {
+    let setup = owner.setup.lock().unwrap();
+    if setup
+        .as_ref()
+        .is_some_and(|(_, status)| status.state == "running")
+    {
+        return Ok(Applied::Obsolete);
+    }
     let mut store = owner.store.lock().unwrap();
     let mut snapshot = store.snapshot()?;
     if snapshot.get("root_doc_id").map(Vec::as_slice) != Some(root) {
-        return Ok(None);
+        return Ok(Applied::Obsolete);
     }
+    let name = format!("{id}.automerge");
     let mut doc = load(&snapshot, id)?;
-    let before = doc.get_heads();
-    doc.sync()
-        .receive_sync_message(state, Message::decode(bytes)?)?;
-    let changed = doc.get_heads() != before;
-    if changed {
-        snapshot.insert(format!("{id}.automerge"), doc.save());
-        store.commit(&snapshot, None)?;
-        *owner.live_error.lock().unwrap() = None;
+    let message = Message::decode(bytes)?;
+    let empty_peer = message.heads.is_empty();
+    // An out-of-order chunk can add queued changes without changing heads.
+    let before = (!message.changes.is_empty()).then(|| doc.save());
+    let mut next_state = state.clone();
+    if let Err(error) = doc.sync().receive_sync_message(&mut next_state, message) {
+        // Older Repo servers can send an unreadable empty sync response before
+        // doc-unavailable for a reference that has never been initialized.
+        if empty_peer && !snapshot.contains_key(&name) {
+            return Ok(Applied::Unavailable);
+        }
+        return Err(error.into());
     }
-    Ok(Some((doc, changed)))
+    let mut changed = false;
+    if let Some(before) = before {
+        let after = doc.save();
+        if after != before {
+            snapshot.insert(name, after);
+            store.commit(&snapshot, None)?;
+            changed = true;
+        }
+    }
+    *state = next_state;
+    let response = doc.sync().generate_sync_message(state);
+    Ok(Applied::Document(response, changed))
 }
