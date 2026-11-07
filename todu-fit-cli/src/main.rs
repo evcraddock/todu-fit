@@ -77,6 +77,13 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    #[cfg(target_os = "linux")]
+    if matches!(cli.command, Some(Commands::Daemon))
+        && std::env::var_os("FIT_DESKTOP_DAEMON").as_deref() == Some(std::ffi::OsStr::new("1"))
+    {
+        close_desktop_descriptors()?;
+    }
+
     // Save config path for init command
     let cli_config_path = cli.config.clone();
 
@@ -90,6 +97,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return execute_command(&cli.command, &config, cli_config_path);
     }
     daemon::call_cli(cli.command.unwrap(), &config)
+}
+
+#[cfg(target_os = "linux")]
+fn close_desktop_descriptors() -> std::io::Result<()> {
+    // Electron can leave non-CLOEXEC descriptors open. Its detached daemon
+    // must keep only standard I/O, or it can hold the app's pipes and files open.
+    // Collect first so the directory iterator is closed before closing any fd.
+    let descriptors = std::fs::read_dir("/proc/self/fd")?
+        .map(|entry| entry.map(|entry| entry.file_name()))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    for descriptor in descriptors {
+        if let Some(fd) = descriptor
+            .to_str()
+            .and_then(|name| name.parse::<i32>().ok())
+        {
+            if fd > 2 {
+                // SAFETY: This runs before the daemon opens files or starts threads.
+                // The directory iterator has already closed its own descriptor.
+                unsafe { libc::close(fd) };
+            }
+        }
+    }
+    Ok(())
 }
 
 fn execute_command(

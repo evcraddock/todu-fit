@@ -57,7 +57,7 @@ async function connectOrStart({
   let launchError;
   try {
     const child = spawn(binary, [...args, "daemon"], {
-      env: { ...env, FIT_DATA_DIR: dataDir },
+      env: { ...env, FIT_DATA_DIR: dataDir, FIT_DESKTOP_DAEMON: "1" },
       detached: true,
       windowsHide: true,
       stdio: ["ignore", log.fd, log.fd],

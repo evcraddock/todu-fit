@@ -11,10 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # Windows is a target, but not a gate for this first milestone.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -28,16 +26,50 @@ jobs:
         working-directory: apps/desktop
       - run: cargo fmt --all --check
       - run: cargo clippy -p todu-fit-cli -- -D warnings
-      - run: npm run package
+      - run: npm run package:installer
         working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - run: npm test
         working-directory: apps/desktop
+      - name: Exercise the Linux AppImage
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        working-directory: apps/desktop
+        run: |
+          archive=( "$PWD"/out/*.AppImage )
+          (cd "$RUNNER_TEMP" && "${archive[0]}" --appimage-extract >/dev/null)
+          export TODU_PACKAGED_EXECUTABLE="$RUNNER_TEMP/squashfs-root/todu-fit-desktop"
+          xvfb-run --auto-servernum npm run test:packaged
+      - name: Install and exercise the macOS DMG
+        if: runner.os == 'macOS'
+        timeout-minutes: 5
+        working-directory: apps/desktop
+        run: |
+          image=( out/*.dmg )
+          mount=$(mktemp -d)
+          hdiutil attach "${image[0]}" -readonly -nobrowse -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"' EXIT
+          app="$RUNNER_TEMP/Todu Fit Proof.app"
+          ditto "$mount/Todu Fit Proof.app" "$app"
+          export TODU_PACKAGED_EXECUTABLE="$app/Contents/MacOS/Todu Fit Proof"
+          npm run test:packaged
+      - name: Install and exercise the Windows setup executable
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        working-directory: apps/desktop
+        run: |
+          $installer = Get-Item out/*.exe
+          $installDir = Join-Path $env:RUNNER_TEMP 'FitDesktop'
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Fit setup exited with $($install.ExitCode)" }
+          $env:TODU_PACKAGED_EXECUTABLE = Join-Path $installDir 'Todu Fit Proof.exe'
+          npm run test:packaged
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: desktop-proof-${{ matrix.os }}
+          name: desktop-installer-${{ matrix.os }}
+          if-no-files-found: error
           path: |
-            apps/desktop/test-results/
-            apps/desktop/out/
+            apps/desktop/out/*.AppImage
+            apps/desktop/out/*.dmg
+            apps/desktop/out/*.exe
