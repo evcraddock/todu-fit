@@ -9,7 +9,7 @@ use automerge::sync::{Message as SyncMessage, State as SyncState, SyncDoc};
 use automerge::AutoCommit;
 use futures::{SinkExt, StreamExt};
 use tokio::time::timeout;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
 use super::error::SyncError;
 use super::protocol::{generate_peer_id, PeerMetadata, ProtocolMessage};
@@ -23,6 +23,99 @@ const DOC_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 const DOC_SYNC_TIMEOUT: Duration = Duration::from_secs(180);
 /// Short timeout for server health checks.
 const CHECK_SERVER_TIMEOUT: Duration = Duration::from_secs(3);
+
+type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// A negotiated connection to the Automerge Repo sync server.
+pub struct SyncConnection {
+    sender: futures::stream::SplitSink<Socket, Message>,
+    receiver: futures::stream::SplitStream<Socket>,
+    peer_id: String,
+    server_id: String,
+}
+
+impl SyncConnection {
+    pub async fn ping(&mut self) -> Result<(), SyncError> {
+        self.send_frame(Message::Ping(Vec::new().into())).await
+    }
+
+    pub async fn send(
+        &mut self,
+        document_id: &str,
+        data: SyncMessage,
+        request: bool,
+    ) -> Result<(), SyncError> {
+        let sender_id = self.peer_id.clone();
+        let target_id = self.server_id.clone();
+        let document_id = document_id.to_owned();
+        let data = data.encode();
+        let message = if request {
+            ProtocolMessage::Request {
+                sender_id,
+                target_id,
+                document_id,
+                data,
+            }
+        } else {
+            ProtocolMessage::Sync {
+                sender_id,
+                target_id,
+                document_id,
+                data,
+            }
+        };
+        let bytes = message
+            .encode()
+            .map_err(|e| SyncError::CborError(e.to_string()))?;
+        self.send_frame(Message::Binary(bytes.into())).await
+    }
+
+    async fn send_frame(&mut self, frame: Message) -> Result<(), SyncError> {
+        timeout(HANDSHAKE_TIMEOUT, self.sender.send(frame))
+            .await
+            .map_err(|_| SyncError::WebSocketError("Send timed out".into()))?
+            .map_err(|e| SyncError::WebSocketError(e.to_string()))
+    }
+
+    /// Read one frame. Returning after each frame keeps this safe to use in select!.
+    pub async fn receive(&mut self) -> Result<Option<ProtocolMessage>, SyncError> {
+        match self.receiver.next().await {
+            Some(Ok(Message::Binary(bytes))) => {
+                let message = ProtocolMessage::decode(&bytes)
+                    .map_err(|e| SyncError::CborError(e.to_string()))?;
+                match message {
+                    ProtocolMessage::Sync {
+                        ref sender_id,
+                        ref target_id,
+                        ..
+                    }
+                    | ProtocolMessage::Request {
+                        ref sender_id,
+                        ref target_id,
+                        ..
+                    }
+                    | ProtocolMessage::DocUnavailable {
+                        ref sender_id,
+                        ref target_id,
+                        ..
+                    } if sender_id == &self.server_id && target_id == &self.peer_id => {
+                        Ok(Some(message))
+                    }
+                    ProtocolMessage::Error { message } => Err(SyncError::ProtocolError(message)),
+                    ProtocolMessage::Leave { sender_id } if sender_id == self.server_id => {
+                        Err(SyncError::ConnectionError("Server left the session".into()))
+                    }
+                    _ => Ok(None),
+                }
+            }
+            Some(Ok(Message::Close(_))) | None => {
+                Err(SyncError::ConnectionError("Sync connection closed".into()))
+            }
+            Some(Ok(_)) => Ok(None),
+            Some(Err(e)) => Err(SyncError::WebSocketError(e.to_string())),
+        }
+    }
+}
 
 /// Result of a sync operation for a single document.
 #[derive(Debug, Clone)]
@@ -134,6 +227,24 @@ impl SyncClient {
     /// Returns the server URL.
     pub fn server_url(&self) -> &str {
         &self.server_url
+    }
+
+    pub async fn connect(&self) -> Result<SyncConnection, SyncError> {
+        let (socket, _) = timeout(HANDSHAKE_TIMEOUT, connect_async(self.build_ws_url()))
+            .await
+            .map_err(|_| SyncError::HandshakeTimeout)?
+            .map_err(|e| SyncError::ConnectionError(e.to_string()))?;
+        let (mut sender, mut receiver) = socket.split();
+        let peer_id = generate_peer_id();
+        let server_id = self
+            .perform_handshake(&mut sender, &mut receiver, &peer_id)
+            .await?;
+        Ok(SyncConnection {
+            sender,
+            receiver,
+            peer_id,
+            server_id,
+        })
     }
 
     /// Syncs multiple documents with the server over a single connection.

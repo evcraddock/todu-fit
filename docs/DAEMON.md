@@ -83,19 +83,9 @@ pointed at a daemon store; the new CLI has no direct-storage fallback.
 
 ## Sync is separate from saving
 
-Network exchange runs against a committed snapshot on a separate thread, with a 30-second
-whole-cycle timeout. Local operations do not wait for the network. On successful exchange,
-the owner merges Automerge documents into the *latest* local state and durably commits them,
-preserving concurrent local changes. Failed cycles discard their uncommitted staging; local
-saves already acknowledged remain intact. Retrying sync is safe even if the remote accepted
-some changes before failure.
+Automatic sync keeps one WebSocket connection open to the configured server. The daemon exchanges Automerge messages on connection, after durable commits, and when it receives messages for documents referenced by the current identity. Incoming changes are applied to the latest committed document under the owner lock. Local reads and writes remain available offline, and the daemon reconnects and catches up when the server is reachable again. Idle connections send only WebSocket keepalives.
 
-`fit sync` schedules/coalesces a cycle and waits boundedly for completion, returning an error
-on failure. `fit sync status` reports the last state without triggering a connection.
-`auto_sync: true` schedules a cycle every 30 seconds, including at daemon startup.
-This replaces the old before-read/after-write CLI auto-sync policy. Offline reads and writes
-remain local; sync failure appears in status and the desktop. There is no promise that a
-successful local save has already reached the remote server.
+Initial download and explicit `fit sync` requests still use a bounded one-shot exchange. `fit sync status` reports status without triggering sync. A successful local save means SQLite has committed the change. The server may receive it later.
 
 ## Protocol and compatibility
 

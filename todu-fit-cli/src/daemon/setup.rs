@@ -203,6 +203,7 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
             if let Some((_, state)) = activity.as_mut() {
                 match result {
                     Ok(count) => {
+                        owner.sync_changed.notify_one();
                         state.state = "ready".into();
                         state.message = "Ready".into();
                         state.completed_documents = count;

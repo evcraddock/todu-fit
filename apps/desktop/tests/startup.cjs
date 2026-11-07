@@ -236,3 +236,100 @@ test(
     }
   },
 );
+
+test(
+  "live sync exchanges commits and catches up after reconnect without polling",
+  { skip: !process.env.FIT_SETUP_TEST_SYNC_URL, timeout: 55000 },
+  async () => {
+    const net = require("node:net");
+    const server = new URL(process.env.FIT_SETUP_TEST_SYNC_URL);
+    assert.equal(server.protocol, "ws:", "Test needs a disposable ws server");
+    const sockets = new Set();
+    let online = true;
+    let connections = 0;
+    const proxy = net.createServer((client) => {
+      if (!online) {
+        client.destroy();
+        return;
+      }
+      connections++;
+      const upstream = net.connect(Number(server.port) || 80, server.hostname);
+      sockets.add(client);
+      client.on("error", () => upstream.destroy());
+      upstream.on("error", () => client.destroy());
+      client.on("close", () => {
+        sockets.delete(client);
+        upstream.destroy();
+      });
+      upstream.on("close", () => client.destroy());
+      client.pipe(upstream).pipe(client);
+    });
+    await new Promise((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const first = await fresh();
+    const second = await fresh();
+    let a, b;
+    async function eventually(check, message) {
+      const deadline = Date.now() + 6000;
+      do {
+        if (await check()) return;
+        await pause(50);
+      } while (Date.now() < deadline);
+      assert.fail(message);
+    }
+    const hasDish = async (bridge, name) =>
+      (await bridge.request({ type: "dishes_list" })).data.some(
+        (dish) => dish.name === name,
+      );
+    try {
+      a = openApplicationBridge(await connectOrStart(first.options));
+      b = openApplicationBridge(await connectOrStart(second.options));
+      await a.request({
+        type: "setup_start",
+        root_id: null,
+        server_url: `ws://127.0.0.1:${proxy.address().port}`,
+        group_name: "Live sync",
+      });
+      assert.equal((await finish(a)).state, "ready");
+      const { root_id } = (await a.request({ type: "identity_get" })).data;
+      await eventually(async () => {
+        await b.request({
+          type: "setup_start",
+          root_id,
+          server_url: server.href,
+          group_name: null,
+        });
+        return (await finish(b)).state === "ready";
+      }, "Fresh identity was not published automatically");
+
+      await a.request({ type: "dish_create", name: "First commit" });
+      await eventually(() => hasDish(b, "First commit"), "Commit did not reach peer");
+      await b.request({ type: "dish_create", name: "Peer commit" });
+      await eventually(() => hasDish(a, "Peer commit"), "Peer commit did not arrive");
+      assert.equal(connections, 1);
+      const revision = (await a.request({ type: "status" })).data.revision;
+      await pause(31000);
+      assert.equal(connections, 1, "Idle sync opened another connection");
+      assert.equal((await a.request({ type: "status" })).data.revision, revision);
+
+      online = false;
+      for (const socket of sockets) socket.destroy();
+      await eventually(async () =>
+        (await a.request({ type: "status" })).data.sync.state === "failed",
+        "Disconnect was not reported",
+      );
+      await a.request({ type: "dish_create", name: "Offline local commit" });
+      await b.request({ type: "dish_create", name: "Offline peer commit" });
+      online = true;
+      await eventually(() => hasDish(a, "Offline peer commit"), "Reconnect did not catch up");
+      await eventually(() => hasDish(b, "Offline local commit"), "Reconnect did not publish local edit");
+      assert.equal(connections, 2);
+    } finally {
+      await a?.close();
+      await b?.close();
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve) => proxy.close(resolve));
+      await first.close();
+      await second.close();
+    }
+  },
+);

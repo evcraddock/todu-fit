@@ -40,17 +40,11 @@ fn serve_inner(config: Config) -> Result<(), Error> {
         store: Mutex::new(store),
         config,
         sync: Mutex::new("idle".into()),
+        live_error: Mutex::new(None),
+        sync_changed: tokio::sync::Notify::new(),
         setup: Mutex::new(None),
     });
-    {
-        let background = owner.clone();
-        std::thread::spawn(move || loop {
-            if setup::auto_sync(&background) {
-                start_sync(background.clone());
-            }
-            std::thread::sleep(Duration::from_secs(30));
-        });
-    }
+    live_sync::start(owner.clone())?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;

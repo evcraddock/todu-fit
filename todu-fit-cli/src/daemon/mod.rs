@@ -1,5 +1,6 @@
 //! Shared local owner. Transport is versioned, bounded newline-delimited JSON.
 //! CLI adapters execute against disposable workspaces; only this owner commits.
+mod live_sync;
 mod setup;
 mod store;
 #[cfg(windows)]
@@ -62,9 +63,21 @@ struct Owner {
     store: Mutex<Store>,
     config: Config,
     sync: Mutex<String>,
+    live_error: Mutex<Option<String>>,
+    sync_changed: tokio::sync::Notify,
     setup: Mutex<setup::Activity>,
 }
 impl Owner {
+    fn sync_status(&self) -> String {
+        let manual = self.sync.lock().unwrap().clone();
+        if manual == "idle" {
+            if let Some(error) = self.live_error.lock().unwrap().as_ref() {
+                return format!("failed: {error}");
+            }
+        }
+        manual
+    }
+
     fn apply(&self, request: &Request) -> Result<Response, Error> {
         if request.version != 1 || uuid::Uuid::parse_str(&request.id).is_err() {
             return Err("INVALID_REQUEST: protocol version 1 and UUID request ID required".into());
@@ -85,8 +98,9 @@ impl Owner {
         };
         match &request.operation {
             Operation::Status | Operation::Changes { .. } => {
+                let manual = self.sync.lock().unwrap().clone();
                 response.value = Some(
-                    json!({"sync": *self.sync.lock().unwrap(), "revision": response.revision, "changed": matches!(request.operation, Operation::Changes { after } if after < response.revision)}),
+                    json!({"sync": self.sync_status(), "manual_sync": manual, "revision": response.revision, "changed": matches!(request.operation, Operation::Changes { after } if after < response.revision)}),
                 );
                 return Ok(response);
             }
@@ -152,6 +166,7 @@ impl Owner {
             &after,
             Some((&request.id, &encoded, &serde_json::to_value(&response)?)),
         )?;
+        self.sync_changed.notify_one();
         Ok(response)
     }
 }
@@ -180,12 +195,16 @@ fn start_sync(owner: Arc<Owner>) {
             })??;
             let remote = collect(workspace.path())?;
             let mut store = owner.store.lock().unwrap();
-            let mut current = store.snapshot()?;
+            let before = store.snapshot()?;
+            let mut current = before.clone();
             if current.get("root_doc_id") != snapshot.get("root_doc_id") {
                 return Err("Identity changed during sync; discarded obsolete result".into());
             }
             store::merge(&mut current, remote)?;
-            store.commit(&current, None)?;
+            if current != before {
+                store.commit(&current, None)?;
+                owner.sync_changed.notify_one();
+            }
             Ok(())
         })();
         *owner.sync.lock().unwrap() = match result {
@@ -232,17 +251,11 @@ pub fn serve(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         store: Mutex::new(store),
         config,
         sync: Mutex::new("idle".into()),
+        live_error: Mutex::new(None),
+        sync_changed: tokio::sync::Notify::new(),
         setup: Mutex::new(None),
     });
-    {
-        let background = owner.clone();
-        std::thread::spawn(move || loop {
-            if setup::auto_sync(&background) {
-                start_sync(background.clone());
-            }
-            std::thread::sleep(Duration::from_secs(30));
-        });
-    }
+    live_sync::start(owner.clone())?;
     let active = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming() {
         let mut stream = stream?;
@@ -309,7 +322,7 @@ pub fn call_cli(command: Commands, config: &Config) -> Result<(), Box<dyn std::e
             let state = response
                 .value
                 .as_ref()
-                .and_then(|v| v.get("sync"))
+                .and_then(|v| v.get("manual_sync").or_else(|| v.get("sync")))
                 .and_then(Value::as_str)
                 .ok_or("Invalid sync status")?;
             if state.starts_with("failed:") {
@@ -467,7 +480,7 @@ fn handle_frame(owner: &Arc<Owner>, line: &str) -> Result<Value, Error> {
                 .lock()
                 .map_err(|_| "Owner unavailable")?
                 .revision()?;
-            let state = owner.sync.lock().map_err(|_| "Owner unavailable")?.clone();
+            let state = owner.sync_status();
             let sync = match state.as_str() {
                 "idle" => api::SyncState::Idle,
                 "running" => api::SyncState::Running,
@@ -493,7 +506,12 @@ fn handle_frame(owner: &Arc<Owner>, line: &str) -> Result<Value, Error> {
                 created_by: owner.config.created_by.value.clone(),
                 default_timezone: crate::commands::detected_system_timezone,
             };
-            todu_fit_service::transact(&mut store, &owner.config.data_dir.value, &context, &request)
+            let before = store.revision()?;
+            let response = todu_fit_service::transact(&mut store, &owner.config.data_dir.value, &context, &request);
+            if response.revision > before {
+                owner.sync_changed.notify_one();
+            }
+            response
         }
     };
  Ok(response)
