@@ -9,6 +9,7 @@
     "build:native": "node scripts/build-native.cjs",
     "build": "npm run build:daemon && tsc --noEmit && vite build",
     "package": "npm run build && electron-builder --dir",
+    "package:installer": "npm run build && electron-builder",
     "test": "node --test tests/daemon.cjs tests/startup.cjs",
     "test:packaged": "node tests/packaged.cjs && node tests/packaged-setup.cjs",
     "build:daemon": "node scripts/build-daemon.cjs",
@@ -28,15 +29,21 @@
     "extraResources": [
       {
         "from": "daemon",
-        "to": "daemon"
+        "to": "daemon",
+        "filter": ["fit", "fit.exe"]
       }
     ],
+    "artifactName": "todu-fit-desktop-${version}-${os}-${arch}.${ext}",
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility"
+    },
     "mac": {
       "identity": null,
-      "target": "dir"
+      "target": "dmg"
     },
     "win": {
-      "target": "dir",
+      "target": "nsis",
       "signAndEditExecutable": false
     }
   },

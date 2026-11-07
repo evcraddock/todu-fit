@@ -28,13 +28,21 @@ npm run test:packaged
 
 Packaged UI tests are local checks and are not run in CI. CI builds the desktop and runs the non-UI daemon/API tests.
 
-Packaging builds the CLI/daemon for the host architecture, checks/bundles React, and puts `fit` (`fit.exe` on Windows) outside ASAR in `resources/daemon/`. No native Node addon is loaded by the app. Packages remain unsigned application directories.
+Packaging builds the CLI/daemon for the host architecture, checks/bundles React, and puts `fit` (`fit.exe` on Windows) outside ASAR in `resources/daemon/`. No native Node addon is loaded by the app. Use `npm run package:installer` to build an installable artifact in `out/`. Build on the target OS and architecture so the bundled daemon matches the app.
+
+| Platform | Artifact | How to install |
+| --- | --- | --- |
+| Linux | AppImage | Mark it executable with `chmod +x`, then launch it. If FUSE is unavailable, launch with `--appimage-extract-and-run`. |
+| Windows | NSIS setup executable | Run the setup executable and launch Fit from the Start menu. |
+| macOS | DMG | Open the disk image and drag the app to Applications. |
+
+The **Desktop build checks** GitHub Actions workflow builds the host-architecture installers and uploads them as run artifacts. These are unsigned preview builds. macOS Gatekeeper and Windows SmartScreen may block or warn on launch. The first launch starts the bundled daemon and offers **Use existing data** to download a synced identity into the daemon store.
 
 On launch, Electron reads the effective configuration using its bundled `fit config show --format json`, connects to a compatible owner, or starts the bundled daemon detached. The daemon's exclusive store lock arbitrates simultaneous launches. Startup has a bounded readiness wait and records failures in `daemon-startup.log` under Electron userData. Closing the desktop leaves the daemon running. `FIT_CONFIG=/absolute/path/config.yaml` selects a development configuration; configuration-relative storage paths are resolved before launch. `FIT_DAEMON_ENDPOINT` remains a connect-only override for existing owners and tests. CLI commands retain their existing explicit-daemon behavior.
 
 An unconfigured daemon presents first-run setup. Start fresh creates an identity, group, and all empty feature documents atomically. Connecting to existing data requires a server address and root document ID; the daemon stages the root and all referenced documents, reports discovery/download progress, and commits only when the complete initial download succeeds. Failed joins retain the previous state and allow retry; they never create a replacement identity. Closing the window during setup leaves the daemon working, and reopening shows its progress. If the daemon itself stops before completion, uncommitted work is discarded and setup can be retried. Setup's chosen server is persisted with the documents; a blank server for fresh setup means local-only use. Setup never replaces an initialized identity.
 
-Use a separate private development/test store when validating this work. No automatic adoption or migration of existing legacy storage is implemented. Start-at-login registration and installer/distribution remain separate work.
+Use a separate private development/test store when validating this work. No automatic adoption or migration of existing legacy storage is implemented. Start-at-login registration and signed public distribution remain separate work.
 
 `npm test` also checks simultaneous automatic launches, setup retries, failed joins, bounded startup failures, and reconnect persistence. Set `FIT_SETUP_TEST_SYNC_URL` to an isolated sync server to include full existing-root download and fresh empty-store interoperability checks. `npm run test:packaged` also launches the built app without an existing daemon and completes setup through the actual UI.
 
@@ -44,4 +52,4 @@ Default packaged paths are `out/mac-arm64/Todu Fit Proof.app` (Apple Silicon), `
 
 The preload exposes only `request(operation, requestId?)`. Main validates sender/frame/URL, allowlisted application operation types, request size and IDs. The daemon strictly validates the full operation schema. No renderer filesystem access, arbitrary IPC, raw CLI execution, identity replacement or configuration-path operations are exposed. Errors, sync state and revision polling remain visible.
 
-The old native addon/worker and v1 dish bridge remain historical proof code, with their separate tests. Their prior success does not establish current application behavior. Windows named-pipe/packaging CI remains a target; local macOS results do not prove Windows or Intel macOS compatibility.
+The old native addon/worker and v1 dish bridge remain historical proof code, with their separate tests. The packaged UI checks must be run separately on each platform.
