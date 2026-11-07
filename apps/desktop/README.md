@@ -26,7 +26,7 @@ npm test
 npm run test:packaged
 ```
 
-Packaged UI tests are local checks and are not run in CI. CI builds the desktop and runs the non-UI daemon/API tests.
+CI builds the installers, runs the daemon/API tests, and exercises the packaged UI from each extracted or installed app.
 
 Packaging builds the CLI/daemon for the host architecture, checks/bundles React, and puts `fit` (`fit.exe` on Windows) outside ASAR in `resources/daemon/`. No native Node addon is loaded by the app. Use `npm run package:installer` to build an installable artifact in `out/`. Build on the target OS and architecture so the bundled daemon matches the app.
 
@@ -54,4 +54,4 @@ Default packaged paths are `out/mac-arm64/Todu Fit Proof.app` (Apple Silicon), `
 
 The preload exposes only `request(operation, requestId?)`. Main validates sender/frame/URL, allowlisted application operation types, request size and IDs. The daemon strictly validates the full operation schema. No renderer filesystem access, arbitrary IPC, raw CLI execution, identity replacement or configuration-path operations are exposed. Errors, sync state and revision polling remain visible.
 
-The old native addon/worker and v1 dish bridge remain historical proof code, with their separate tests. The packaged UI checks must be run separately on each platform.
+The old native addon/worker and v1 dish bridge remain historical proof code, with their separate tests.
