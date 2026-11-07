@@ -1,6 +1,6 @@
 {
   "name": "todu-fit-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Todu Fit shared daemon desktop client",
   "author": "Todu",
@@ -30,7 +30,10 @@
       {
         "from": "daemon",
         "to": "daemon",
-        "filter": ["fit", "fit.exe"]
+        "filter": [
+          "fit",
+          "fit.exe"
+        ]
       }
     ],
     "artifactName": "todu-fit-desktop-${version}-${os}-${arch}.${ext}",
