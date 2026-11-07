@@ -123,6 +123,7 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
         completed_documents: 0,
     };
     *activity = Some((request.clone(), initial.clone()));
+    owner.sync_changed.notify_one();
     let owner = owner.clone();
     let request = request.clone();
     std::thread::spawn(move || {
@@ -214,6 +215,7 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
                 }
             }
         }
+        owner.sync_changed.notify_one();
     });
     Ok(initial)
 }

@@ -72,6 +72,9 @@ pub enum ProtocolMessage {
         #[serde(rename = "targetId")]
         target_id: String,
     },
+    /// Repo supports additional messages that carry no document changes.
+    #[serde(other)]
+    Unsupported,
 }
 
 /// Metadata sent with join message.

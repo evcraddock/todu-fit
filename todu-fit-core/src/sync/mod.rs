@@ -17,7 +17,7 @@ mod coordinator;
 mod error;
 mod protocol;
 
-pub use client::{check_server, SyncClient, SyncResult};
+pub use client::{check_server, SyncClient, SyncConnection, SyncResult};
 pub use coordinator::{DocSyncResult, SyncAllResult, SyncCoordinator, SyncCoordinatorError};
 pub use error::SyncError;
 pub use protocol::{generate_peer_id, ProtocolMessage};
