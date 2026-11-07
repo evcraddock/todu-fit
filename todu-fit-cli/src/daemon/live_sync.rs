@@ -23,20 +23,13 @@ pub(super) fn start(owner: Arc<Owner>) -> std::io::Result<()> {
 }
 
 fn server(owner: &Owner) -> Result<Option<String>, Error> {
-    if !setup_running(owner) && setup::auto_sync(owner) {
+    // A pending CLI join must finish its initial download before the root
+    // becomes visible as ready to application clients.
+    if setup::auto_sync(owner) && setup::status(owner)?.state == "ready" {
         setup::server_url(owner)
     } else {
         Ok(None)
     }
-}
-
-fn setup_running(owner: &Owner) -> bool {
-    owner
-        .setup
-        .lock()
-        .unwrap()
-        .as_ref()
-        .is_some_and(|(_, status)| status.state == "running")
 }
 
 async fn run(owner: Arc<Owner>) {
