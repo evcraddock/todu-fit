@@ -1,6 +1,7 @@
 // Exercise first run through the actual packaged window with disposable stores.
 const { _electron: electron } = require("playwright");
 const assert = require("node:assert/strict");
+const { once } = require("node:events");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
@@ -41,19 +42,29 @@ async function main() {
     delete env.FIT_DAEMON_ENDPOINT;
     delete env.FIT_SYNC_URL;
     app = await electron.launch({ executablePath, env, timeout: 30000 });
-    const child = app.process();
-    child.stderr?.on("data", (chunk) => process.stderr.write(chunk));
-    // Playwright waits for the child streams to close. The detached daemon
-    // can outlive those streams, so release them after Electron actually exits.
-    child.once("exit", () => {
-      for (const stream of child.stdio) stream?.destroy();
-    });
+    app.process().stderr?.on("data", (chunk) => process.stderr.write(chunk));
     console.log(`Electron launched: ${name}`);
     const page = await app.firstWindow({ timeout: 30000 });
     page.setDefaultTimeout(30000);
     page.on("pageerror", (e) => errors.push(e.message));
     console.log(`Opened packaged setup window: ${name}`);
     return page;
+  }
+  async function close() {
+    const application = app;
+    app = null;
+    const child = application.process();
+    const exited =
+      child.exitCode === null && child.signalCode === null
+        ? once(child, "exit", { signal: AbortSignal.timeout(10000) })
+        : Promise.resolve([child.exitCode, child.signalCode]);
+    // The detached daemon can keep Playwright's connections open after
+    // Electron exits. Verify the actual process exit before reopening the app.
+    const [code, signal] = await Promise.race([
+      exited,
+      application.close().then(() => exited),
+    ]);
+    assert.equal(code, 0, `Electron exited with code ${code}, signal ${signal}`);
   }
   async function bridge(name) {
     return openApplicationBridge(
@@ -83,8 +94,7 @@ async function main() {
     await page.getByRole("button", { name: "Create my space" }).click();
     await page.getByRole("button", { name: "New dish", exact: true }).waitFor();
     console.log("Closing packaged window");
-    await app.close();
-    app = null;
+    await close();
     let b = await bridge("new");
     const identity = (await b.request({ type: "identity_get" })).data;
     assert.equal(identity.groups[0].name, "My test household");
@@ -107,8 +117,7 @@ async function main() {
       0,
     );
     console.log("Closing packaged window");
-    await app.close();
-    app = null;
+    await close();
     if (process.env.FIT_SETUP_TEST_SYNC_URL) {
       page = await launch("joined");
       await page.getByRole("button", { name: /Use existing data/ }).click();
@@ -152,18 +161,21 @@ async function main() {
       "PASS packaged first-run setup, daemon survival, reopen, and configured join checks",
     );
   } finally {
-    if (app) await app.close();
-    for (const data of new Set(stores)) {
-      try {
-        process.kill(
-          Number(await fs.readFile(path.join(data, "daemon.pid"), "utf8")),
-        );
-      } catch (e) {
-        if (!["ENOENT", "ESRCH"].includes(e.code)) throw e;
+    try {
+      if (app) await close();
+    } finally {
+      for (const data of new Set(stores)) {
+        try {
+          process.kill(
+            Number(await fs.readFile(path.join(data, "daemon.pid"), "utf8")),
+          );
+        } catch (e) {
+          if (!["ENOENT", "ESRCH"].includes(e.code)) throw e;
+        }
       }
+      await pause(250);
+      await fs.rm(root, { recursive: true, force: true });
     }
-    await pause(250);
-    await fs.rm(root, { recursive: true, force: true });
   }
 }
 main().catch((e) => {
