@@ -46,8 +46,7 @@ async function main() {
     // Playwright waits for the child streams to close. The detached daemon
     // can outlive those streams, so release them after Electron actually exits.
     child.once("exit", () => {
-      child.stdout?.destroy();
-      child.stderr?.destroy();
+      for (const stream of child.stdio) stream?.destroy();
     });
     console.log(`Electron launched: ${name}`);
     const page = await app.firstWindow({ timeout: 30000 });
