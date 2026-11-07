@@ -41,7 +41,14 @@ async function main() {
     delete env.FIT_DAEMON_ENDPOINT;
     delete env.FIT_SYNC_URL;
     app = await electron.launch({ executablePath, env, timeout: 30000 });
-    app.process().stderr?.on("data", (chunk) => process.stderr.write(chunk));
+    const child = app.process();
+    child.stderr?.on("data", (chunk) => process.stderr.write(chunk));
+    // Playwright waits for the child streams to close. The detached daemon
+    // can outlive those streams, so release them after Electron actually exits.
+    child.once("exit", () => {
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+    });
     console.log(`Electron launched: ${name}`);
     const page = await app.firstWindow({ timeout: 30000 });
     page.setDefaultTimeout(30000);
