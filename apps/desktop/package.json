@@ -42,13 +42,21 @@
       "category": "Utility"
     },
     "mac": {
-      "identity": null,
-      "target": "dmg"
+      "target": "dmg",
+      "forceCodeSigning": true,
+      "hardenedRuntime": true,
+      "binaries": [
+        "Contents/Resources/daemon/fit"
+      ],
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Todu Fit uses its background daemon to sync your nutrition data with your configured server on the local network."
+      }
     },
     "win": {
       "target": "nsis",
       "signAndEditExecutable": false
-    }
+    },
+    "afterSign": "scripts/verify-mac-signing.cjs"
   },
   "dependencies": {
     "react": "19.3.1",
