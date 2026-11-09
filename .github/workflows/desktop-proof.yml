@@ -1,6 +1,9 @@
 name: Desktop build checks
 
 on:
+  push:
+    branches: [main]
+    paths: ['apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'todu-fit-cli/**', 'todu-fit-protocol/**', 'todu-fit-service/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
   pull_request:
     paths: ['apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'todu-fit-cli/**', 'todu-fit-protocol/**', 'todu-fit-service/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
   workflow_dispatch:
@@ -26,10 +29,40 @@ jobs:
         working-directory: apps/desktop
       - run: cargo fmt --all --check
       - run: cargo clippy -p todu-fit-cli -- -D warnings
-      - run: npm run package:installer
+      - name: Build Linux and Windows installers
+        if: runner.os != 'macOS'
+        run: npm run package:installer
         working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Build signed macOS installer
+        if: runner.os == 'macOS' && github.event_name != 'pull_request'
+        working-directory: apps/desktop
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$CSC_LINK" || -z "$CSC_KEY_PASSWORD" ]]; then
+            echo 'MAC_CSC_LINK and MAC_CSC_KEY_PASSWORD are required for signed macOS builds.' >&2
+            exit 1
+          fi
+          npm run package:installer
+      - name: Build unsigned macOS PR preview (no signing secrets)
+        if: runner.os == 'macOS' && github.event_name == 'pull_request'
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm run build
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = structuredClone(require('./package.json').build);
+          config.mac.identity = null;
+          config.mac.forceCodeSigning = false;
+          delete config.afterSign;
+          fs.writeFileSync('preview-builder.json', JSON.stringify(config));
+          NODE
+          npx electron-builder --config preview-builder.json
       - run: npm test
         working-directory: apps/desktop
       - name: Exercise the Linux AppImage
@@ -67,7 +100,7 @@ jobs:
           npm run test:packaged
       - uses: actions/upload-artifact@v4
         with:
-          name: desktop-installer-${{ matrix.os }}
+          name: desktop-installer-${{ matrix.os }}-${{ github.event_name == 'pull_request' && 'preview' || 'main' }}
           if-no-files-found: error
           path: |
             apps/desktop/out/*.AppImage
