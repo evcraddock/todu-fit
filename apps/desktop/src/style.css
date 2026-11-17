@@ -1324,6 +1324,10 @@ progress {
   color: #245d49;
   font-weight: 600;
 }
+.water-quick-add button:hover,
+.water-quick-add button.is-pointer-hovered {
+  background: #dce9df;
+}
 .water-log form > fieldset {
   margin: 20px 0 0;
 }
