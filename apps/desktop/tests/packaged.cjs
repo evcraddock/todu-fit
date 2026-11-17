@@ -166,7 +166,7 @@ async function main() {
     await manual.getByRole("checkbox").waitFor();
     assert.equal(await manual.getByRole("checkbox").isChecked(), true);
     await manual
-      .getByRole("button", { name: "Edit item", exact: true })
+      .getByRole("button", { name: "Edit Paper towels", exact: true })
       .click();
     await page.getByLabel("Item name").fill("Kitchen towels");
     await page.getByRole("button", { name: "Save item", exact: true }).click();

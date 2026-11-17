@@ -1,3 +1,4 @@
+import { ActionIcon } from "./ActionIcon";
 import { Dishes } from "./Dishes";
 import { loadMealWeek, loadReferencedDishes } from "./mealData";
 import { useState } from "react";
@@ -23,36 +24,6 @@ function foodLogNutrition(values: Record<string, number>) {
         ([key]) => key.split(" (")[0].toLowerCase() === name,
       ),
     ),
-  );
-}
-
-function MealActionIcon({ action }: { action: "add" | "edit" | "delete" }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-    >
-      {action === "add" ? (
-        <path d="M12 5v14M5 12h14" />
-      ) : action === "edit" ? (
-        <>
-          <path d="m16 3 5 5-12 12-6 1 1-6Z" />
-          <path d="m14 5 5 5" />
-        </>
-      ) : (
-        <>
-          <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
-        </>
-      )}
-    </svg>
   );
 }
 
@@ -318,7 +289,7 @@ export function Meals({
                             setEdit("new");
                           }}
                         >
-                          <MealActionIcon action="add" />
+                          <ActionIcon action="add" />
                         </button>
                       </div>
                       {dayLogs.filter((m) => m.log.meal_type === type)
@@ -371,7 +342,7 @@ export function Meals({
                                 aria-label="Edit log"
                                 onClick={() => setEdit(m)}
                               >
-                                <MealActionIcon action="edit" />
+                                <ActionIcon action="edit" />
                               </button>
                               <button
                                 className="plan-icon-button"
@@ -384,7 +355,7 @@ export function Meals({
                                   })
                                 }
                               >
-                                <MealActionIcon action="delete" />
+                                <ActionIcon action="delete" />
                               </button>
                             </div>
                           </div>
@@ -407,7 +378,7 @@ export function Meals({
                             setEdit("new");
                           }}
                         >
-                          <MealActionIcon action="add" />
+                          <ActionIcon action="add" />
                         </button>
                       </div>
                       {dayPlans.filter((p) => p.meal_type === type).length ===
@@ -483,7 +454,7 @@ export function Meals({
                                 aria-label={`Edit ${p.title}`}
                                 onClick={() => setEdit(p)}
                               >
-                                <MealActionIcon action="edit" />
+                                <ActionIcon action="edit" />
                               </button>
                               <button
                                 className="plan-icon-button"
@@ -493,7 +464,7 @@ export function Meals({
                                   setDeleting({ id: p.id, name: p.title })
                                 }
                               >
-                                <MealActionIcon action="delete" />
+                                <ActionIcon action="delete" />
                               </button>
                             </div>
                           </div>
