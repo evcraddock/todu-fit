@@ -8,9 +8,16 @@ import { Water } from "./Water";
 import { Settings } from "./Settings";
 import "./style.css";
 import { Setup, type SetupState } from "./Setup";
+import { trackPointerHover } from "./pointerHover";
 type Page =
-  "Dishes" | "Meal plans" | "Food log" | "Shopping" | "Water" | "Settings";
+  | "Dishes"
+  | "Meal plans"
+  | "Food log"
+  | "Shopping"
+  | "Water"
+  | "Settings";
 function App() {
+  useEffect(() => trackPointerHover(document), []);
   const [page, setPage] = useState<Page>("Dishes");
   const [revision, setRevision] = useState(0);
   const [identity, setIdentity] = useState<Identity>();

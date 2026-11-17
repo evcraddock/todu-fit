@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type Dish, type Ingredient, type Nutrient } from "./api";
 import {
   Field,
@@ -17,11 +17,37 @@ export function Dishes({
   refresh: () => void;
 }) {
   const [search, setSearch] = useState("");
-  const [tag, setTag] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Dish>();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState<Dish>();
   const action = useAction(refresh);
+  const requiredTags = tagFilter
+    .split(",")
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean);
+  const filtered = dishes
+    .filter(
+      (d) =>
+        requiredTags.every((tag) =>
+          d.tags.some((dishTag) => dishTag.trim().toLowerCase() === tag),
+        ) && d.name.toLowerCase().includes(search.toLowerCase()),
+    )
+    .sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, {
+        sensitivity: "base",
+        numeric: true,
+      }),
+    );
+  const pageSize = 12;
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * pageSize;
+  const visibleDishes = filtered.slice(pageStart, pageStart + pageSize);
+  useEffect(() => {
+    setPage((previous) => Math.min(previous, pageCount));
+  }, [pageCount]);
   if (editing)
     return (
       <DishEditor
@@ -72,7 +98,14 @@ export function Dishes({
         </ul>
         <h2>Instructions</h2>
         <Markdown>{d.instructions || "No instructions yet."}</Markdown>
-        {d.source_url && <p>Source: {d.source_url}</p>}
+        {d.source_url && (
+          <p>
+            Source:{" "}
+            <a href={d.source_url} target="_blank" rel="noopener noreferrer">
+              {d.source_url}
+            </a>
+          </p>
+        )}
         {deleting && (
           <Confirm
             title={`Delete ${deleting.name}?`}
@@ -93,13 +126,8 @@ export function Dishes({
       </section>
     );
   }
-  const filtered = dishes.filter(
-    (d) =>
-      (!tag || d.tags.includes(tag)) &&
-      d.name.toLowerCase().includes(search.toLowerCase()),
-  );
   return (
-    <section>
+    <section className="dish-list">
       <header>
         <div>
           <p className="eyebrow">YOUR RECIPES</p>
@@ -120,30 +148,104 @@ export function Dishes({
           <input
             type="search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
           />
         </Field>
-        <Field label="Tag">
-          <select value={tag} onChange={(e) => setTag(e.target.value)}>
-            <option value="">All tags</option>
-            {[...new Set(dishes.flatMap((d) => d.tags))].sort().map((t) => (
-              <option key={t}>{t}</option>
-            ))}
-          </select>
+        <Field label="Tags (comma-separated)">
+          <input
+            type="text"
+            placeholder="e.g. chicken, dinner"
+            title="Matches dishes with all entered tags"
+            value={tagFilter}
+            onChange={(e) => {
+              setTagFilter(e.target.value);
+              setPage(1);
+            }}
+          />
         </Field>
       </div>
+      {filtered.length > 0 && (
+        <div
+          className="dish-pagination"
+          role="group"
+          aria-label="Dish pagination"
+        >
+          <span role="status">
+            Showing {pageStart + 1}–{pageStart + visibleDishes.length} of{" "}
+            {filtered.length} dishes
+          </span>
+          <div className="dish-page-controls">
+            <button
+              disabled={currentPage === 1}
+              onClick={() => {
+                setPage(currentPage - 1);
+              }}
+            >
+              Previous
+            </button>
+            <span>
+              Page {currentPage} of {pageCount}
+            </span>
+            <button
+              disabled={currentPage === pageCount}
+              onClick={() => {
+                setPage(currentPage + 1);
+              }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
       <div className="cards">
-        {filtered.map((d) => (
-          <button
-            className="card"
-            key={d.id}
-            data-dish-id={d.id}
-            onClick={() => setSelected(d)}
-          >
-            <h2>{d.name}</h2>
-            <p>{d.tags.join(" · ") || "Recipe"}</p>
-            <Nutrition values={dishNutrition([d])} />
-          </button>
+        {visibleDishes.map((d) => (
+          <div className="card" key={d.id} data-dish-id={d.id}>
+            <h2>
+              <button
+                className="dish-card-open"
+                title={d.name}
+                onClick={() => {
+                  setSelected(d);
+                }}
+              >
+                {d.name}
+              </button>
+            </h2>
+            <div className="dish-card-tags">
+              {d.tags.length
+                ? d.tags.slice(0, 3).map((tag, index) => (
+                    <span key={`${tag}:${index}`}>
+                      {index > 0 && <span aria-hidden="true"> · </span>}
+                      <button
+                        className="dish-tag"
+                        aria-label={`Filter by tag: ${tag}`}
+                        onClick={() => {
+                          if (
+                            !requiredTags.includes(tag.trim().toLowerCase())
+                          ) {
+                            setTagFilter(
+                              [
+                                ...tagFilter
+                                  .split(",")
+                                  .map((value) => value.trim())
+                                  .filter(Boolean),
+                                tag,
+                              ].join(", "),
+                            );
+                          }
+                          setPage(1);
+                        }}
+                      >
+                        {tag}
+                      </button>
+                    </span>
+                  ))
+                : null}
+            </div>
+          </div>
         ))}
       </div>
       {!filtered.length && <p>No dishes found. Add a recipe to get started.</p>}
@@ -178,10 +280,29 @@ function DishEditor({
       ingredients.map((i, n) => (n === index ? { ...i, ...patch } : i)),
     );
   return (
-    <section>
-      <h1>{dish ? "Edit dish" : "New dish"}</h1>
+    <section className="dish-editor">
+      <header className="editor-header">
+        <div>
+          <p className="eyebrow">{dish ? "EDIT DISH" : "NEW RECIPE"}</p>
+          <h1>{dish?.name || "New dish"}</h1>
+        </div>
+        <div className="editor-header-actions">
+          <button type="button" disabled={action.busy} onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            className="primary"
+            type="submit"
+            form="dish-editor-form"
+            disabled={action.busy}
+          >
+            {action.busy ? "Saving…" : "Save dish"}
+          </button>
+        </div>
+      </header>
       <LoadError error={action.error} />
       <form
+        id="dish-editor-form"
         onSubmit={(e) => {
           e.preventDefault();
           action.run(async () => {
@@ -215,193 +336,229 @@ function DishEditor({
           });
         }}
       >
-        <fieldset disabled={action.busy}>
-          <Field label="Dish name">
-            <input
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </Field>
-          <div className="row">
-            <Field label="Prep time (min)">
-              <input
-                type="number"
-                min="0"
-                value={prep}
-                onChange={(e) => setPrep(e.target.value)}
-              />
-            </Field>
-            <Field label="Cook time (min)">
-              <input
-                type="number"
-                min="0"
-                value={cook}
-                onChange={(e) => setCook(e.target.value)}
-              />
-            </Field>
-            <Field label="Servings">
-              <input
-                type="number"
-                min="1"
-                value={servings}
-                onChange={(e) => setServings(e.target.value)}
-              />
-            </Field>
-          </div>
-          <Field label="Tags (comma-separated)">
-            <input value={tags} onChange={(e) => setTags(e.target.value)} />
-          </Field>
-          <fieldset>
-            <legend>Nutrition per serving</legend>
-            {nutrients.map((n, i) => (
-              <div className="row" key={i}>
-                <Field label="Nutrient">
-                  <input
-                    required
-                    value={n.name}
-                    onChange={(e) =>
-                      setNutrients(
-                        nutrients.map((v, j) =>
-                          i === j ? { ...v, name: e.target.value } : v,
-                        ),
-                      )
-                    }
-                  />
-                </Field>
-                <Field label="Amount">
+        <fieldset className="editor-layout" disabled={action.busy}>
+          <div className="editor-main">
+            <section className="editor-panel">
+              <h2>Recipe details</h2>
+              <Field label="Dish name">
+                <input
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </Field>
+              <div className="row">
+                <Field label="Prep time (min)">
                   <input
                     type="number"
                     min="0"
-                    step="any"
-                    required
-                    value={n.amount}
-                    onChange={(e) =>
-                      setNutrients(
-                        nutrients.map((v, j) =>
-                          i === j
-                            ? { ...v, amount: Number(e.target.value) }
-                            : v,
-                        ),
-                      )
-                    }
+                    value={prep}
+                    onChange={(e) => setPrep(e.target.value)}
                   />
                 </Field>
-                <Field label="Unit">
-                  <input
-                    required
-                    value={n.unit}
-                    onChange={(e) =>
-                      setNutrients(
-                        nutrients.map((v, j) =>
-                          i === j ? { ...v, unit: e.target.value } : v,
-                        ),
-                      )
-                    }
-                  />
-                </Field>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setNutrients(nutrients.filter((_, j) => i !== j))
-                  }
-                >
-                  Remove nutrient
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setNutrients([
-                  ...nutrients,
-                  { name: "calories", amount: 0, unit: "kcal" },
-                ])
-              }
-            >
-              Add nutrient
-            </button>
-          </fieldset>
-          <fieldset>
-            <legend>Ingredients</legend>
-            {ingredients.map((n, i) => (
-              <div className="row" key={i}>
-                <Field label="Ingredient">
-                  <input
-                    required
-                    value={n.name}
-                    onChange={(e) =>
-                      updateIngredient(i, { name: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Quantity">
+                <Field label="Cook time (min)">
                   <input
                     type="number"
-                    min="0.001"
-                    step="any"
-                    required
-                    value={n.quantity}
-                    onChange={(e) =>
-                      updateIngredient(i, { quantity: Number(e.target.value) })
-                    }
+                    min="0"
+                    value={cook}
+                    onChange={(e) => setCook(e.target.value)}
                   />
                 </Field>
-                <Field label="Unit">
+                <Field label="Servings">
                   <input
-                    value={n.unit}
-                    onChange={(e) =>
-                      updateIngredient(i, { unit: e.target.value })
-                    }
+                    type="number"
+                    min="1"
+                    value={servings}
+                    onChange={(e) => setServings(e.target.value)}
                   />
                 </Field>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setIngredients(ingredients.filter((_, j) => i !== j))
-                  }
-                >
-                  Remove ingredient
-                </button>
               </div>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setIngredients([
-                  ...ingredients,
-                  { name: "", quantity: 1, unit: "" },
-                ])
-              }
-            >
-              Add ingredient
-            </button>
-          </fieldset>
-          <Field label="Instructions (Markdown)">
-            <textarea
-              rows={7}
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-            />
-          </Field>
-          <button type="button" onClick={() => setPreview(!preview)}>
-            Toggle preview
-          </button>
-          {preview && <Markdown>{instructions}</Markdown>}
-          <Field label="Source URL">
-            <input
-              type="url"
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-            />
-          </Field>
-          <div className="actions">
-            <button type="button" onClick={onCancel}>
-              Cancel
-            </button>
-            <button className="primary" type="submit">
-              {action.busy ? "Saving…" : "Save dish"}
-            </button>
+              <Field label="Tags (comma-separated)">
+                <input value={tags} onChange={(e) => setTags(e.target.value)} />
+              </Field>
+            </section>
+            <section className="editor-panel editor-instructions">
+              <h2>Instructions & source</h2>
+              <Field label="Instructions (Markdown)">
+                <textarea
+                  rows={8}
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                />
+              </Field>
+              <button
+                className="editor-preview-toggle"
+                type="button"
+                aria-expanded={preview}
+                onClick={() => setPreview(!preview)}
+              >
+                {preview ? "Hide preview" : "Preview instructions"}
+              </button>
+              {preview && (
+                <div className="editor-preview">
+                  <Markdown>{instructions}</Markdown>
+                </div>
+              )}
+              <Field label="Source URL">
+                <input
+                  type="url"
+                  value={source}
+                  onChange={(e) => setSource(e.target.value)}
+                />
+              </Field>
+            </section>
+          </div>
+          <div className="editor-sidebar">
+            <section className="editor-panel editor-nutrition">
+              <h2>Nutrition</h2>
+              <p className="editor-section-note">Amounts per serving</p>
+              <div className="editor-table-heading" aria-hidden="true">
+                <span>Nutrient</span>
+                <span>Amount</span>
+                <span>Unit</span>
+                <span />
+              </div>
+              {nutrients.map((n, i) => (
+                <div className="editor-table-row" key={i}>
+                  <Field label="Nutrient">
+                    <input
+                      required
+                      value={n.name}
+                      onChange={(e) =>
+                        setNutrients(
+                          nutrients.map((v, j) =>
+                            i === j ? { ...v, name: e.target.value } : v,
+                          ),
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field label="Amount">
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      required
+                      value={n.amount}
+                      onChange={(e) =>
+                        setNutrients(
+                          nutrients.map((v, j) =>
+                            i === j
+                              ? { ...v, amount: Number(e.target.value) }
+                              : v,
+                          ),
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field label="Unit">
+                    <input
+                      required
+                      value={n.unit}
+                      onChange={(e) =>
+                        setNutrients(
+                          nutrients.map((v, j) =>
+                            i === j ? { ...v, unit: e.target.value } : v,
+                          ),
+                        )
+                      }
+                    />
+                  </Field>
+                  <button
+                    className="editor-remove"
+                    aria-label="Remove nutrient"
+                    title={`Remove ${n.name || "nutrient"}`}
+                    type="button"
+                    onClick={() =>
+                      setNutrients(nutrients.filter((_, j) => i !== j))
+                    }
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button
+                className="editor-add"
+                type="button"
+                onClick={() =>
+                  setNutrients([
+                    ...nutrients,
+                    { name: "calories", amount: 0, unit: "kcal" },
+                  ])
+                }
+              >
+                Add nutrient
+              </button>
+            </section>
+            <section className="editor-panel editor-ingredients">
+              <h2>Ingredients</h2>
+              <div className="editor-ingredient-rows">
+                <div className="editor-table-heading" aria-hidden="true">
+                  <span>Ingredient</span>
+                  <span>Quantity</span>
+                  <span>Unit</span>
+                  <span />
+                </div>
+                {ingredients.map((n, i) => (
+                  <div className="editor-table-row" key={i}>
+                    <Field label="Ingredient">
+                      <input
+                        required
+                        value={n.name}
+                        onChange={(e) =>
+                          updateIngredient(i, { name: e.target.value })
+                        }
+                      />
+                    </Field>
+                    <Field label="Quantity">
+                      <input
+                        type="number"
+                        min="0.001"
+                        step="any"
+                        required
+                        value={n.quantity}
+                        onChange={(e) =>
+                          updateIngredient(i, {
+                            quantity: Number(e.target.value),
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Unit">
+                      <input
+                        value={n.unit}
+                        onChange={(e) =>
+                          updateIngredient(i, { unit: e.target.value })
+                        }
+                      />
+                    </Field>
+                    <button
+                      className="editor-remove"
+                      aria-label="Remove ingredient"
+                      title={`Remove ${n.name || "ingredient"}`}
+                      type="button"
+                      onClick={() =>
+                        setIngredients(ingredients.filter((_, j) => i !== j))
+                      }
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                className="editor-add"
+                type="button"
+                onClick={() =>
+                  setIngredients([
+                    ...ingredients,
+                    { name: "", quantity: 1, unit: "" },
+                  ])
+                }
+              >
+                Add ingredient
+              </button>
+            </section>
           </div>
         </fieldset>
       </form>

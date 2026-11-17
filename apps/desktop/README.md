@@ -15,7 +15,13 @@ Forms wait for committed daemon responses, retain inputs on failure, and display
 
 The presentation adapts the web forms and dish selector and reuses its Markdown renderer. It does not load the browser Automerge repo, IndexedDB, web login, passkeys, invitations, or hosted calendar subscriptions. Nutrition summaries preserve units and keep unlike units separate. Rust owns persisted data, shopping derivation, hydration calculations, and log snapshots.
 
-## Build and validate
+## Local UI development
+
+After installing dependencies and building the daemon once (`npm ci` and `npm run build:daemon`), run `npm run dev` from `apps/desktop`. This opens a development Electron window using Vite at `http://127.0.0.1:5174`. Saving renderer TypeScript or CSS updates the window automatically. Changes to Electron main/preload code require quitting and running the command again; Rust changes require rebuilding the daemon and restarting its owner separately.
+
+The development window uses a separate Electron profile at `data/dev/desktop-profile`, but uses the normal configured Fit daemon and data. Edits to records therefore affect that configured store. Use `FIT_CONFIG` or `FIT_DATA_DIR` to select a separate store, or `FIT_DAEMON_ENDPOINT` to connect to an existing daemon. Closing the window stops its Vite server and leaves the persistent Fit daemon running. The existing web dev services are independent.
+
+## Packaging and validation
 
 Requires Rust stable, Node 24 and the platform toolchain. From this directory:
 
