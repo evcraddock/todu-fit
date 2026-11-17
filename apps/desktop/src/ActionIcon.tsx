@@ -1,4 +1,8 @@
-export function ActionIcon({ action }: { action: "add" | "edit" | "delete" }) {
+export function ActionIcon({
+  action,
+}: {
+  action: "add" | "edit" | "delete" | "copy" | "switch" | "leave";
+}) {
   return (
     <svg
       width="16"
@@ -19,6 +23,15 @@ export function ActionIcon({ action }: { action: "add" | "edit" | "delete" }) {
           <path d="m16 3 5 5-12 12-6 1 1-6Z" />
           <path d="m14 5 5 5" />
         </>
+      ) : action === "copy" ? (
+        <>
+          <rect x="8" y="8" width="12" height="13" rx="2" />
+          <path d="M16 8V3H3v13h5" />
+        </>
+      ) : action === "switch" ? (
+        <path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4" />
+      ) : action === "leave" ? (
+        <path d="M9 4H4v16h5M9 12h12m-5-5 5 5-5 5" />
       ) : (
         <>
           <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />

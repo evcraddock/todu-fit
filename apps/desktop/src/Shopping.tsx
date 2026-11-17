@@ -1,3 +1,4 @@
+import { usePreferences } from "./preferences";
 import { ActionIcon } from "./ActionIcon";
 import { useState } from "react";
 import { call, type Shopping as ShoppingData } from "./api";
@@ -18,7 +19,8 @@ export function Shopping({
   revision: number;
   refresh: () => void;
 }) {
-  const [date, setDate] = useState(today());
+  const { timezone } = usePreferences();
+  const [date, setDate] = useState(() => today(timezone));
   const week = sunday(date);
   const result = useLoad(
     () => call<ShoppingData>({ type: "shopping_list", week }, "shopping"),

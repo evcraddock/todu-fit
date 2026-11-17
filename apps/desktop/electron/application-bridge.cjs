@@ -10,6 +10,7 @@ const allowed = new Set([
   "group_join",
   "group_leave",
   "config_get",
+  "config_update",
   "dishes_list",
   "dish_get",
   "dish_create",

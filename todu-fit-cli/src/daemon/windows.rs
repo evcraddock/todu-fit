@@ -41,6 +41,7 @@ fn serve_inner(config: Config) -> Result<(), Error> {
         config,
         sync: Mutex::new(SyncStatus::default()),
         sync_changed: tokio::sync::Notify::new(),
+        sync_config_changed: tokio::sync::Notify::new(),
         setup: Mutex::new(None),
     });
     live_sync::start(owner.clone())?;

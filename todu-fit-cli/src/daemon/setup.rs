@@ -16,7 +16,11 @@ pub(super) fn auto_sync(owner: &Owner) -> bool {
     match store.document(SETTINGS) {
         Ok(Some(bytes)) => serde_json::from_slice::<Value>(&bytes)
             .ok()
-            .is_some_and(|v| v.get("server_url").is_some_and(Value::is_string)),
+            .is_some_and(|v| {
+                v.get("auto_sync")
+                    .and_then(Value::as_bool)
+                    .unwrap_or_else(|| v.get("server_url").is_some_and(Value::is_string))
+            }),
         Ok(None) => owner.config.sync.auto_sync,
         Err(_) => false,
     }
@@ -218,4 +222,80 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
         owner.sync_changed.notify_one();
     });
     Ok(initial)
+}
+
+/// Persist local sync preferences and their retry receipt together, without touching identity data.
+pub(super) fn update_config(owner: &Owner, request: &api::Request) -> Result<api::Response, Error> {
+    let api::Operation::ConfigUpdate {
+        server_url,
+        auto_sync,
+    } = &request.operation
+    else {
+        return Err("Expected config_update".into());
+    };
+    let url = server_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let invalid = |message: &str| api::Response {
+        version: api::VERSION,
+        id: request.id,
+        revision: 0,
+        outcome: api::Outcome::Error {
+            error: todu_fit_service::error(api::ErrorCode::InvalidInput, message),
+        },
+    };
+    if let Some(url) = url {
+        if !reqwest::Url::parse(url).is_ok_and(|u| {
+            matches!(u.scheme(), "ws" | "wss") && u.host_str().is_some() && u.fragment().is_none()
+        }) {
+            return Ok(invalid(
+                "Enter a ws:// or wss:// sync server address without a fragment.",
+            ));
+        }
+    } else if *auto_sync {
+        return Ok(invalid(
+            "Enter a sync server address before enabling automatic sync.",
+        ));
+    }
+    let activity = owner.setup.lock().map_err(|_| "Owner unavailable")?;
+    if activity.as_ref().is_some_and(|(_, s)| s.state == "running") {
+        return Err("Wait for setup to finish before changing sync settings".into());
+    }
+    let mut store = owner.store.lock().map_err(|_| "Owner unavailable")?;
+    let key = format!("config:{}", request.id);
+    let payload = serde_json::to_string(&request.operation)?;
+    if let Some(saved) = store.receipt(&key, &payload)? {
+        return Ok(serde_json::from_value(saved)?);
+    }
+    let mut sync = owner.sync.lock().map_err(|_| "Owner unavailable")?;
+    if sync.manual == "running" {
+        return Err("Wait for the current sync to finish before changing sync settings".into());
+    }
+    let mut snapshot = store.snapshot()?;
+    snapshot.insert(
+        SETTINGS.into(),
+        serde_json::to_vec(&json!({"server_url": url, "auto_sync": auto_sync}))?,
+    );
+    let response = api::Response {
+        version: api::VERSION,
+        id: request.id,
+        revision: store.revision()? + 1,
+        outcome: api::Outcome::Ok {
+            value: Box::new(api::Value::Configuration(api::Configuration {
+                created_by: owner.config.created_by.value.clone(),
+                sync_server_url: url.map(str::to_owned),
+                auto_sync: *auto_sync,
+                default_timezone: crate::commands::detected_system_timezone(),
+            })),
+        },
+    };
+    store.commit(
+        &snapshot,
+        Some((&key, &payload, &serde_json::to_value(&response)?)),
+    )?;
+    *sync = SyncStatus::default();
+    owner.sync_config_changed.notify_one();
+    owner.sync_changed.notify_one();
+    Ok(response)
 }
