@@ -19,6 +19,8 @@ export function Setup({
   );
   const [server, setServer] = useState("");
   const [root, setRoot] = useState(identity.root_id ?? "");
+  const [groupMode, setGroupMode] = useState<"create" | "join">("create");
+  const [groupCode, setGroupCode] = useState("");
   const [group, setGroup] = useState("My household");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
@@ -45,6 +47,8 @@ export function Setup({
       root_id: mode === "join" ? root.trim() : null,
       server_url: server.trim() || null,
       group_name: mode === "new" ? group.trim() : null,
+      group_id:
+        mode === "new" && groupMode === "join" ? groupCode.trim() : null,
     };
     const payload = JSON.stringify(operation);
     if (retry.current?.payload !== payload)
@@ -93,19 +97,7 @@ export function Setup({
       </section>
     );
   return (
-    <section className="setup setup-form">
-      {!busy && !identity.root_id && (
-        <button
-          className="setup-back"
-          type="button"
-          onClick={() => {
-            setMode(null);
-            setError("");
-          }}
-        >
-          ← Back
-        </button>
-      )}
+    <section className="setup setup-form setup-compact">
       <h1>
         {busy
           ? "Getting your data ready"
@@ -117,8 +109,8 @@ export function Setup({
         {busy
           ? "You can leave Fit open while we prepare your data."
           : mode === "join"
-            ? "Enter the root document ID and sync server from your existing Fit setup."
-            : "Give your shared collection of dishes, meal plans, and shopping lists a name."}
+            ? "Enter the personal sync code and sync server from your existing Fit setup."
+            : "Create a group or join an existing one for shared dishes, meal plans, and shopping lists."}
       </p>
       {error && <p role="alert">{error}</p>}
       {state.state === "failed" && <p role="alert">{state.message}</p>}
@@ -139,20 +131,63 @@ export function Setup({
             <legend className="sr-only">
               {mode === "join" ? "Connect to existing data" : "Create new data"}
             </legend>
+            {mode === "new" && (
+              <div
+                className="setup-group-options"
+                role="group"
+                aria-label="Group setup"
+              >
+                <button
+                  type="button"
+                  aria-pressed={groupMode === "create"}
+                  onClick={() => {
+                    setGroupMode("create");
+                    setGroup("My household");
+                  }}
+                >
+                  Create a group
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={groupMode === "join"}
+                  onClick={() => {
+                    setGroupMode("join");
+                    setGroup("Shared group");
+                  }}
+                >
+                  Join a group
+                </button>
+              </div>
+            )}
+            {mode === "new" && groupMode === "join" && (
+              <label className="field">
+                Group code
+                <input
+                  required
+                  value={groupCode}
+                  onChange={(e) => setGroupCode(e.target.value)}
+                  placeholder="Paste your group code"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                />
+                <small>Ask a member to copy this from Settings → Groups.</small>
+              </label>
+            )}
             {mode === "join" ? (
               <label className="field">
-                Root document ID
+                Personal sync code
                 <input
                   required
                   value={root}
                   readOnly={!!identity.root_id}
                   onChange={(e) => setRoot(e.target.value)}
-                  placeholder="Paste your root document ID"
+                  placeholder="Paste your personal sync code"
                   autoCapitalize="none"
                   spellCheck={false}
                 />
                 <small>
-                  This identifies your existing Fit data. It isn’t a group name.
+                  Find this in Settings → Sync on your other device. It isn’t a
+                  group code.
                 </small>
               </label>
             ) : (
@@ -168,9 +203,10 @@ export function Setup({
               </label>
             )}
             <label className="field">
-              Sync server address{mode === "new" && " (optional)"}
+              Sync server address
+              {mode === "new" && groupMode === "create" && " (optional)"}
               <input
-                required={mode === "join"}
+                required={mode === "join" || groupMode === "join"}
                 placeholder="wss://your-sync-server"
                 value={server}
                 onChange={(e) => setServer(e.target.value)}
@@ -180,16 +216,33 @@ export function Setup({
               <small>
                 {mode === "join"
                   ? "Use the server where your existing data is stored."
-                  : "Leave blank to use Fit only on this computer."}
+                  : groupMode === "join"
+                    ? "Use the same sync server as the group you’re joining."
+                    : "Leave blank to use Fit only on this computer."}
               </small>
             </label>
-            <button className="primary setup-submit" type="submit">
-              {state.state === "failed"
-                ? "Retry setup"
-                : mode === "join"
-                  ? "Connect and download"
-                  : "Create my space"}
-            </button>
+            <div className="setup-form-actions">
+              <button className="primary setup-submit" type="submit">
+                {state.state === "failed"
+                  ? "Retry setup"
+                  : mode === "join"
+                    ? "Connect and download"
+                    : groupMode === "join"
+                      ? "Join group and download"
+                      : "Create my space"}
+              </button>
+              {!identity.root_id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode(null);
+                    setError("");
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </fieldset>
         </form>
       )}

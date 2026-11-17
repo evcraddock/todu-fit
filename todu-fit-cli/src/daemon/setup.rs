@@ -76,6 +76,7 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
         root_id,
         server_url,
         group_name,
+        group_id,
     } = &request.operation
     else {
         return Err("Expected setup_start".into());
@@ -84,6 +85,15 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
         let parsed = reqwest::Url::parse(url)?;
         if !matches!(parsed.scheme(), "ws" | "wss") || parsed.host_str().is_none() {
             return Err("Sync server must be a ws:// or wss:// address".into());
+        }
+    }
+    if root_id.is_some() && group_id.is_some() {
+        return Err("Choose personal data or a group, not both".into());
+    }
+    if let Some(group) = group_id {
+        DocumentId::from_bs58check(group)?;
+        if server_url.is_none() {
+            return Err("Joining a group requires a sync server address".into());
         }
     }
     if let Some(root) = root_id {
@@ -136,11 +146,22 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
                 root_id,
                 server_url,
                 group_name,
+                group_id,
             } = &request.operation
             else {
                 unreachable!()
             };
             let mut completed = 0;
+            if root_id.is_none() {
+                identity.initialize_new()?;
+                let name = group_name.as_deref().ok_or("Group required")?.trim();
+                if let Some(group) = group_id {
+                    identity.join_group(DocumentId::from_bs58check(group)?, name)?;
+                } else {
+                    identity.create_group(name)?;
+                }
+                fs::write(workspace.path().join("current_group"), name)?;
+            }
             if let Some(root) = root_id {
                 let root = DocumentId::from_bs58check(root)?;
                 match identity.root_doc_id()? {
@@ -152,6 +173,8 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
                     Some(_) => {}
                     None => identity.initialize_join(root)?,
                 }
+            }
+            if root_id.is_some() || group_id.is_some() {
                 let progress_owner = owner.clone();
                 let mut coordinator = SyncCoordinator::new(
                     server_url.as_deref().ok_or("Server required")?,
@@ -177,9 +200,6 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
                     })??;
                 completed = downloaded.documents.len();
                 identity.load_identity()?;
-            } else {
-                identity.initialize_new()?;
-                identity.create_group(group_name.as_deref().ok_or("Group required")?.trim())?;
             }
             fs::write(
                 workspace.path().join(SETTINGS),

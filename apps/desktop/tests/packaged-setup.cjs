@@ -76,14 +76,14 @@ async function main() {
     await page.getByRole("heading", { name: "Welcome to Fit" }).waitFor();
     assert.equal(await page.getByRole("navigation").count(), 0);
     await page.getByRole("button", { name: /Use existing data/ }).click();
-    await page.getByLabel("Root document ID").waitFor();
+    await page.getByLabel("Personal sync code").waitFor();
     assert.equal(
       await page.getByRole("textbox", { name: /^Group name/ }).count(),
       0,
     );
-    await page.getByRole("button", { name: "Back" }).click();
+    await page.getByRole("button", { name: "Cancel" }).click();
     await page.getByRole("button", { name: /Start fresh/ }).click();
-    assert.equal(await page.getByLabel("Root document ID").count(), 0);
+    assert.equal(await page.getByLabel("Personal sync code").count(), 0);
     await page
       .getByRole("textbox", { name: /^Group name/ })
       .fill("My test household");
@@ -121,7 +121,7 @@ async function main() {
     if (process.env.FIT_SETUP_TEST_SYNC_URL) {
       page = await launch("joined");
       await page.getByRole("button", { name: /Use existing data/ }).click();
-      await page.getByLabel("Root document ID").fill(identity.root_id);
+      await page.getByLabel("Personal sync code").fill(identity.root_id);
       await page.getByLabel(/Sync server address/).fill("ws://127.0.0.1:1");
       await page.getByRole("button", { name: "Connect and download" }).click();
       await page.getByText(/Setup incomplete:/).waitFor();

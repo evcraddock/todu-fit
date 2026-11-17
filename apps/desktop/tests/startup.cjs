@@ -162,8 +162,9 @@ test(
   { skip: !process.env.FIT_SETUP_TEST_SYNC_URL },
   async () => {
     const first = await fresh(),
-      second = await fresh();
-    let a, b;
+      second = await fresh(),
+      third = await fresh();
+    let a, b, c;
     try {
       a = openApplicationBridge(await connectOrStart(first.options));
       b = openApplicationBridge(await connectOrStart(second.options));
@@ -185,6 +186,24 @@ test(
         await pause(30);
       }
       const root_id = (await a.request({ type: "identity_get" })).data.root_id;
+      c = openApplicationBridge(await connectOrStart(third.options));
+      const existingGroup = (await a.request({ type: "identity_get" })).data
+        .groups[0];
+      await c.request({
+        type: "setup_start",
+        group_id: existingGroup.id,
+        group_name: "Joined household",
+        server_url,
+      });
+      const joined = await finish(c);
+      assert.equal(joined.state, "ready", joined.message);
+      assert.equal(joined.completed_documents, 7);
+      const personal = (await c.request({ type: "identity_get" })).data;
+      assert.notEqual(personal.root_id, root_id);
+      assert.equal(personal.groups.length, 1);
+      assert.equal(personal.groups[0].id, existingGroup.id);
+      assert.equal((await c.request({ type: "dishes_list" })).data.length, 0);
+
       await b.request({
         type: "setup_start",
         root_id: "2i6KmWQkkfQdFhXC9n65UZshA7eQ",
@@ -231,8 +250,10 @@ test(
     } finally {
       await a?.close();
       await b?.close();
+      await c?.close();
       await first.close();
       await second.close();
+      await third.close();
     }
   },
 );
@@ -302,32 +323,52 @@ test(
       }, "Fresh identity was not published automatically");
 
       await a.request({ type: "dish_create", name: "First commit" });
-      await eventually(() => hasDish(b, "First commit"), "Commit did not reach peer");
+      await eventually(
+        () => hasDish(b, "First commit"),
+        "Commit did not reach peer",
+      );
       await b.request({ type: "dish_create", name: "Peer commit" });
-      await eventually(() => hasDish(a, "Peer commit"), "Peer commit did not arrive");
+      await eventually(
+        () => hasDish(a, "Peer commit"),
+        "Peer commit did not arrive",
+      );
       assert.equal(connections, 1);
       const revision = (await a.request({ type: "status" })).data.revision;
       await pause(31000);
       assert.equal(connections, 1, "Idle sync opened another connection");
-      assert.equal((await a.request({ type: "status" })).data.revision, revision);
+      assert.equal(
+        (await a.request({ type: "status" })).data.revision,
+        revision,
+      );
 
       online = false;
       for (const socket of sockets) socket.destroy();
-      await eventually(async () =>
-        (await a.request({ type: "status" })).data.sync.state === "failed",
+      await eventually(
+        async () =>
+          (await a.request({ type: "status" })).data.sync.state === "failed",
         "Disconnect was not reported",
       );
       await a.request({ type: "sync_start" });
-      await eventually(async () =>
-        (await a.request({ type: "status" })).data.sync.state === "failed",
+      await eventually(
+        async () =>
+          (await a.request({ type: "status" })).data.sync.state === "failed",
         "Manual sync failure was not reported",
       );
       await a.request({ type: "dish_create", name: "Offline local commit" });
       await b.request({ type: "dish_create", name: "Offline peer commit" });
       online = true;
-      await eventually(() => hasDish(a, "Offline peer commit"), "Reconnect did not catch up");
-      await eventually(() => hasDish(b, "Offline local commit"), "Reconnect did not publish local edit");
-      assert.equal((await a.request({ type: "status" })).data.sync.state, "idle");
+      await eventually(
+        () => hasDish(a, "Offline peer commit"),
+        "Reconnect did not catch up",
+      );
+      await eventually(
+        () => hasDish(b, "Offline local commit"),
+        "Reconnect did not publish local edit",
+      );
+      assert.equal(
+        (await a.request({ type: "status" })).data.sync.state,
+        "idle",
+      );
       assert.equal(connections, 2);
     } finally {
       await a?.close();
@@ -339,3 +380,38 @@ test(
     }
   },
 );
+
+test("joining a group requires a server and failed downloads leave setup untouched", async () => {
+  const f = await fresh();
+  let bridge;
+  try {
+    bridge = openApplicationBridge(await connectOrStart(f.options));
+    const operation = {
+      type: "setup_start",
+      root_id: null,
+      group_id: "2i6KmWQkkfQdFhXC9n65UZshA7eQ",
+      group_name: "Shared group",
+      server_url: null,
+    };
+    await assert.rejects(bridge.request(operation), /requires a sync server/);
+    await assert.rejects(
+      bridge.request({ ...operation, root_id: operation.group_id }),
+      /not both/,
+    );
+    await bridge.request({ ...operation, server_url: "ws://127.0.0.1:1" });
+    assert.equal((await finish(bridge)).state, "failed");
+    assert.equal(
+      (await bridge.request({ type: "identity_get" })).data.state,
+      "uninitialized",
+    );
+    await bridge.request({ ...operation, group_id: null });
+    assert.equal((await finish(bridge)).state, "ready");
+    assert.equal(
+      (await bridge.request({ type: "identity_get" })).data.groups.length,
+      1,
+    );
+  } finally {
+    await bridge?.close();
+    await f.close();
+  }
+});

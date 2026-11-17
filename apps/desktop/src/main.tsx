@@ -9,6 +9,7 @@ import { PreferencesProvider } from "./preferences";
 import { NavigationIcon } from "./NavigationIcon";
 import { Settings } from "./Settings";
 import "./style.css";
+import { BrandIcon } from "./BrandIcon";
 import { Setup, type SetupState } from "./Setup";
 import { trackPointerHover } from "./pointerHover";
 import {
@@ -113,7 +114,8 @@ function App() {
     return (
       <div className="onboarding">
         <div className="onboarding-brand brand">
-          todu<span>fit</span>
+          <BrandIcon />
+          <span className="brand-name">todufit</span>
         </div>
         <main className="onboarding-main">
           {error && (
@@ -157,7 +159,8 @@ function App() {
       >
         <div className="sidebar-header">
           <div className="brand">
-            todu<span>fit</span>
+            <BrandIcon />
+            <span className="brand-name">todufit</span>
           </div>
           <button
             className="sidebar-toggle"
