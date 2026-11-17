@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { call, type Dish, type Identity, type Status } from "./api";
+import { call, type Identity, type Status } from "./api";
 import { Dishes } from "./Dishes";
 import { Meals } from "./Meals";
 import { Shopping } from "./Shopping";
@@ -21,13 +21,6 @@ function App() {
   const [page, setPage] = useState<Page>("Dishes");
   const [revision, setRevision] = useState(0);
   const [identity, setIdentity] = useState<Identity>();
-  const scopeOf = (id?: Identity) =>
-    `${id?.root_id ?? ""}:${id?.groups.find((g) => g.selected)?.id ?? ""}`;
-  const [dishResult, setDishes] = useState<{ scope: string; data: Dish[] }>({
-    scope: "",
-    data: [],
-  });
-  const dishes = dishResult.scope === scopeOf(identity) ? dishResult.data : [];
   const [setup, setSetup] = useState<SetupState>();
   const [status, setStatus] = useState<Status>();
   const [error, setError] = useState("");
@@ -47,15 +40,8 @@ function App() {
           setIdentity(id);
           setStatus(state);
         }
-        const ds =
-          setupState.state === "ready" &&
-          id.state === "initialized" &&
-          id.groups.length
-            ? await call<Dish[]>({ type: "dishes_list" }, "dishes")
-            : [];
         if (active) {
           setIdentity(id);
-          setDishes({ scope: scopeOf(id), data: ds });
           setStatus(state);
           setError("");
         }
@@ -218,7 +204,6 @@ function App() {
                 key="logs"
                 logs
                 hasGroup={Boolean(group)}
-                dishes={dishes}
                 revision={revision}
                 refresh={refresh}
               />
@@ -234,14 +219,9 @@ function App() {
                 </button>
               </section>
             ) : page === "Dishes" ? (
-              <Dishes dishes={dishes} refresh={refresh} />
+              <Dishes revision={revision} refresh={refresh} />
             ) : page === "Meal plans" ? (
-              <Meals
-                key="plans"
-                dishes={dishes}
-                revision={revision}
-                refresh={refresh}
-              />
+              <Meals key="plans" revision={revision} refresh={refresh} />
             ) : (
               <Shopping revision={revision} refresh={refresh} />
             )}
