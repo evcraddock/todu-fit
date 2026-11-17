@@ -731,7 +731,7 @@ progress {
   }
 }
 
-/* Compact weekly agenda; food logs retain their existing presentation. */
+/* Shared weekly agenda for meal plans and food logs. */
 .app:has(.meal-calendar) main {
   padding-bottom: 16px;
 }
