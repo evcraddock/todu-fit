@@ -66,7 +66,6 @@ export function Water({
           {report ? (
             <>
               <div>
-                <p className="water-section-label">Today’s progress</p>
                 <h2>
                   {amountLabel(report.days[0]?.total_ml ?? 0, display)} today
                 </h2>
