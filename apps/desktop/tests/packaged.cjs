@@ -89,6 +89,13 @@ async function main() {
       .getByRole("button", { name: "New meal plan", exact: true })
       .click();
     await page.getByLabel("Title", { exact: true }).fill("Soup night");
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Add Packaged lentil soup", exact: true })
+        .count(),
+      0,
+    );
+    await page.getByLabel("Search dishes", { exact: true }).fill("lentil");
     await page
       .getByRole("button", { name: "Add Packaged lentil soup", exact: true })
       .click();
@@ -99,12 +106,19 @@ async function main() {
       .getByRole("heading", { name: "Soup night", exact: true })
       .waitFor();
     // Route state must not leak a plan editor into the food-log editor.
-    await page.getByRole("button", { name: "Edit plan", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Edit Soup night", exact: true })
+      .click();
     await nav("Food log");
     await page
       .getByRole("heading", { name: "Food log", exact: true })
       .waitFor();
     await page.getByRole("button", { name: "Log a meal", exact: true }).click();
+    await page
+      .getByLabel("Use a planned meal")
+      .locator("option")
+      .filter({ hasText: "Soup night" })
+      .waitFor({ state: "attached" });
     await page.getByLabel("Use a planned meal").selectOption({
       label: (
         await page
