@@ -96,6 +96,8 @@ pub enum Operation {
         root_id: Option<String>,
         server_url: Option<String>,
         group_name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        group_id: Option<String>,
     },
     IdentityGet,
     IdentityCreate {

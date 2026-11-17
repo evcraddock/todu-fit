@@ -459,6 +459,13 @@ progress {
 }
 .onboarding-brand {
   padding: 30px 44px;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.6px;
+}
+.onboarding-brand span {
+  color: inherit;
+  font-weight: inherit;
 }
 .onboarding-main {
   padding: 32px 32px 64px;
@@ -1820,4 +1827,106 @@ a {
 .sidebar-collapsed nav > button {
   justify-content: center;
   padding: 9px 0;
+}
+
+.brand-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: contain;
+}
+.onboarding-brand {
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.sidebar .brand {
+  font-size: 22px;
+  gap: 7px;
+  padding-left: 12px;
+  padding-right: 4px;
+}
+
+.brand-icon-dark {
+  display: none;
+}
+:root[data-theme="dark"] .brand-icon-light {
+  display: none;
+}
+:root[data-theme="dark"] .brand-icon-dark {
+  display: block;
+}
+
+/* Setup forms keep their cards with compact Settings-style controls. */
+.setup-form.setup-compact {
+  max-width: 560px;
+  padding: 32px 40px;
+}
+.setup-compact h1 {
+  font-size: 22px;
+  letter-spacing: -0.5px;
+  margin: 0 0 12px;
+}
+.setup-compact .setup-intro {
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+.setup-compact form {
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+}
+.setup-compact fieldset {
+  padding: 0;
+  margin: 0;
+}
+.setup-compact .field {
+  font-size: 13px;
+  font-weight: 400;
+  gap: 7px;
+  margin-bottom: 24px;
+}
+.setup-compact input {
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+.setup-compact small {
+  font-size: 12px;
+}
+.setup-compact .setup-submit {
+  width: auto;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+.setup-group-options {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.setup-group-options button {
+  flex: 1;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+.setup-group-options button[aria-pressed="true"] {
+  color: var(--on-accent);
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.setup-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.setup-compact .setup-form-actions button {
+  margin-top: 0;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 500;
 }
