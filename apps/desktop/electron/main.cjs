@@ -60,6 +60,12 @@ else {
       );
       window = new BrowserWindow({
         title: development ? "Todu Fit — Development" : "Todu Fit",
+        icon: path.join(
+          app.isPackaged
+            ? process.resourcesPath
+            : path.resolve(__dirname, "../build"),
+          "icon.png",
+        ),
         width: 1180,
         height: 820,
         minWidth: 720,
