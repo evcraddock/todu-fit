@@ -731,23 +731,23 @@ progress {
   }
 }
 
-/* Compact weekly agenda; food logs retain their existing presentation. */
-.app:has(.meal-plans) main {
+/* Shared weekly agenda for meal plans and food logs. */
+.app:has(.meal-calendar) main {
   padding-bottom: 16px;
 }
-.app:has(.meal-plans) .topbar {
+.app:has(.meal-calendar) .topbar {
   padding: 14px 0;
   margin-bottom: 16px;
 }
-.meal-plans h1 {
+.meal-calendar h1 {
   margin: 4px 0 12px;
 }
-.meal-plans .day {
+.meal-calendar .day {
   padding: 14px 16px;
   margin: 10px 0;
   border-radius: 8px;
 }
-.meal-plans .day-summary {
+.meal-calendar .day-summary {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) minmax(0, 580px);
   align-items: center;
@@ -756,11 +756,11 @@ progress {
   margin-bottom: 12px;
   border-bottom: 1px solid #e3e9df;
 }
-.meal-plans .day h2 {
+.meal-calendar .day h2 {
   font-size: 16px;
   margin: 0;
 }
-.meal-plans .day-nutrients {
+.meal-calendar .day-nutrients {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px 16px;
@@ -769,70 +769,70 @@ progress {
   font-weight: 600;
   color: #245d49;
 }
-.meal-plans .day-meals {
+.meal-calendar .day-meals {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
-.meal-plans .meal-column {
+.meal-calendar .meal-column {
   min-width: 0;
 }
-.meal-plans .meal-column + .meal-column {
+.meal-calendar .meal-column + .meal-column {
   border-left: 1px solid #e3e9df;
   padding-left: 14px;
 }
-.meal-plans .meal-column-title {
+.meal-calendar .meal-column-title {
   font-size: 12px;
   text-transform: capitalize;
   color: #68776c;
   margin: 0 0 10px;
 }
-.meal-plans .meal {
+.meal-calendar .meal {
   border: 0;
   padding: 0;
   margin: 0;
   line-height: 1.35;
 }
-.meal-plans .meal + .meal {
+.meal-calendar .meal + .meal {
   border-top: 1px solid #e3e9df;
   padding-top: 10px;
   margin-top: 10px;
 }
-.meal-plans .meal h4 {
+.meal-calendar .meal h4 {
   font-size: 14px;
   margin: 0 0 4px;
   overflow-wrap: anywhere;
 }
-.meal-plans .meal p {
+.meal-calendar .meal p {
   font-size: 12px;
   margin: 2px 0;
 }
-.meal-plans .meal p:empty {
+.meal-calendar .meal p:empty {
   display: none;
 }
-.meal-plans .meal .actions {
+.meal-calendar .meal .actions {
   margin: 8px 0 0;
   gap: 6px;
   flex-wrap: wrap;
 }
-.meal-plans .meal button {
+.meal-calendar .meal button {
   padding: 4px 8px;
   font-size: 11px;
 }
-.meal-plans .meal-column > .muted {
+.meal-calendar .meal-column > .muted {
   font-size: 12px;
   margin: 0;
 }
 
-.meal-plans .day-nutrient {
+.meal-calendar .day-nutrient {
   display: flex;
   flex-direction: column;
 }
-.meal-plans .day-nutrient-extra {
+.meal-calendar .day-nutrient-extra {
   grid-column: 1 / -1;
 }
 @media (max-width: 1100px) {
-  .meal-plans .day-summary {
+  .meal-calendar .day-summary {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -960,7 +960,7 @@ progress {
   border: 0;
 }
 
-.meal-plans .meal-column-header {
+.meal-calendar .meal-column-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -968,15 +968,15 @@ progress {
   gap: 6px;
   margin-bottom: 10px;
 }
-.meal-plans .meal-column-header .meal-column-title {
+.meal-calendar .meal-column-header .meal-column-title {
   margin: 0;
 }
-.meal-plans .meal-add-plan {
+.meal-calendar .meal-add-plan {
   font-size: 11px;
   padding: 4px 7px;
 }
 
-.meal-plans .plan-icon-button {
+.meal-calendar .plan-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -986,7 +986,7 @@ progress {
   flex-shrink: 0;
 }
 
-.meal-plans .day-title-button {
+.meal-calendar .day-title-button {
   border: 0;
   background: transparent;
   padding: 3px 6px;
@@ -997,8 +997,8 @@ progress {
   text-decoration-color: #b3c5bb;
   text-underline-offset: 4px;
 }
-.meal-plans .day-title-button:hover,
-.meal-plans .day-title-button.is-pointer-hovered {
+.meal-calendar .day-title-button:hover,
+.meal-calendar .day-title-button.is-pointer-hovered {
   background: #e9f1eb;
 }
 .meal-day-details .back-to-week {
@@ -1104,4 +1104,33 @@ progress {
 .meal-plan-nutrition .muted {
   font-size: 13px;
   margin: 8px 0 0;
+}
+
+.food-log .food-log-dish-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.food-log .food-log-dish + .food-log-dish {
+  margin-top: 8px;
+}
+
+.meal-plan-dishes > .meal-log-servings {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #e3e9df;
+}
+.meal-plan-dishes > .meal-log-servings > legend {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 0;
+}
+.meal-log-servings input {
+  max-width: 140px;
 }

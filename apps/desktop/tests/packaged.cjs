@@ -131,7 +131,16 @@ async function main() {
     await page
       .getByRole("button", { name: "Save meal log", exact: true })
       .click();
-    await waitText("Packaged lentil soup (0.5 servings)");
+    await page
+      .locator(".food-log-dish")
+      .filter({
+        has: page.getByRole("heading", {
+          name: "Packaged lentil soup",
+          exact: true,
+        }),
+      })
+      .getByText("0.5 servings", { exact: true })
+      .waitFor();
     await waitText("calories (kcal): 150");
     const dates = await request({
       type: "meals_history",
@@ -204,7 +213,16 @@ async function main() {
       .waitFor();
     await page.screenshot({ path: path.join(results, "plans.png") });
     await nav("Food log");
-    await waitText("Packaged lentil soup (0.5 servings)");
+    await page
+      .locator(".food-log-dish")
+      .filter({
+        has: page.getByRole("heading", {
+          name: "Packaged lentil soup",
+          exact: true,
+        }),
+      })
+      .getByText("0.5 servings", { exact: true })
+      .waitFor();
     await page.screenshot({ path: path.join(results, "food-log.png") });
     await nav("Water");
     await page
