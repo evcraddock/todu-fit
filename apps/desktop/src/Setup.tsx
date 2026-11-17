@@ -61,7 +61,6 @@ export function Setup({
   if (!mode && !busy)
     return (
       <section className="setup setup-choice">
-        <p className="eyebrow">LET’S GET YOU STARTED</p>
         <h1>Welcome to Fit</h1>
         <p className="setup-intro">
           A home for your dishes, meal plans, and daily nutrition.
@@ -107,13 +106,6 @@ export function Setup({
           ← Back
         </button>
       )}
-      <p className="eyebrow">
-        {busy
-          ? "SETTING UP FIT"
-          : mode === "join"
-            ? "YOUR EXISTING SPACE"
-            : "A NEW SPACE"}
-      </p>
       <h1>
         {busy
           ? "Getting your data ready"

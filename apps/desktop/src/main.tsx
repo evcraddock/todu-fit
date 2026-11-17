@@ -6,6 +6,7 @@ import { Meals } from "./Meals";
 import { Shopping } from "./Shopping";
 import { Water } from "./Water";
 import { PreferencesProvider } from "./preferences";
+import { NavigationIcon } from "./NavigationIcon";
 import { Settings } from "./Settings";
 import "./style.css";
 import { Setup, type SetupState } from "./Setup";
@@ -41,6 +42,7 @@ function App() {
     setAppearance(value);
   };
   useEffect(() => trackPointerHover(document), []);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [page, setPage] = useState<Page>("Dishes");
   const [revision, setRevision] = useState(0);
   const [identity, setIdentity] = useState<Identity>();
@@ -150,26 +152,53 @@ function App() {
 
   return (
     <div className="app">
-      <aside>
-        <div className="brand">
-          todu<span>fit</span>
+      <aside
+        className={`sidebar${sidebarCollapsed ? " sidebar-collapsed" : ""}`}
+      >
+        <div className="sidebar-header">
+          <div className="brand">
+            todu<span>fit</span>
+          </div>
+          <button
+            className="sidebar-toggle"
+            aria-label={
+              sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+            }
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!sidebarCollapsed}
+            aria-controls="main-navigation"
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d={sidebarCollapsed ? "m9 6 6 6-6 6" : "m15 6-6 6 6 6"} />
+            </svg>
+          </button>
         </div>
-        <p className="muted">Plan well. Feel good.</p>
-        <nav aria-label="Main navigation">
+        <nav id="main-navigation" aria-label="Main navigation">
           {(
             ["Dishes", "Meal plans", "Food log", "Shopping", "Water"] as Page[]
           ).map((p) => (
             <button
               key={p}
+              aria-label={p}
+              title={sidebarCollapsed ? p : undefined}
               aria-current={page === p ? "page" : undefined}
               onClick={() => setPage(p)}
             >
-              {p}
+              <NavigationIcon page={p} />
+              <span>{p}</span>
             </button>
           ))}
-          <div className="connection">
-            <strong>{group?.name ?? "No group selected"}</strong>
-          </div>
           <button
             className="settings-navigation"
             aria-label="Settings"
@@ -177,29 +206,12 @@ function App() {
             aria-current={page === "Settings" ? "page" : undefined}
             onClick={() => setPage("Settings")}
           >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path d="m9.5 3-.5 2a7.5 7.5 0 0 0-1.8 1L5.2 5.4 2.7 9.6l1.5 1.4a7.5 7.5 0 0 0 0 2l-1.5 1.4 2.5 4.2 2-.6a7.5 7.5 0 0 0 1.8 1l.5 2h5l.5-2a7.5 7.5 0 0 0 1.8-1l2 .6 2.5-4.2-1.5-1.4a7.5 7.5 0 0 0 0-2l1.5-1.4-2.5-4.2-2 .6A7.5 7.5 0 0 0 15 5l-.5-2z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
+            <NavigationIcon page="Settings" />
             <span>Settings</span>
           </button>
         </nav>
       </aside>
       <main>
-        <div className="topbar">
-          Your personal nutrition workspace <span>Desktop</span>
-        </div>
         {error && (
           <p role="alert">
             {error} <button onClick={refresh}>Retry connection</button>
@@ -266,6 +278,29 @@ function App() {
           </PreferencesProvider>
         )}
       </main>
+      <footer className="status-bar" aria-label="App status">
+        <div
+          className="status-group"
+          role="status"
+          title={group ? `Current group: ${group.name}` : "No group selected"}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="9" cy="8" r="3" />
+            <path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 4v2" />
+          </svg>
+          <span>{group ? `Group: ${group.name}` : "No group selected"}</span>
+        </div>
+      </footer>
     </div>
   );
 }

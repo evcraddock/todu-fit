@@ -121,15 +121,6 @@ export function Meals({
       )}
       <header>
         <div>
-          <p className="eyebrow">
-            {selectedDay
-              ? logs
-                ? "DAILY FOOD LOG"
-                : "DAILY MEAL PLAN"
-              : logs
-                ? "YOUR FOOD HISTORY"
-                : "YOUR WEEK"}
-          </p>
           <h1>
             {selectedDay
               ? new Date(selectedDay + "T12:00:00").toLocaleDateString(
@@ -582,9 +573,6 @@ function MealEditor({
         <section className="dish-editor meal-plan-editor">
           <header className="editor-header">
             <div>
-              <p className="eyebrow">
-                {logs ? "FOOD LOG" : plan ? "EDIT MEAL PLAN" : "NEW MEAL PLAN"}
-              </p>
               <h1>
                 {logs
                   ? meal

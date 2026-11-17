@@ -161,7 +161,6 @@ export function Dishes({
     <section className="dish-list">
       <header>
         <div>
-          <p className="eyebrow">YOUR RECIPES</p>
           <h1>Dishes</h1>
         </div>
         <button
@@ -185,7 +184,7 @@ export function Dishes({
             }}
           />
         </Field>
-        <Field label="Tags (comma-separated)">
+        <Field label="Tags">
           <input
             type="text"
             placeholder="e.g. chicken, dinner"
@@ -314,7 +313,6 @@ function DishEditor({
     <section className="dish-editor">
       <header className="editor-header">
         <div>
-          <p className="eyebrow">{dish ? "EDIT DISH" : "NEW RECIPE"}</p>
           <h1>{dish?.name || "New dish"}</h1>
         </div>
         <div className="editor-header-actions">
