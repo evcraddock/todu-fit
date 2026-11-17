@@ -6,11 +6,12 @@
   "author": "Todu",
   "main": "electron/main.cjs",
   "scripts": {
+    "dev": "node scripts/dev.mjs",
     "build:native": "node scripts/build-native.cjs",
     "build": "npm run build:daemon && tsc --noEmit && vite build",
     "package": "npm run build && electron-builder --dir",
     "package:installer": "npm run build && electron-builder",
-    "test": "node --test tests/daemon.cjs tests/startup.cjs",
+    "test": "node --test tests/daemon.cjs tests/startup.cjs tests/pointer-hover.mjs tests/external-links.cjs",
     "test:packaged": "node tests/packaged.cjs && node tests/packaged-setup.cjs",
     "build:daemon": "node scripts/build-daemon.cjs",
     "test:native-proof": "node --test tests/native.cjs"
