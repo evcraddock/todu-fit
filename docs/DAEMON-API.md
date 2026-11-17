@@ -68,6 +68,7 @@ UTC RFC3339, IDs are UUIDs except Automerge document IDs (base58check).
 | `shopping list/add/remove/check/uncheck/clear-checked` | `shopping_list`, `shopping_add`, `shopping_remove`, `shopping_set_checked`, `shopping_clear_checked`; derived items/cart or changed/count result. |
 | `water add/today/recent/history/delete` | `water_add`, `water_today`, `water_recent`, `water_history`, `water_delete`; entries, configured timezone day totals/progress, streak, seven-day average. |
 | `water settings/set` | `water_settings_get`, `water_settings_update`; goal, input/display unit, timezone, presets. |
+| Desktop sync preferences | `config_update` accepts `server_url` (null to clear) and `auto_sync`; returns `configuration`. Preferences are local to the daemon and never synced. Changes cancel the old automatic connection and apply without restarting. Updates during manual sync or setup are rejected; invalid addresses and automatic sync without a server are rejected without changes. |
 | `sync`, `sync status` | `sync_start`, `status`; structured idle/running/failed state. |
 | Client change detection | `changes` with `after` revision; durable revision and changed flag, plus independent sync state. |
 | `daemon`, help/version/completions | Host/client lifecycle and presentation, not application mutations. |
@@ -131,7 +132,6 @@ Desktop forms also use optional `DishFields.ingredients` to replace the ingredie
 `meal_save` takes an optional existing log `id`, `date`, `meal_type`, dish references, a UUID-keyed `portions` map, notes and optional `plan_id`. Existing selected snapshots survive editing, even if their canonical dish has changed or been deleted; newly selected dishes snapshot current values. Portions must be positive, finite and refer to selected dishes. An unchanged historical plan link is retained even after its plan is deleted or the group changes. Newly assigned links must resolve. `shopping_edit` atomically replaces one manual item identified by name and retains its checked state while rejecting collisions with other manual items.
 
 These operations use the existing transaction/receipt mechanism and existing Automerge schemas. Desktop tests cover invalid-input rollback, historical snapshot editing, unit-preserving summaries, and logical request identities across separate saves/groups.
-
 
 ## Desktop first-run setup
 

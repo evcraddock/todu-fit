@@ -5,10 +5,27 @@ import { Dishes } from "./Dishes";
 import { Meals } from "./Meals";
 import { Shopping } from "./Shopping";
 import { Water } from "./Water";
+import { PreferencesProvider } from "./preferences";
 import { Settings } from "./Settings";
 import "./style.css";
 import { Setup, type SetupState } from "./Setup";
 import { trackPointerHover } from "./pointerHover";
+import {
+  applyAppearance,
+  readAppearance,
+  saveAppearance,
+  type Appearance,
+} from "./theme";
+
+// Apply the saved theme before the first React render.
+const initialAppearance = readAppearance();
+document.documentElement.dataset.theme =
+  initialAppearance === "system"
+    ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light"
+    : initialAppearance;
+
 type Page =
   | "Dishes"
   | "Meal plans"
@@ -17,6 +34,12 @@ type Page =
   | "Water"
   | "Settings";
 function App() {
+  const [appearance, setAppearance] = useState<Appearance>(initialAppearance);
+  useEffect(() => applyAppearance(appearance), [appearance]);
+  const changeAppearance = (value: Appearance) => {
+    saveAppearance(value);
+    setAppearance(value);
+  };
   useEffect(() => trackPointerHover(document), []);
   const [page, setPage] = useState<Page>("Dishes");
   const [revision, setRevision] = useState(0);
@@ -134,14 +157,7 @@ function App() {
         <p className="muted">Plan well. Feel good.</p>
         <nav aria-label="Main navigation">
           {(
-            [
-              "Dishes",
-              "Meal plans",
-              "Food log",
-              "Shopping",
-              "Water",
-              "Settings",
-            ] as Page[]
+            ["Dishes", "Meal plans", "Food log", "Shopping", "Water"] as Page[]
           ).map((p) => (
             <button
               key={p}
@@ -151,18 +167,34 @@ function App() {
               {p}
             </button>
           ))}
+          <div className="connection">
+            <strong>{group?.name ?? "No group selected"}</strong>
+          </div>
+          <button
+            className="settings-navigation"
+            aria-label="Settings"
+            title="Settings"
+            aria-current={page === "Settings" ? "page" : undefined}
+            onClick={() => setPage("Settings")}
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="m9.5 3-.5 2a7.5 7.5 0 0 0-1.8 1L5.2 5.4 2.7 9.6l1.5 1.4a7.5 7.5 0 0 0 0 2l-1.5 1.4 2.5 4.2 2-.6a7.5 7.5 0 0 0 1.8 1l.5 2h5l.5-2a7.5 7.5 0 0 0 1.8-1l2 .6 2.5-4.2-1.5-1.4a7.5 7.5 0 0 0 0-2l1.5-1.4-2.5-4.2-2 .6A7.5 7.5 0 0 0 15 5l-.5-2z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            <span>Settings</span>
+          </button>
         </nav>
-        <div className="connection">
-          <strong>{group?.name ?? "No group selected"}</strong>
-          <p role="status">
-            {status?.sync.state === "failed"
-              ? `Sync failed: ${status.sync.message}`
-              : status?.sync.state === "running"
-                ? "Syncing…"
-                : "Saved on this computer"}
-          </p>
-          <button onClick={refresh}>Refresh</button>
-        </div>
       </aside>
       <main>
         <div className="topbar">
@@ -190,9 +222,15 @@ function App() {
             onChange={setSetup}
           />
         ) : (
-          <div key={`${identity.root_id}:${group?.id ?? ""}`}>
+          <PreferencesProvider
+            key={`${identity.root_id}:${group?.id ?? ""}`}
+            revision={revision}
+          >
             {page === "Settings" ? (
               <Settings
+                status={status}
+                appearance={appearance}
+                onAppearanceChange={changeAppearance}
                 identity={identity}
                 revision={revision}
                 refresh={refresh}
@@ -225,7 +263,7 @@ function App() {
             ) : (
               <Shopping revision={revision} refresh={refresh} />
             )}
-          </div>
+          </PreferencesProvider>
         )}
       </main>
     </div>

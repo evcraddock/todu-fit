@@ -273,3 +273,111 @@ fn application_protocol_v2_coexists_with_legacy_cli_and_dish_bridge() {
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
+#[test]
+fn sync_settings_persist_validate_and_reconfigure_live_connections() {
+    use std::io::Read;
+    use std::net::{TcpListener, TcpStream};
+    fn send(f: &Fixture, operation: Value, id: uuid::Uuid) -> Value {
+        let mut socket = UnixStream::connect(&f.socket).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        writeln!(
+            socket,
+            "{}",
+            json!({"version":2,"id":id,"operation":operation})
+        )
+        .unwrap();
+        let mut line = String::new();
+        BufReader::new(socket).read_line(&mut line).unwrap();
+        serde_json::from_str(&line).unwrap()
+    }
+    fn update(f: &Fixture, url: Option<&str>, auto: bool) -> Value {
+        let r = send(
+            f,
+            json!({"type":"config_update","server_url":url,"auto_sync":auto}),
+            uuid::Uuid::new_v4(),
+        );
+        assert_eq!(r["outcome"]["status"], "ok", "{r}");
+        r
+    }
+    fn accept(listener: &TcpListener) -> TcpStream {
+        listener.set_nonblocking(true).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match listener.accept() {
+                Ok((socket, _)) => {
+                    // macOS accepted sockets inherit the listener's nonblocking mode.
+                    socket.set_nonblocking(false).unwrap();
+                    socket
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    return socket;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(e) => panic!("{e}"),
+            }
+            assert!(Instant::now() < deadline, "automatic sync did not connect");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    let mut f = Fixture::new();
+    f.init();
+    let identity =
+        send(&f, json!({"type":"identity_get"}), uuid::Uuid::new_v4())["outcome"]["value"].clone();
+    f.cli(&["dish", "create", "Preserve me"], None);
+    let a = TcpListener::bind("127.0.0.1:0").unwrap();
+    let b = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url_a = format!("ws://{}", a.local_addr().unwrap());
+    let url_b = format!("ws://{}", b.local_addr().unwrap());
+    let retry = uuid::Uuid::new_v4();
+    let op = json!({"type":"config_update","server_url":url_a,"auto_sync":true});
+    let first = send(&f, op.clone(), retry);
+    assert_eq!(first["outcome"]["status"], "ok", "{first}");
+    let mut conn_a = accept(&a);
+    update(&f, Some(&url_b), true);
+    let mut conn_b = accept(&b);
+    // These peers never finish the WebSocket handshake: a settings update must
+    // cancel even a connection attempt, rather than wait for its timeout.
+    conn_a.read_to_end(&mut Vec::new()).unwrap();
+    update(&f, Some(&url_b), false);
+    conn_b.read_to_end(&mut Vec::new()).unwrap();
+    assert_eq!(send(&f, op, retry), first);
+    let get = || json!({"type":"config_get"});
+    let saved = send(&f, get(), uuid::Uuid::new_v4())["outcome"]["value"]["data"].clone();
+    assert_eq!(saved["sync_server_url"], url_b);
+    assert_eq!(saved["auto_sync"], false);
+    for (url, auto) in [
+        (Some("https://example.com"), false),
+        (Some("ws://localhost/#bad"), true),
+        (None, true),
+    ] {
+        let bad = send(
+            &f,
+            json!({"type":"config_update","server_url":url,"auto_sync":auto}),
+            uuid::Uuid::new_v4(),
+        );
+        assert_eq!(bad["outcome"]["error"]["code"], "invalid_input", "{bad}");
+        assert_eq!(
+            send(&f, get(), uuid::Uuid::new_v4())["outcome"]["value"]["data"],
+            saved
+        );
+    }
+    f.kill();
+    f.start();
+    assert_eq!(
+        send(&f, get(), uuid::Uuid::new_v4())["outcome"]["value"]["data"],
+        saved
+    );
+    assert_eq!(
+        send(&f, json!({"type":"identity_get"}), uuid::Uuid::new_v4())["outcome"]["value"],
+        identity
+    );
+    assert!(f.cli(&["dish", "list"], None).contains("Preserve me"));
+    std::thread::sleep(Duration::from_millis(150));
+    assert!(matches!(b.accept(),Err(e) if e.kind()==std::io::ErrorKind::WouldBlock));
+    update(&f, None, false);
+    let cleared = send(&f, get(), uuid::Uuid::new_v4());
+    assert!(cleared["outcome"]["value"]["data"]["sync_server_url"].is_null());
+}

@@ -172,6 +172,7 @@ async function main() {
     await page.getByRole("button", { name: "Save item", exact: true }).click();
     await page.getByText("Kitchen towels", { exact: false }).first().waitFor();
     await nav("Settings");
+    await page.getByRole("tab", { name: "Water", exact: true }).click();
     await page.getByLabel("Display unit").selectOption("ml");
     await page
       .getByRole("button", { name: "Save water settings", exact: true })
@@ -187,6 +188,7 @@ async function main() {
       .getByRole("heading", { name: "250 mL today", exact: true })
       .waitFor();
     await nav("Settings");
+    await page.getByRole("tab", { name: "Water", exact: true }).click();
     await page.getByLabel("Daily goal (mL)").fill("1800");
     await page
       .getByRole("button", { name: "Save water settings", exact: true })

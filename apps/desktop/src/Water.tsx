@@ -1,3 +1,4 @@
+import { usePreferences } from "./preferences";
 import { ActionIcon } from "./ActionIcon";
 import { useEffect, useState } from "react";
 import { call, type WaterReport } from "./api";
@@ -20,7 +21,8 @@ export function Water({
   revision: number;
   refresh: () => void;
 }) {
-  const [from, setFrom] = useState(sunday(today()));
+  const { timezone } = usePreferences();
+  const [from, setFrom] = useState(() => sunday(today(timezone)));
   const to = shift(from, 6);
   const [customWeek, setCustomWeek] = useState(false);
   const changeWeek = (date: string) => {

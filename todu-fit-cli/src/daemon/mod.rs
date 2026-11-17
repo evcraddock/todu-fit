@@ -64,6 +64,7 @@ struct Owner {
     config: Config,
     sync: Mutex<SyncStatus>,
     sync_changed: tokio::sync::Notify,
+    sync_config_changed: tokio::sync::Notify,
     setup: Mutex<setup::Activity>,
 }
 struct SyncStatus {
@@ -269,6 +270,7 @@ pub fn serve(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         config,
         sync: Mutex::new(SyncStatus::default()),
         sync_changed: tokio::sync::Notify::new(),
+        sync_config_changed: tokio::sync::Notify::new(),
         setup: Mutex::new(None),
     });
     live_sync::start(owner.clone())?;
@@ -469,6 +471,7 @@ fn handle_frame(owner: &Arc<Owner>, line: &str) -> Result<Value, Error> {
             let state = if matches!(request.operation, api::Operation::SetupStatus) { setup::status(owner)? } else { setup::start(owner, &request)? };
             api::Response { version: api::VERSION, id, revision: owner.store.lock().map_err(|_| "Owner unavailable")?.revision()?, outcome: api::Outcome::Ok { value: Box::new(api::Value::Setup(state)) } }
         }
+        api::Operation::ConfigUpdate { .. } => setup::update_config(owner, &request)?,
         api::Operation::ConfigGet => {
             let value = api::Value::Configuration(api::Configuration {
                 created_by: owner.config.created_by.value.clone(),

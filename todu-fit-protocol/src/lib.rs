@@ -125,6 +125,10 @@ pub enum Operation {
         name: String,
     },
     ConfigGet,
+    ConfigUpdate {
+        server_url: Option<String>,
+        auto_sync: bool,
+    },
     DishCreate {
         name: String,
         #[serde(default)]

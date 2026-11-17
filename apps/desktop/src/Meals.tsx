@@ -1,3 +1,4 @@
+import { usePreferences } from "./preferences";
 import { ActionIcon } from "./ActionIcon";
 import { Dishes } from "./Dishes";
 import { loadMealWeek, loadReferencedDishes } from "./mealData";
@@ -38,7 +39,8 @@ export function Meals({
   logs?: boolean;
   hasGroup?: boolean;
 }) {
-  const [date, setDate] = useState(today());
+  const { timezone } = usePreferences();
+  const [date, setDate] = useState(() => today(timezone));
   const [selectedDay, setSelectedDay] = useState<string>();
   const [openedDish, setOpenedDish] = useState<Dish>();
   const [edit, setEdit] = useState<Plan | Meal | "new">();

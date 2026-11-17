@@ -804,6 +804,7 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
         Op::SetupStatus
         | Op::SetupStart { .. }
         | Op::ConfigGet
+        | Op::ConfigUpdate { .. }
         | Op::SyncStart
         | Op::Status
         | Op::Changes { .. } => Err(error(

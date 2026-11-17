@@ -1,10 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { call, mutate, type Operation, type Dish, type MealType } from "./api";
 export const mealTypes: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
-export function today() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+export { today } from "./dates";
 export function shift(date: string, days: number) {
   const d = new Date(`${date}T12:00:00`);
   d.setDate(d.getDate() + days);

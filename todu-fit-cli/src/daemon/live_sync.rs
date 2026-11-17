@@ -35,7 +35,11 @@ fn server(owner: &Owner) -> Result<Option<String>, Error> {
 async fn run(owner: Arc<Owner>) {
     loop {
         let result = match server(&owner) {
-            Ok(Some(url)) => session(&owner, &url).await,
+            Ok(Some(url)) => tokio::select! {
+                biased;
+                _ = owner.sync_config_changed.notified() => Ok(()),
+                result = session(&owner, &url) => result,
+            },
             Ok(None) => {
                 owner.sync.lock().unwrap().automatic = None;
                 owner.sync_changed.notified().await;
@@ -45,7 +49,10 @@ async fn run(owner: Arc<Owner>) {
         };
         if let Err(error) = result {
             owner.report_live_sync(Some(error.to_string()));
-            tokio::time::sleep(RETRY_DELAY).await;
+            tokio::select! {
+                _ = owner.sync_config_changed.notified() => {},
+                _ = tokio::time::sleep(RETRY_DELAY) => {},
+            }
         }
     }
 }
