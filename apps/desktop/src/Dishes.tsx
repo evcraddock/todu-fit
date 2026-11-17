@@ -17,17 +17,19 @@ export function Dishes({
   revision: number;
   refresh: () => void;
 }) {
-  const loaded = useLoad(
-    () => call<Dish[]>({ type: "dishes_list" }, "dishes"),
-    revision,
-  );
-  const dishes = loaded.data ?? [];
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Dish>();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState<Dish>();
+  const loaded = useLoad(
+    () => call<Dish[]>({ type: "dishes_list" }, "dishes"),
+    revision,
+    "",
+    !editing,
+  );
+  const dishes = loaded.data ?? [];
   const action = useAction(refresh);
   const requiredTags = tagFilter
     .split(",")
@@ -54,8 +56,6 @@ export function Dishes({
   useEffect(() => {
     setPage((previous) => Math.min(previous, pageCount));
   }, [pageCount]);
-  if (loaded.error) return <LoadError error={loaded.error} />;
-  if (!loaded.data) return <p>Loading dishes…</p>;
   if (editing)
     return (
       <DishEditor
@@ -68,6 +68,8 @@ export function Dishes({
         }}
       />
     );
+  if (loaded.error) return <LoadError error={loaded.error} />;
+  if (!loaded.data) return <p>Loading dishes…</p>;
   if (selected) {
     const d = dishes.find((d) => d.id === selected.id) ?? selected;
     return (

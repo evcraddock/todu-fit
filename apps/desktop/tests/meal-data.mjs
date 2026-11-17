@@ -65,3 +65,21 @@ test("request failures are surfaced instead of showing incorrect totals", async 
     /Offline/,
   );
 });
+
+test("a deleted dish does not hide its plan or other dishes in the week", async () => {
+  const plans = [{ dish_ids: ["deleted", "remaining"] }];
+  const result = await loadMealWeek(
+    async (op) => {
+      if (op.type === "plans_list") return plans;
+      if (op.identifier === "deleted")
+        throw new Error("Dish not found: deleted");
+      return { id: "remaining" };
+    },
+    false,
+    true,
+    "2026-11-08",
+    "2026-11-14",
+  );
+  assert.deepEqual(result.plans, plans);
+  assert.deepEqual(result.dishes, [{ id: "remaining" }]);
+});
