@@ -16,7 +16,17 @@ import {
   shift,
   sunday,
 } from "./ui";
-function PlanActionIcon({ action }: { action: "add" | "edit" | "delete" }) {
+function foodLogNutrition(values: Record<string, number>) {
+  return Object.fromEntries(
+    ["calories", "protein", "carbs", "fat"].flatMap((name) =>
+      Object.entries(values).filter(
+        ([key]) => key.split(" (")[0].toLowerCase() === name,
+      ),
+    ),
+  );
+}
+
+function MealActionIcon({ action }: { action: "add" | "edit" | "delete" }) {
   return (
     <svg
       width="16"
@@ -126,9 +136,7 @@ export function Meals({
     );
   return (
     <section
-      className={
-        logs ? undefined : `meal-plans${selectedDay ? " meal-day-details" : ""}`
-      }
+      className={`meal-calendar${logs ? " food-log" : " meal-plans"}${selectedDay ? " meal-day-details" : ""}`}
     >
       {selectedDay && (
         <button
@@ -141,25 +149,27 @@ export function Meals({
       <header>
         <div>
           <p className="eyebrow">
-            {logs
-              ? "YOUR FOOD HISTORY"
-              : selectedDay
-                ? "DAILY MEAL PLAN"
+            {selectedDay
+              ? logs
+                ? "DAILY FOOD LOG"
+                : "DAILY MEAL PLAN"
+              : logs
+                ? "YOUR FOOD HISTORY"
                 : "YOUR WEEK"}
           </p>
           <h1>
-            {logs
-              ? "Food log"
-              : selectedDay
-                ? new Date(selectedDay + "T12:00:00").toLocaleDateString(
-                    undefined,
-                    {
-                      weekday: "long",
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    },
-                  )
+            {selectedDay
+              ? new Date(selectedDay + "T12:00:00").toLocaleDateString(
+                  undefined,
+                  {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  },
+                )
+              : logs
+                ? "Food log"
                 : "Meal plans"}
           </h1>
         </div>
@@ -173,71 +183,47 @@ export function Meals({
           {logs ? "Log a meal" : "New meal plan"}
         </button>
       </header>
-      {logs ? (
-        <>
-          <div className="row week-navigation">
-            <button onClick={() => setDate(shift(date, -7))}>
-              ← Previous week
-            </button>
-            <Field label="Week containing">
-              <input
-                type="date"
-                required
-                value={date}
-                onChange={(e) => {
-                  if (e.target.value) setDate(e.target.value);
-                }}
-              />
-            </Field>
-            <button onClick={() => setDate(shift(date, 7))}>Next week →</button>
-          </div>
-          <p className="week-range">
-            {start} – {end}
+      {!selectedDay && (
+        <div className="plan-week-bar" aria-label="Week navigation">
+          <p className="plan-week-label">
+            {new Date(start + "T12:00:00").toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+            })}
+            {" – "}
+            {new Date(end + "T12:00:00").toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
           </p>
-        </>
-      ) : (
-        !selectedDay && (
-          <div className="plan-week-bar" aria-label="Week navigation">
-            <p className="plan-week-label">
-              {new Date(start + "T12:00:00").toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-              })}
-              {" – "}
-              {new Date(end + "T12:00:00").toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })}
-            </p>
-            <div className="plan-week-controls">
-              <button
-                aria-label="Previous week"
-                title="Previous week"
-                onClick={() => setDate(shift(start, -7))}
-              >
-                ←
-              </button>
-              <input
-                type="date"
-                aria-label="Week starting"
-                title="Week starting Sunday; choose any date to view its week"
-                required
-                value={start}
-                onChange={(e) => {
-                  if (e.target.value) setDate(sunday(e.target.value));
-                }}
-              />
-              <button
-                aria-label="Next week"
-                title="Next week"
-                onClick={() => setDate(shift(start, 7))}
-              >
-                →
-              </button>
-            </div>
+          <div className="plan-week-controls">
+            <button
+              aria-label="Previous week"
+              title="Previous week"
+              onClick={() => setDate(shift(start, -7))}
+            >
+              ←
+            </button>
+            <input
+              type="date"
+              aria-label="Week starting"
+              title="Week starting Sunday; choose any date to view its week"
+              required
+              value={start}
+              onChange={(e) => {
+                if (e.target.value) setDate(sunday(e.target.value));
+              }}
+            />
+            <button
+              aria-label="Next week"
+              title="Next week"
+              onClick={() => setDate(shift(start, 7))}
+            >
+              →
+            </button>
           </div>
-        )
+        </div>
       )}
       <LoadError error={week.error || action.error} />
       {!week.data && <p>Loading meals…</p>}
@@ -268,12 +254,6 @@ export function Meals({
               <h2>
                 {selectedDay ? (
                   "Daily nutrition"
-                ) : logs ? (
-                  new Date(day + "T12:00:00").toLocaleDateString(undefined, {
-                    weekday: "long",
-                    month: "short",
-                    day: "numeric",
-                  })
                 ) : (
                   <button
                     className="day-title-button"
@@ -288,9 +268,7 @@ export function Meals({
                   </button>
                 )}
               </h2>
-              {logs ? (
-                <Nutrition values={totals} />
-              ) : (
+              {
                 <div className="day-nutrients">
                   {["calories", "protein", "carbs", "fat"].map((name) => (
                     <div className="day-nutrient" key={name}>
@@ -305,47 +283,112 @@ export function Meals({
                         ))}
                     </div>
                   ))}
-                  {Object.entries(totals)
-                    .filter(
-                      ([key]) =>
-                        !["calories", "protein", "carbs", "fat"].includes(
-                          key.split(" (")[0].toLowerCase(),
-                        ),
-                    )
-                    .sort(([a], [b]) => a.localeCompare(b))
-                    .map(([key, value]) => (
-                      <span className="day-nutrient-extra" key={key}>
-                        {key}: {Math.round(value * 10) / 10}
-                      </span>
-                    ))}
+                  {!logs &&
+                    Object.entries(totals)
+                      .filter(
+                        ([key]) =>
+                          !["calories", "protein", "carbs", "fat"].includes(
+                            key.split(" (")[0].toLowerCase(),
+                          ),
+                      )
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([key, value]) => (
+                        <span className="day-nutrient-extra" key={key}>
+                          {key}: {Math.round(value * 10) / 10}
+                        </span>
+                      ))}
                 </div>
-              )}
+              }
             </div>
             <div className="day-meals">
               {logs
-                ? dayLogs.map((m) => (
-                    <div className="meal" key={m.log.id}>
-                      <h3>{m.log.meal_type}</h3>
-                      <p>
-                        {m.log.dishes
-                          .map(
-                            (d) =>
-                              `${d.name} (${m.log.dish_portions[d.id] ?? 1} serving${(m.log.dish_portions[d.id] ?? 1) === 1 ? "" : "s"})`,
-                          )
-                          .join(", ") || "Notes-only meal"}
-                      </p>
-                      <p>{m.log.notes}</p>
-                      <Nutrition values={mealNutrition(m)} />
-                      <div className="actions">
-                        <button onClick={() => setEdit(m)}>Edit log</button>
+                ? mealTypes.map((type) => (
+                    <div className="meal-column" key={type}>
+                      <div className="meal-column-header">
+                        <h3 className="meal-column-title">
+                          {type === "snack" ? "Snacks" : type}
+                        </h3>
                         <button
-                          onClick={() =>
-                            setDeleting({ id: m.log.id, name: "meal log" })
-                          }
+                          type="button"
+                          className="meal-add-plan plan-icon-button"
+                          title="Log a meal"
+                          aria-label={`Log ${type === "snack" ? "snacks" : type} for ${day}`}
+                          onClick={() => {
+                            setNewSlot({ date: day, mealType: type });
+                            setEdit("new");
+                          }}
                         >
-                          Delete log
+                          <MealActionIcon action="add" />
                         </button>
                       </div>
+                      {dayLogs.filter((m) => m.log.meal_type === type)
+                        .length === 0 && (
+                        <p className="muted">No meals logged</p>
+                      )}
+                      {dayLogs
+                        .filter((m) => m.log.meal_type === type)
+                        .map((m) => (
+                          <div className="meal" key={m.log.id}>
+                            {m.log.dishes.length ? (
+                              m.log.dishes.map((d) => {
+                                const portions = m.log.dish_portions[d.id] ?? 1;
+                                return (
+                                  <div className="food-log-dish" key={d.id}>
+                                    <h4
+                                      className="food-log-dish-title"
+                                      title={d.name}
+                                    >
+                                      {selectedDay ? (
+                                        <button
+                                          className="plan-dish-link"
+                                          title="View dish details"
+                                          onClick={() => setOpenedDish(d)}
+                                        >
+                                          {d.name}
+                                        </button>
+                                      ) : (
+                                        d.name
+                                      )}
+                                    </h4>
+                                    <p className="muted">
+                                      {portions}{" "}
+                                      {portions === 1 ? "serving" : "servings"}
+                                    </p>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <h4>Notes-only meal</h4>
+                            )}
+                            <p>{m.log.notes}</p>
+                            <Nutrition
+                              values={foodLogNutrition(mealNutrition(m))}
+                            />
+                            <div className="actions">
+                              <button
+                                className="plan-icon-button"
+                                title="Edit log"
+                                aria-label="Edit log"
+                                onClick={() => setEdit(m)}
+                              >
+                                <MealActionIcon action="edit" />
+                              </button>
+                              <button
+                                className="plan-icon-button"
+                                title="Delete log"
+                                aria-label="Delete log"
+                                onClick={() =>
+                                  setDeleting({
+                                    id: m.log.id,
+                                    name: "meal log",
+                                  })
+                                }
+                              >
+                                <MealActionIcon action="delete" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                     </div>
                   ))
                 : mealTypes.map((type) => (
@@ -364,7 +407,7 @@ export function Meals({
                             setEdit("new");
                           }}
                         >
-                          <PlanActionIcon action="add" />
+                          <MealActionIcon action="add" />
                         </button>
                       </div>
                       {dayPlans.filter((p) => p.meal_type === type).length ===
@@ -440,7 +483,7 @@ export function Meals({
                                 aria-label={`Edit ${p.title}`}
                                 onClick={() => setEdit(p)}
                               >
-                                <PlanActionIcon action="edit" />
+                                <MealActionIcon action="edit" />
                               </button>
                               <button
                                 className="plan-icon-button"
@@ -450,18 +493,13 @@ export function Meals({
                                   setDeleting({ id: p.id, name: p.title })
                                 }
                               >
-                                <PlanActionIcon action="delete" />
+                                <MealActionIcon action="delete" />
                               </button>
                             </div>
                           </div>
                         ))}
                     </div>
                   ))}
-              {logs && dayLogs.length === 0 && (
-                <p className="muted">
-                  {logs ? "No meals logged." : "No meals planned."}
-                </p>
-              )}
             </div>
           </article>
         );
@@ -563,45 +601,43 @@ function MealEditor({
           initialDish={openedDish}
           revision={revision}
           refresh={refresh}
-          backLabel="Back to meal plan"
+          backLabel={logs ? "Back to meal log" : "Back to meal plan"}
           onBack={() => setOpenedDish(undefined)}
         />
       )}
       <div hidden={!!openedDish}>
-        <section className={logs ? undefined : "dish-editor meal-plan-editor"}>
-          {!logs ? (
-            <header className="editor-header">
-              <div>
-                <p className="eyebrow">
-                  {plan ? "EDIT MEAL PLAN" : "NEW MEAL PLAN"}
-                </p>
-                <h1>{plan?.title || "New meal plan"}</h1>
-              </div>
-              <div className="editor-header-actions">
-                <button type="button" disabled={action.busy} onClick={onCancel}>
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  form="meal-editor-form"
-                  className="primary"
-                  disabled={action.busy}
-                >
-                  {action.busy ? "Saving…" : "Save meal plan"}
-                </button>
-              </div>
-            </header>
-          ) : (
-            <h1>
-              {logs
-                ? meal
-                  ? "Edit meal log"
-                  : "Log a meal"
-                : plan
-                  ? "Edit meal plan"
-                  : "New meal plan"}
-            </h1>
-          )}
+        <section className="dish-editor meal-plan-editor">
+          <header className="editor-header">
+            <div>
+              <p className="eyebrow">
+                {logs ? "FOOD LOG" : plan ? "EDIT MEAL PLAN" : "NEW MEAL PLAN"}
+              </p>
+              <h1>
+                {logs
+                  ? meal
+                    ? "Edit meal log"
+                    : "Log a meal"
+                  : plan?.title || "New meal plan"}
+              </h1>
+            </div>
+            <div className="editor-header-actions">
+              <button type="button" disabled={action.busy} onClick={onCancel}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="meal-editor-form"
+                className="primary"
+                disabled={action.busy}
+              >
+                {action.busy
+                  ? "Saving…"
+                  : logs
+                    ? "Save meal log"
+                    : "Save meal plan"}
+              </button>
+            </div>
+          </header>
           <LoadError
             error={
               action.error ||
@@ -654,17 +690,10 @@ function MealEditor({
               );
             }}
           >
-            <fieldset
-              className={logs ? undefined : "editor-layout"}
-              disabled={action.busy}
-            >
-              <div className={logs ? undefined : "editor-main"}>
-                <div
-                  className={
-                    logs ? undefined : "editor-panel meal-plan-details"
-                  }
-                >
-                  {!logs && <h2>Meal details</h2>}
+            <fieldset className="editor-layout" disabled={action.busy}>
+              <div className="editor-main">
+                <div className="editor-panel meal-plan-details">
+                  <h2>Meal details</h2>
                   <div className="row">
                     <Field label="Date">
                       <input
@@ -740,12 +769,22 @@ function MealEditor({
                       </select>
                     </Field>
                   )}
+                  {logs && (
+                    <Field label="Notes">
+                      <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                      />
+                    </Field>
+                  )}
                 </div>
-                {!logs && (
+                {
                   <section className="editor-panel meal-plan-nutrition">
                     <h2>Dish nutrition</h2>
                     <p className="editor-section-note">
-                      Amounts per serving for each selected dish.
+                      {logs
+                        ? "Nutrients for the servings eaten."
+                        : "Amounts per serving for each selected dish."}
                     </p>
                     {!selected.length && (
                       <p className="muted">
@@ -795,7 +834,22 @@ function MealEditor({
                           </h3>
                           {nutrients.length ? (
                             <Nutrition
-                              values={dishNutrition([{ ...dish, nutrients }])}
+                              values={
+                                logs
+                                  ? foodLogNutrition(
+                                      dishNutrition([
+                                        {
+                                          ...dish,
+                                          nutrients: nutrients.map((n) => ({
+                                            ...n,
+                                            amount:
+                                              n.amount * (portions[id] ?? 1),
+                                          })),
+                                        },
+                                      ]),
+                                    )
+                                  : dishNutrition([{ ...dish, nutrients }])
+                              }
                             />
                           ) : (
                             <p className="muted">No nutrient information.</p>
@@ -804,73 +858,51 @@ function MealEditor({
                       );
                     })}
                   </section>
-                )}
+                }
               </div>
-              <div
-                className={logs ? undefined : "editor-panel meal-plan-dishes"}
-              >
-                {!logs && (
+              <div className="editor-panel meal-plan-dishes">
+                {
                   <>
                     <h2>Dishes for this meal</h2>
                     <p className="editor-section-note">
                       Search by name, tag, or ingredient to add dishes.
                     </p>
                   </>
-                )}
+                }
                 <DishSelector
                   dishes={choices}
                   selected={selected}
                   onChange={setSelected}
-                  onOpenDish={!logs ? setOpenedDish : undefined}
+                  onOpenDish={setOpenedDish}
                 />
+                {logs && (
+                  <>
+                    <fieldset className="meal-log-servings">
+                      <legend>Servings eaten</legend>
+                      {selected.map((id) => (
+                        <Field
+                          key={id}
+                          label={`${choices.find((d) => d.id === id)?.name ?? "Dish"} servings`}
+                        >
+                          <input
+                            type="number"
+                            required
+                            min="0.01"
+                            step="any"
+                            value={portions[id] ?? 1}
+                            onChange={(e) =>
+                              setPortions({
+                                ...portions,
+                                [id]: Number(e.target.value),
+                              })
+                            }
+                          />
+                        </Field>
+                      ))}
+                    </fieldset>
+                  </>
+                )}
               </div>
-              {logs && (
-                <>
-                  <fieldset>
-                    <legend>Servings eaten</legend>
-                    {selected.map((id) => (
-                      <Field
-                        key={id}
-                        label={`${choices.find((d) => d.id === id)?.name ?? "Dish"} servings`}
-                      >
-                        <input
-                          type="number"
-                          required
-                          min="0.01"
-                          step="any"
-                          value={portions[id] ?? 1}
-                          onChange={(e) =>
-                            setPortions({
-                              ...portions,
-                              [id]: Number(e.target.value),
-                            })
-                          }
-                        />
-                      </Field>
-                    ))}
-                  </fieldset>
-                  <Field label="Notes">
-                    <textarea
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                    />
-                  </Field>
-                </>
-              )}
-              {logs && (
-                <div className="actions">
-                  <button type="button" onClick={onCancel}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="primary">
-                    {action.busy
-                      ? "Saving…"
-                      : logs
-                        ? "Save meal log"
-                        : "Save meal plan"}
-                  </button>
-                </div>
-              )}
             </fieldset>
           </form>
         </section>
