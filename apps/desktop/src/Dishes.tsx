@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { type Dish, type Ingredient, type Nutrient } from "./api";
+import { call, type Dish, type Ingredient, type Nutrient } from "./api";
 import {
   Field,
   useAction,
+  useLoad,
   Confirm,
   Nutrition,
   dishNutrition,
@@ -10,12 +11,17 @@ import {
 } from "./ui";
 import { Markdown } from "./Markdown";
 export function Dishes({
-  dishes,
+  revision,
   refresh,
 }: {
-  dishes: Dish[];
+  revision: number;
   refresh: () => void;
 }) {
+  const loaded = useLoad(
+    () => call<Dish[]>({ type: "dishes_list" }, "dishes"),
+    revision,
+  );
+  const dishes = loaded.data ?? [];
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -48,6 +54,8 @@ export function Dishes({
   useEffect(() => {
     setPage((previous) => Math.min(previous, pageCount));
   }, [pageCount]);
+  if (loaded.error) return <LoadError error={loaded.error} />;
+  if (!loaded.data) return <p>Loading dishes…</p>;
   if (editing)
     return (
       <DishEditor

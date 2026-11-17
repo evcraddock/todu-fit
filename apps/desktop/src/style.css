@@ -730,3 +730,232 @@ progress {
     font-size: 23px;
   }
 }
+
+/* Compact weekly agenda; food logs retain their existing presentation. */
+.app:has(.meal-plans) main {
+  padding-bottom: 16px;
+}
+.app:has(.meal-plans) .topbar {
+  padding: 14px 0;
+  margin-bottom: 16px;
+}
+.meal-plans h1 {
+  margin: 4px 0 12px;
+}
+.meal-plans .day {
+  padding: 14px 16px;
+  margin: 10px 0;
+  border-radius: 8px;
+}
+.meal-plans .day-summary {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(0, 580px);
+  align-items: center;
+  gap: 8px 24px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #e3e9df;
+}
+.meal-plans .day h2 {
+  font-size: 16px;
+  margin: 0;
+}
+.meal-plans .day-nutrients {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 16px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 600;
+  color: #245d49;
+}
+.meal-plans .day-meals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.meal-plans .meal-column {
+  min-width: 0;
+}
+.meal-plans .meal-column + .meal-column {
+  border-left: 1px solid #e3e9df;
+  padding-left: 14px;
+}
+.meal-plans .meal-column-title {
+  font-size: 12px;
+  text-transform: capitalize;
+  color: #68776c;
+  margin: 0 0 10px;
+}
+.meal-plans .meal {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  line-height: 1.35;
+}
+.meal-plans .meal + .meal {
+  border-top: 1px solid #e3e9df;
+  padding-top: 10px;
+  margin-top: 10px;
+}
+.meal-plans .meal h4 {
+  font-size: 14px;
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+.meal-plans .meal p {
+  font-size: 12px;
+  margin: 2px 0;
+}
+.meal-plans .meal p:empty {
+  display: none;
+}
+.meal-plans .meal .actions {
+  margin: 8px 0 0;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.meal-plans .meal button {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.meal-plans .meal-column > .muted {
+  font-size: 12px;
+  margin: 0;
+}
+
+.meal-plans .day-nutrient {
+  display: flex;
+  flex-direction: column;
+}
+.meal-plans .day-nutrient-extra {
+  grid-column: 1 / -1;
+}
+@media (max-width: 1100px) {
+  .meal-plans .day-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.plan-week-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0 18px;
+  padding: 12px 14px;
+  background: #eaf0e8;
+  border: 1px solid #dce4d7;
+  border-radius: 10px;
+}
+.plan-week-label {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.plan-week-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.plan-week-controls input {
+  width: 158px;
+  height: 38px;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+.plan-week-controls button {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  font-size: 18px;
+}
+
+/* Meal plan editor shares the recipe editor's panels and header actions. */
+.meal-plan-editor .editor-panel select {
+  padding: 9px 10px;
+  font-size: 14px;
+}
+.meal-plan-details .check {
+  border-top: 1px solid #e3e9df;
+  padding-top: 18px;
+  font-size: 14px;
+}
+.meal-plan-details > .muted {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 8px 0 0 30px;
+}
+.meal-plan-dishes > fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.meal-plan-dishes > fieldset > legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.meal-plan-dishes .chips {
+  margin: 0 0 20px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #edf3ed;
+}
+.meal-plan-dishes .chips:empty::before {
+  content: "No dishes selected yet";
+  color: #718173;
+  font-size: 13px;
+}
+.meal-plan-dishes .chips button {
+  font-size: 13px;
+  text-align: left;
+  padding: 7px 10px;
+}
+.meal-plan-dishes .choices {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  max-height: 300px;
+  margin: 0;
+  padding: 2px 4px 2px 2px;
+}
+.meal-plan-dishes .choices button {
+  text-align: left;
+  font-size: 13px;
+  padding: 9px 12px;
+}
+.meal-plan-dishes .choices p {
+  font-size: 12px;
+  color: #718173;
+  margin: 6px 0;
+}
+
+.dish-search-input {
+  position: relative;
+}
+.dish-search-input input {
+  width: 100%;
+  padding-right: 44px;
+}
+.dish-search-input input::-webkit-search-cancel-button,
+.dish-search-input input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  display: none;
+}
+.dish-search-input .dish-search-clear {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  border: 0;
+}

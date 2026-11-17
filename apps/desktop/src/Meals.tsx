@@ -1,3 +1,4 @@
+import { loadMealWeek, loadReferencedDishes } from "./mealData";
 import { useState } from "react";
 import { call, type Dish, type Plan, type Meal, type MealType } from "./api";
 import {
@@ -15,13 +16,11 @@ import {
   sunday,
 } from "./ui";
 export function Meals({
-  dishes,
   revision,
   refresh,
   logs = false,
   hasGroup = true,
 }: {
-  dishes: Dish[];
   revision: number;
   refresh: () => void;
   logs?: boolean;
@@ -32,20 +31,13 @@ export function Meals({
   const [deleting, setDeleting] = useState<{ id: string; name: string }>();
   const start = sunday(date),
     end = shift(start, 6);
-  const plans = useLoad(
-    () =>
-      hasGroup
-        ? call<Plan[]>({ type: "plans_list", from: start, to: end }, "plans")
-        : Promise.resolve([]),
-    `${start}:${revision}`,
+  const week = useLoad(
+    () => loadMealWeek(call, logs, hasGroup, start, end),
+    `${start}:${revision}:${logs}:${hasGroup}`,
     start,
+    !edit,
   );
-  const history = useLoad(
-    () =>
-      call<Meal[]>({ type: "meals_history", from: start, to: end }, "meals"),
-    `${start}:${revision}`,
-    start,
-  );
+  const dishes = week.data?.dishes ?? [];
   const action = useAction(refresh);
   const mealNutrition = (m: Meal) =>
     dishNutrition(
@@ -73,7 +65,8 @@ export function Meals({
         plan={!logs && edit !== "new" ? (edit as Plan) : undefined}
         meal={logs && edit !== "new" ? (edit as Meal) : undefined}
         logs={logs}
-        plans={plans.data ?? []}
+        hasGroup={hasGroup}
+        revision={revision}
         onCancel={() => setEdit(undefined)}
         onSaved={() => {
           setEdit(undefined);
@@ -82,7 +75,7 @@ export function Meals({
       />
     );
   return (
-    <section>
+    <section className={logs ? undefined : "meal-plans"}>
       <header>
         <div>
           <p className="eyebrow">{logs ? "YOUR FOOD HISTORY" : "YOUR WEEK"}</p>
@@ -92,30 +85,77 @@ export function Meals({
           {logs ? "Log a meal" : "New meal plan"}
         </button>
       </header>
-      <div className="row">
-        <button onClick={() => setDate(shift(date, -7))}>
-          ← Previous week
-        </button>
-        <Field label="Week containing">
-          <input
-            type="date"
-            required
-            value={date}
-            onChange={(e) => {
-              if (e.target.value) setDate(e.target.value);
-            }}
-          />
-        </Field>
-        <button onClick={() => setDate(shift(date, 7))}>Next week →</button>
-      </div>
-      <p>
-        {start} – {end}
-      </p>
-      <LoadError error={plans.error || history.error || action.error} />
-      {(!plans.data || !history.data) && <p>Loading meals…</p>}
+      {logs ? (
+        <>
+          <div className="row week-navigation">
+            <button onClick={() => setDate(shift(date, -7))}>
+              ← Previous week
+            </button>
+            <Field label="Week containing">
+              <input
+                type="date"
+                required
+                value={date}
+                onChange={(e) => {
+                  if (e.target.value) setDate(e.target.value);
+                }}
+              />
+            </Field>
+            <button onClick={() => setDate(shift(date, 7))}>Next week →</button>
+          </div>
+          <p className="week-range">
+            {start} – {end}
+          </p>
+        </>
+      ) : (
+        <div className="plan-week-bar" aria-label="Week navigation">
+          <p className="plan-week-label">
+            {new Date(start + "T12:00:00").toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+            })}
+            {" – "}
+            {new Date(end + "T12:00:00").toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </p>
+          <div className="plan-week-controls">
+            <button
+              aria-label="Previous week"
+              title="Previous week"
+              onClick={() => setDate(shift(start, -7))}
+            >
+              ←
+            </button>
+            <input
+              type="date"
+              aria-label="Week starting"
+              title="Week starting Sunday; choose any date to view its week"
+              required
+              value={start}
+              onChange={(e) => {
+                if (e.target.value) setDate(sunday(e.target.value));
+              }}
+            />
+            <button
+              aria-label="Next week"
+              title="Next week"
+              onClick={() => setDate(shift(start, 7))}
+            >
+              →
+            </button>
+          </div>
+        </div>
+      )}
+      <LoadError error={week.error || action.error} />
+      {!week.data && <p>Loading meals…</p>}
       {Array.from({ length: 7 }, (_, i) => shift(start, i)).map((day) => {
-        const dayPlans = (plans.data ?? []).filter((p) => p.date === day);
-        const dayLogs = (history.data ?? []).filter((m) => m.log.date === day);
+        const dayPlans = (week.data?.plans ?? []).filter((p) => p.date === day);
+        const dayLogs = (week.data?.history ?? []).filter(
+          (m) => m.log.date === day,
+        );
         const totals = logs
           ? dayLogs.reduce<Record<string, number>>((sum, m) => {
               for (const [k, v] of Object.entries(mealNutrition(m)))
@@ -131,79 +171,130 @@ export function Meals({
             );
         return (
           <article className="day" key={day}>
-            <h2>
-              {new Date(day + "T12:00:00").toLocaleDateString(undefined, {
-                weekday: "long",
-                month: "short",
-                day: "numeric",
-              })}
-            </h2>
-            <Nutrition values={totals} />
-            {logs
-              ? dayLogs.map((m) => (
-                  <div className="meal" key={m.log.id}>
-                    <h3>{m.log.meal_type}</h3>
-                    <p>
-                      {m.log.dishes
-                        .map(
-                          (d) =>
-                            `${d.name} (${m.log.dish_portions[d.id] ?? 1} serving${(m.log.dish_portions[d.id] ?? 1) === 1 ? "" : "s"})`,
+            <div className="day-summary">
+              <h2>
+                {new Date(day + "T12:00:00").toLocaleDateString(undefined, {
+                  weekday: "long",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </h2>
+              {logs ? (
+                <Nutrition values={totals} />
+              ) : (
+                <div className="day-nutrients">
+                  {["calories", "protein", "carbs", "fat"].map((name) => (
+                    <div className="day-nutrient" key={name}>
+                      {Object.entries(totals)
+                        .filter(
+                          ([key]) => key.split(" (")[0].toLowerCase() === name,
                         )
-                        .join(", ") || "Notes-only meal"}
-                    </p>
-                    <p>{m.log.notes}</p>
-                    <Nutrition values={mealNutrition(m)} />
-                    <div className="actions">
-                      <button onClick={() => setEdit(m)}>Edit log</button>
-                      <button
-                        onClick={() =>
-                          setDeleting({ id: m.log.id, name: "meal log" })
-                        }
-                      >
-                        Delete log
-                      </button>
+                        .map(([key, value]) => (
+                          <span key={key}>
+                            {key}: {Math.round(value * 10) / 10}
+                          </span>
+                        ))}
                     </div>
-                  </div>
-                ))
-              : dayPlans.map((p) => (
-                  <div className="meal" key={p.id}>
-                    <h3>{p.title}</h3>
-                    <p>
-                      {p.meal_type}
-                      {p.cook && ` · ${p.cook}`}
-                      {p.uses_leftovers && " · Leftovers"}
-                    </p>
-                    <p>
-                      {p.dish_ids
-                        .map(
-                          (id) =>
-                            dishes.find((d) => d.id === id)?.name ??
-                            "Missing dish",
-                        )
-                        .join(", ") || "No dishes selected"}
-                    </p>
-                    <Nutrition
-                      values={dishNutrition(
-                        p.dish_ids.flatMap(
-                          (id) => dishes.find((d) => d.id === id) ?? [],
+                  ))}
+                  {Object.entries(totals)
+                    .filter(
+                      ([key]) =>
+                        !["calories", "protein", "carbs", "fat"].includes(
+                          key.split(" (")[0].toLowerCase(),
                         ),
-                      )}
-                    />
-                    <div className="actions">
-                      <button onClick={() => setEdit(p)}>Edit plan</button>
-                      <button
-                        onClick={() => setDeleting({ id: p.id, name: p.title })}
-                      >
-                        Delete plan
-                      </button>
+                    )
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([key, value]) => (
+                      <span className="day-nutrient-extra" key={key}>
+                        {key}: {Math.round(value * 10) / 10}
+                      </span>
+                    ))}
+                </div>
+              )}
+            </div>
+            <div className="day-meals">
+              {logs
+                ? dayLogs.map((m) => (
+                    <div className="meal" key={m.log.id}>
+                      <h3>{m.log.meal_type}</h3>
+                      <p>
+                        {m.log.dishes
+                          .map(
+                            (d) =>
+                              `${d.name} (${m.log.dish_portions[d.id] ?? 1} serving${(m.log.dish_portions[d.id] ?? 1) === 1 ? "" : "s"})`,
+                          )
+                          .join(", ") || "Notes-only meal"}
+                      </p>
+                      <p>{m.log.notes}</p>
+                      <Nutrition values={mealNutrition(m)} />
+                      <div className="actions">
+                        <button onClick={() => setEdit(m)}>Edit log</button>
+                        <button
+                          onClick={() =>
+                            setDeleting({ id: m.log.id, name: "meal log" })
+                          }
+                        >
+                          Delete log
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-            {(logs ? dayLogs : dayPlans).length === 0 && (
-              <p className="muted">
-                {logs ? "No meals logged." : "No meals planned."}
-              </p>
-            )}
+                  ))
+                : mealTypes.map((type) => (
+                    <div className="meal-column" key={type}>
+                      <h3 className="meal-column-title">
+                        {type === "snack" ? "Snacks" : type}
+                      </h3>
+                      {dayPlans.filter((p) => p.meal_type === type).length ===
+                        0 && <p className="muted">No meals planned</p>}
+                      {dayPlans
+                        .filter((p) => p.meal_type === type)
+                        .map((p) => (
+                          <div className="meal" key={p.id}>
+                            <h4>{p.title}</h4>
+                            <p>
+                              {[p.cook, p.uses_leftovers ? "Leftovers" : ""]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
+                            {!(
+                              p.dish_ids.length === 1 &&
+                              dishes
+                                .find((dish) => dish.id === p.dish_ids[0])
+                                ?.name.trim()
+                                .toLowerCase() === p.title.trim().toLowerCase()
+                            ) && (
+                              <p>
+                                {p.dish_ids
+                                  .map(
+                                    (id) =>
+                                      dishes.find((d) => d.id === id)?.name ??
+                                      "Missing dish",
+                                  )
+                                  .join(", ") || "No dishes selected"}
+                              </p>
+                            )}
+                            <div className="actions">
+                              <button onClick={() => setEdit(p)}>
+                                Edit plan
+                              </button>
+                              <button
+                                onClick={() =>
+                                  setDeleting({ id: p.id, name: p.title })
+                                }
+                              >
+                                Delete plan
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  ))}
+              {logs && dayLogs.length === 0 && (
+                <p className="muted">
+                  {logs ? "No meals logged." : "No meals planned."}
+                </p>
+              )}
+            </div>
           </article>
         );
       })}
@@ -234,7 +325,8 @@ function MealEditor({
   plan,
   meal,
   logs,
-  plans,
+  hasGroup,
+  revision,
   onCancel,
   onSaved,
 }: {
@@ -243,7 +335,8 @@ function MealEditor({
   plan?: Plan;
   meal?: Meal;
   logs: boolean;
-  plans: Plan[];
+  hasGroup: boolean;
+  revision: number;
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -263,25 +356,76 @@ function MealEditor({
   );
   const [planId, setPlanId] = useState(meal?.log.mealplan_id ?? "");
   const action = useAction(onSaved);
+  const selectedKey = JSON.stringify([...selected].sort());
+  const selectedDishes = useLoad(
+    () =>
+      loadReferencedDishes(
+        call,
+        selected.filter((id) => !meal?.log.dishes.some((d) => d.id === id)),
+      ),
+    `${selectedKey}:${revision}`,
+    selectedKey,
+  );
   const choices = [
-    ...dishes,
-    ...(meal?.log.dishes ?? []).filter(
-      (d) => !dishes.some((x) => x.id === d.id),
-    ),
+    ...(meal?.log.dishes ?? []),
+    ...(selectedDishes.data ?? dishes),
   ];
+  const editorWeek = sunday(date);
+  const plannedMeals = useLoad(
+    () =>
+      call<Plan[]>(
+        { type: "plans_list", from: editorWeek, to: shift(editorWeek, 6) },
+        "plans",
+      ),
+    `${editorWeek}:${revision}`,
+    editorWeek,
+    logs && hasGroup,
+  );
+  const plans = plannedMeals.data ?? [];
   return (
-    <section>
-      <h1>
-        {logs
-          ? meal
-            ? "Edit meal log"
-            : "Log a meal"
-          : plan
-            ? "Edit meal plan"
-            : "New meal plan"}
-      </h1>
-      <LoadError error={action.error} />
+    <section className={logs ? undefined : "dish-editor meal-plan-editor"}>
+      {!logs ? (
+        <header className="editor-header">
+          <div>
+            <p className="eyebrow">
+              {plan ? "EDIT MEAL PLAN" : "NEW MEAL PLAN"}
+            </p>
+            <h1>{plan?.title || "New meal plan"}</h1>
+          </div>
+          <div className="editor-header-actions">
+            <button type="button" disabled={action.busy} onClick={onCancel}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="meal-editor-form"
+              className="primary"
+              disabled={action.busy}
+            >
+              {action.busy ? "Saving…" : "Save meal plan"}
+            </button>
+          </div>
+        </header>
+      ) : (
+        <h1>
+          {logs
+            ? meal
+              ? "Edit meal log"
+              : "Log a meal"
+            : plan
+              ? "Edit meal plan"
+              : "New meal plan"}
+        </h1>
+      )}
+      <LoadError
+        error={
+          action.error ||
+          selectedDishes.error ||
+          (logs ? plannedMeals.error : "")
+        }
+      />
       <form
+        id="meal-editor-form"
         onSubmit={(e) => {
           e.preventDefault();
           action.run(() =>
@@ -325,82 +469,101 @@ function MealEditor({
           );
         }}
       >
-        <fieldset disabled={action.busy}>
-          <div className="row">
-            <Field label="Date">
-              <input
-                type="date"
-                required
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
-            </Field>
-            <Field label="Meal type">
-              <select
-                value={mealType}
-                onChange={(e) => setMealType(e.target.value as MealType)}
-              >
-                {mealTypes.map((t) => (
-                  <option key={t}>{t}</option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          {!logs ? (
-            <>
-              <Field label="Title">
+        <fieldset
+          className={logs ? undefined : "editor-layout"}
+          disabled={action.busy}
+        >
+          <div className={logs ? undefined : "editor-panel meal-plan-details"}>
+            {!logs && <h2>Meal details</h2>}
+            <div className="row">
+              <Field label="Date">
                 <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder={`${mealType} on ${date}`}
+                  type="date"
+                  required
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
                 />
               </Field>
-              <Field label="Cook">
-                <input value={cook} onChange={(e) => setCook(e.target.value)} />
+              <Field label="Meal type">
+                <select
+                  value={mealType}
+                  onChange={(e) => setMealType(e.target.value as MealType)}
+                >
+                  {mealTypes.map((t) => (
+                    <option key={t}>{t}</option>
+                  ))}
+                </select>
               </Field>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={leftovers}
-                  onChange={(e) => setLeftovers(e.target.checked)}
-                />{" "}
-                This meal uses leftovers
-              </label>
-              <p className="muted">
-                Leftovers do not add ingredients to the shopping list.
-              </p>
-            </>
-          ) : (
-            <Field label="Use a planned meal">
-              <select
-                value={planId}
-                onChange={(e) => {
-                  setPlanId(e.target.value);
-                  const p = plans.find((p) => p.id === e.target.value);
-                  if (p) {
-                    setDate(p.date);
-                    setMealType(p.meal_type);
-                    setSelected(p.dish_ids);
-                  }
-                }}
-              >
-                <option value="">Unplanned meal</option>
-                {plans.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.date} · {p.title}
-                  </option>
-                ))}
-                {planId && !plans.some((p) => p.id === planId) && (
-                  <option value={planId}>Original meal plan</option>
-                )}
-              </select>
-            </Field>
-          )}
-          <DishSelector
-            dishes={choices}
-            selected={selected}
-            onChange={setSelected}
-          />
+            </div>
+            {!logs ? (
+              <>
+                <Field label="Title">
+                  <input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder={`${mealType} on ${date}`}
+                  />
+                </Field>
+                <Field label="Cook">
+                  <input
+                    value={cook}
+                    onChange={(e) => setCook(e.target.value)}
+                  />
+                </Field>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={leftovers}
+                    onChange={(e) => setLeftovers(e.target.checked)}
+                  />{" "}
+                  This meal uses leftovers
+                </label>
+                <p className="muted">
+                  Leftovers do not add ingredients to the shopping list.
+                </p>
+              </>
+            ) : (
+              <Field label="Use a planned meal">
+                <select
+                  value={planId}
+                  onChange={(e) => {
+                    setPlanId(e.target.value);
+                    const p = plans.find((p) => p.id === e.target.value);
+                    if (p) {
+                      setDate(p.date);
+                      setMealType(p.meal_type);
+                      setSelected(p.dish_ids);
+                    }
+                  }}
+                >
+                  <option value="">Unplanned meal</option>
+                  {plans.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.date} · {p.title}
+                    </option>
+                  ))}
+                  {planId && !plans.some((p) => p.id === planId) && (
+                    <option value={planId}>Original meal plan</option>
+                  )}
+                </select>
+              </Field>
+            )}
+          </div>
+          <div className={logs ? undefined : "editor-panel meal-plan-dishes"}>
+            {!logs && (
+              <>
+                <h2>Dishes for this meal</h2>
+                <p className="editor-section-note">
+                  Search by name, tag, or ingredient to add dishes.
+                </p>
+              </>
+            )}
+            <DishSelector
+              dishes={choices}
+              selected={selected}
+              onChange={setSelected}
+            />
+          </div>
           {logs && (
             <>
               <fieldset>
@@ -434,18 +597,20 @@ function MealEditor({
               </Field>
             </>
           )}
-          <div className="actions">
-            <button type="button" onClick={onCancel}>
-              Cancel
-            </button>
-            <button type="submit" className="primary">
-              {action.busy
-                ? "Saving…"
-                : logs
-                  ? "Save meal log"
-                  : "Save meal plan"}
-            </button>
-          </div>
+          {logs && (
+            <div className="actions">
+              <button type="button" onClick={onCancel}>
+                Cancel
+              </button>
+              <button type="submit" className="primary">
+                {action.busy
+                  ? "Saving…"
+                  : logs
+                    ? "Save meal log"
+                    : "Save meal plan"}
+              </button>
+            </div>
+          )}
         </fieldset>
       </form>
     </section>

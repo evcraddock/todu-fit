@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { call, mutate, type Operation, type Dish, type MealType } from "./api";
 export const mealTypes: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
 export function today() {
@@ -31,12 +31,14 @@ export function useLoad<T>(
   load: () => Promise<T>,
   key: string | number,
   scope = "",
+  enabled = true,
 ) {
   const [loaded, setLoaded] = useState<{ scope: string; data: T }>();
   const [error, setError] = useState("");
   const latest = useRef(load);
   latest.current = load;
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     setError("");
     latest
@@ -50,7 +52,7 @@ export function useLoad<T>(
     return () => {
       active = false;
     };
-  }, [key, scope]);
+  }, [key, scope, enabled]);
   return { data: loaded?.scope === scope ? loaded.data : undefined, error };
 }
 export function LoadError({ error }: { error: string }) {
@@ -109,13 +111,47 @@ export function DishSelector({
   selected: string[];
   onChange: (ids: string[]) => void;
 }) {
+  const searchId = useId();
+  const searchInput = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
-  const matching = dishes.filter(
-    (d) =>
-      !selected.includes(d.id) &&
-      (d.name.toLowerCase().includes(search.toLowerCase()) ||
-        d.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()))),
-  );
+  const query = search.trim().toLowerCase();
+  const [result, setResult] = useState<{
+    query: string;
+    dishes: Dish[];
+    error: string;
+  }>();
+  useEffect(() => {
+    if (!query) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      call<Dish[]>({ type: "dishes_list", query }, "dishes").then(
+        (found) => {
+          if (active) setResult({ query, dishes: found, error: "" });
+        },
+        (error) => {
+          if (active)
+            setResult({
+              query,
+              dishes: [],
+              error: error instanceof Error ? error.message : String(error),
+            });
+        },
+      );
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [query]);
+  const current = query && result?.query === query ? result : undefined;
+  const matching = (current?.dishes ?? [])
+    .filter((dish) => !selected.includes(dish.id))
+    .sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, {
+        sensitivity: "base",
+        numeric: true,
+      }),
+    );
   return (
     <fieldset>
       <legend>Dishes</legend>
@@ -131,14 +167,37 @@ export function DishSelector({
           </button>
         ))}
       </div>
-      <Field label="Search dishes">
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </Field>
-      <div className="choices">
+      <div className="field">
+        <label htmlFor={searchId}>Search dishes</label>
+        <div className="dish-search-input">
+          <input
+            id={searchId}
+            ref={searchInput}
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search.length > 0 && (
+            <button
+              type="button"
+              className="dish-search-clear"
+              aria-label="Clear dish search"
+              onClick={() => {
+                setSearch("");
+                searchInput.current?.focus();
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+      <LoadError error={current?.error ?? ""} />
+      <div className="choices" aria-busy={!!query && !current}>
+        {query && !current && <p role="status">Searching dishes…</p>}
+        {query && current && !current.error && !matching.length && (
+          <p role="status">No matching dishes available.</p>
+        )}
         {matching.slice(0, 20).map((d) => (
           <button
             type="button"
