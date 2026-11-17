@@ -106,10 +106,12 @@ export function DishSelector({
   dishes,
   selected,
   onChange,
+  onOpenDish,
 }: {
   dishes: Dish[];
   selected: string[];
   onChange: (ids: string[]) => void;
+  onOpenDish?: (dish: Dish) => void;
 }) {
   const searchId = useId();
   const searchInput = useRef<HTMLInputElement>(null);
@@ -156,16 +158,42 @@ export function DishSelector({
     <fieldset>
       <legend>Dishes</legend>
       <div className="chips">
-        {selected.map((id) => (
-          <button
-            type="button"
-            key={id}
-            onClick={() => onChange(selected.filter((x) => x !== id))}
-            aria-label={`Remove ${dishes.find((d) => d.id === id)?.name ?? "missing dish"}`}
-          >
-            {dishes.find((d) => d.id === id)?.name ?? "Missing dish"} ×
-          </button>
-        ))}
+        {selected.map((id) => {
+          const dish = dishes.find((d) => d.id === id);
+          return onOpenDish ? (
+            <span className="selected-dish-chip" key={id}>
+              {dish ? (
+                <button
+                  type="button"
+                  className="selected-dish-open"
+                  title="View dish details"
+                  onClick={() => onOpenDish(dish)}
+                >
+                  {dish.name}
+                </button>
+              ) : (
+                <span>Missing dish</span>
+              )}
+              <button
+                type="button"
+                aria-label={`Remove ${dish?.name ?? "missing dish"}`}
+                title="Remove dish from meal"
+                onClick={() => onChange(selected.filter((x) => x !== id))}
+              >
+                ×
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              key={id}
+              onClick={() => onChange(selected.filter((x) => x !== id))}
+              aria-label={`Remove ${dish?.name ?? "missing dish"}`}
+            >
+              {dish?.name ?? "Missing dish"} ×
+            </button>
+          );
+        })}
       </div>
       <div className="field">
         <label htmlFor={searchId}>Search dishes</label>

@@ -13,18 +13,30 @@ import { Markdown } from "./Markdown";
 export function Dishes({
   revision,
   refresh,
+  initialDish,
+  onBack,
+  backLabel = "Back to day",
 }: {
+  initialDish?: Dish;
+  onBack?: () => void;
+  backLabel?: string;
   revision: number;
   refresh: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState("");
   const [page, setPage] = useState(1);
-  const [selected, setSelected] = useState<Dish>();
+  const [selected, setSelected] = useState<Dish | undefined>(initialDish);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState<Dish>();
   const loaded = useLoad(
-    () => call<Dish[]>({ type: "dishes_list" }, "dishes"),
+    () =>
+      initialDish
+        ? call<Dish>(
+            { type: "dish_get", identifier: initialDish.id },
+            "dish",
+          ).then((dish) => [dish])
+        : call<Dish[]>({ type: "dishes_list" }, "dishes"),
     revision,
     "",
     !editing,
@@ -68,13 +80,21 @@ export function Dishes({
         }}
       />
     );
-  if (loaded.error) return <LoadError error={loaded.error} />;
+  if (loaded.error)
+    return (
+      <section>
+        {onBack && <button onClick={onBack}>← {backLabel}</button>}
+        <LoadError error={loaded.error} />
+      </section>
+    );
   if (!loaded.data) return <p>Loading dishes…</p>;
   if (selected) {
     const d = dishes.find((d) => d.id === selected.id) ?? selected;
     return (
       <section>
-        <button onClick={() => setSelected(undefined)}>← All dishes</button>
+        <button onClick={() => (onBack ? onBack() : setSelected(undefined))}>
+          {onBack ? `← ${backLabel}` : "← All dishes"}
+        </button>
         <header>
           <h1>{d.name}</h1>
           <div className="actions">
@@ -129,6 +149,7 @@ export function Dishes({
                 });
                 setDeleting(undefined);
                 setSelected(undefined);
+                onBack?.();
               })
             }
           />

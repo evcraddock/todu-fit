@@ -959,3 +959,149 @@ progress {
   line-height: 1;
   border: 0;
 }
+
+.meal-plans .meal-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.meal-plans .meal-column-header .meal-column-title {
+  margin: 0;
+}
+.meal-plans .meal-add-plan {
+  font-size: 11px;
+  padding: 4px 7px;
+}
+
+.meal-plans .plan-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.meal-plans .day-title-button {
+  border: 0;
+  background: transparent;
+  padding: 3px 6px;
+  margin: -3px -6px;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: #b3c5bb;
+  text-underline-offset: 4px;
+}
+.meal-plans .day-title-button:hover,
+.meal-plans .day-title-button.is-pointer-hovered {
+  background: #e9f1eb;
+}
+.meal-day-details .back-to-week {
+  margin-bottom: 16px;
+}
+.meal-day-details .day {
+  margin-top: 20px;
+  padding: 20px;
+}
+.meal-day-details .day-meals {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.meal-day-details .meal-column {
+  border: 1px solid #e3e9df;
+  border-radius: 8px;
+  padding: 16px;
+}
+.meal-day-details .meal-column + .meal-column {
+  padding-left: 16px;
+}
+.meal-day-details .meal-column-title {
+  font-size: 15px;
+}
+.meal-day-details .meal h4 {
+  font-size: 16px;
+}
+.meal-day-details .meal p {
+  font-size: 14px;
+}
+
+.meal-day-details .plan-dish-list {
+  margin: 10px 0;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.meal-day-details .plan-dish-list li + li {
+  margin-top: 4px;
+}
+
+.meal-day-details .meal .plan-dish-link {
+  padding: 2px 4px;
+  margin-left: -4px;
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.meal-day-details .meal .plan-dish-link:hover,
+.meal-day-details .meal .plan-dish-link.is-pointer-hovered {
+  background: #e9f1eb;
+}
+
+.selected-dish-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #cbd8d0;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+.meal-plan-dishes .selected-dish-chip button {
+  border: 0;
+  border-radius: 0;
+}
+.meal-plan-dishes .selected-dish-open {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.selected-dish-chip > span {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.plan-dish-nutrition + .plan-dish-nutrition {
+  border-top: 1px solid #e3e9df;
+  margin-top: 16px;
+  padding-top: 16px;
+}
+.plan-dish-nutrition h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.plan-dish-nutrition h3 button {
+  border: 0;
+  padding: 2px 4px;
+  margin-left: -4px;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.plan-dish-nutrition .nutrition {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.meal-plan-nutrition .muted {
+  font-size: 13px;
+  margin: 8px 0 0;
+}
