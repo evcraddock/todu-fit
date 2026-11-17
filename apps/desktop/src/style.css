@@ -1134,3 +1134,119 @@ progress {
 .meal-log-servings input {
   max-width: 140px;
 }
+
+.shopping-screen h1 {
+  margin: 4px 0 12px;
+}
+.shopping-intro {
+  color: #68776c;
+  font-size: 14px;
+  margin: 16px 0 20px;
+}
+.shopping-add-panel,
+.shopping-list-panel {
+  background: #fff;
+  border: 1px solid #dce4d7;
+  border-radius: 10px;
+  padding: 20px;
+  margin: 16px 0;
+}
+.shopping-add-panel > fieldset {
+  margin: 0;
+}
+.shopping-add-panel legend {
+  margin-bottom: 16px;
+  font-size: 16px;
+}
+.shopping-add-fields {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 2fr) minmax(90px, 1fr) minmax(80px, 1fr)
+    auto auto;
+  gap: 12px;
+  align-items: end;
+}
+.shopping-add-fields .field {
+  margin: 0;
+}
+.shopping-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 16px;
+}
+.shopping-list-header h2 {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+.shopping-list-header p {
+  margin: 0;
+  font-size: 13px;
+}
+.shopping-list-header .actions {
+  margin: 0;
+}
+.shopping-screen .shopping-list {
+  margin: 0;
+}
+.shopping-screen .shopping-list > li {
+  padding: 12px 0;
+  min-height: 54px;
+}
+.shopping-screen .shopping-list > li:first-child {
+  border-top: 1px solid #dce4d7;
+}
+.shopping-screen .shopping-list > li:last-child {
+  border-bottom: 0;
+}
+.shopping-screen .shopping-list .check {
+  flex: 1;
+  min-width: 0;
+  gap: 12px;
+}
+.shopping-screen .shopping-list .check > span {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.shopping-screen .shopping-list small {
+  color: #68776c;
+  font-size: 13px;
+  flex-shrink: 0;
+  margin: 0;
+}
+.shopping-screen .shopping-list .actions {
+  margin: 0;
+}
+.shopping-screen .shopping-list .actions button {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.shopping-empty {
+  color: #68776c;
+  padding: 20px 0 8px;
+  margin: 0;
+}
+@media (max-width: 1000px) {
+  .shopping-add-fields {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .shopping-screen .shopping-list .check > span {
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
+.shopping-screen .shopping-list .actions .shopping-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
