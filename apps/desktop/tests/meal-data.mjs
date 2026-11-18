@@ -143,3 +143,52 @@ test("planning uses scoped IDs, rejects invented dishes and compares daily servi
     assert.throws(() => parse({ ...meal, ...change }));
   }
 });
+
+import {
+  daySlots,
+  dayWrites,
+  tallyInputs,
+  savedProposal,
+} from "../src/guidedPlanning.ts";
+test("a guided revision replaces only its accepted meal in the projected tally", () => {
+  const dish = {
+    id: "soup",
+    name: "Soup",
+    nutrients: [{ name: "protein", unit: "g", amount: 10 }],
+  };
+  const plan = {
+    id: "saved",
+    date: "2026-11-08",
+    title: "Soup",
+    meal_type: "dinner",
+    dish_ids: ["soup"],
+    portions: { me: { name: "Member", servings: { soup: 1 } } },
+  };
+  const data = {
+    existing: [{ ...plan, date: "2026-11-07", id: "sat" }, plan],
+    dishes: [dish],
+    people: {},
+    fingerprint: "test",
+  };
+  const slots = daySlots(data, plan.date);
+  assert.deepEqual(
+    slots.map((s) => s.key),
+    ["lunch", "saved", "breakfast", "snack"],
+  );
+  const accepted = { saved: { kind: "keep" } },
+    revised = {
+      saved: {
+        kind: "proposal",
+        meal: { ...savedProposal(plan), portions: { me: { soup: 2 } } },
+        leftovers: false,
+      },
+    };
+  const total = (choices) => {
+    const { data: d, meals } = tallyInputs(data, choices);
+    return comparison(d, meals, plan.date, "me", "protein_g").total;
+  };
+  assert.equal(total(accepted), 10);
+  assert.equal(total(revised), 20);
+  assert.deepEqual(dayWrites(slots, accepted), []);
+  assert.equal(dayWrites(slots, revised)[0].replaces, plan.id);
+});

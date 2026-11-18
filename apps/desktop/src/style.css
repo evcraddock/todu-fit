@@ -2210,3 +2210,8 @@ a {
 .planning-messages .portion-input { display: flex; gap: 8px; align-items: center; margin-block: 6px; }
 .portion-input input { width: 5em; margin-left: auto; }
 .planned-portion { display: block; }
+
+.guided-day fieldset { display: grid; gap: 8px; min-width: 0; }
+.guided-day table { border-collapse: collapse; width: 100%; font-size: .85em; }
+.guided-day th, .guided-day td { padding: 5px 3px; text-align: left; border-bottom: 1px solid var(--border); }
+.guided-day details { margin-block: 10px; overflow-x: auto; }

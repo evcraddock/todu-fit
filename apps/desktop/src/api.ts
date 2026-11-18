@@ -97,7 +97,7 @@ declare global {
         requestId?: string,
       ): Promise<
         | { ok: true; value: { type: string; data: unknown } }
-        | { ok: false; error: string }
+        | { ok: false; error: string; code?: string }
       >;
     };
   }
@@ -108,7 +108,8 @@ export async function call<T>(
   requestId?: string,
 ): Promise<T> {
   const result = await window.fit.request(operation, requestId);
-  if (!result.ok) throw new Error(result.error);
+  if (!result.ok)
+    throw Object.assign(new Error(result.error), { code: result.code });
   if (result.value.type !== resultType)
     throw new Error("Unexpected application response");
   return result.value.data as T;

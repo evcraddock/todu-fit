@@ -18,6 +18,8 @@ const allowed = new Set([
   "dish_delete",
   "plans_list",
   "planning_context",
+  "guided_day_context",
+  "save_guided_day",
   "save_planning_proposal",
   "plan_get",
   "plan_create",
@@ -124,7 +126,11 @@ function openApplicationBridge(endpoint, timeoutMs = 15000) {
           )
             throw new Error("Invalid daemon response");
           if (r.outcome.status === "error")
-            return finish(new Error(r.outcome.error.message), undefined);
+            return finish(
+              Object.assign(new Error(r.outcome.error.message), {
+                code: r.outcome.error.code,
+              }),
+            );
           if (
             r.outcome.status !== "ok" ||
             typeof r.outcome.value?.type !== "string"

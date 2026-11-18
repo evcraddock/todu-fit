@@ -705,6 +705,71 @@ test("planning proposals commit together in the approved group and retry once", 
     const after = await request({ type: "planning_context", ...scope });
     assert.equal(after.existing.length, 2);
     assert.equal(after.existing[0].portions[member].servings[dish.id], 1.5);
+    const saturday = await request({
+      type: "plan_create",
+      date: "2026-11-07",
+      meal_type: "dinner",
+      title: "Saturday soup",
+      dishes: [dish.id],
+    });
+    const dayScope = {
+      root_id: scope.root_id,
+      group_id: scope.group_id,
+      day: "2026-11-08",
+    };
+    const dayContext = () =>
+      request({ type: "guided_day_context", ...dayScope });
+    const sundayDinner = await request({
+      type: "plan_create",
+      date: dayScope.day,
+      meal_type: "dinner",
+      title: "Original dinner",
+      cook: "Pat",
+      dishes: [dish.id],
+    });
+    const initial = await dayContext();
+    assert.equal(initial.existing.length, 2);
+    const sundayMeal = { ...meal, date: dayScope.day };
+    const guided = {
+      type: "save_guided_day",
+      ...dayScope,
+      fingerprint: initial.fingerprint,
+      meals: [
+        { ...sundayMeal, uses_leftovers: true },
+        {
+          ...sundayMeal,
+          meal_type: "dinner",
+          title: "Revised dinner",
+          replaces: sundayDinner.plan.id,
+        },
+      ],
+    };
+    await assert.rejects(
+      request({
+        ...guided,
+        meals: [
+          guided.meals[0],
+          { ...guided.meals[1], replaces: saturday.plan.id },
+        ],
+      }),
+      /original day/,
+    );
+    assert.equal((await dayContext()).existing.length, 2);
+    const dayRequest = randomUUID(),
+      result = await request(guided, dayRequest);
+    assert.deepEqual(await request(guided, dayRequest), result);
+    await assert.rejects(request(guided), /changed/);
+    const final = (await dayContext()).existing;
+    assert.equal(final.length, 3);
+    assert.equal(final.find((p) => p.id === sundayDinner.plan.id).cook, "Pat");
+    assert.equal(
+      final.find((p) => p.id === sundayDinner.plan.id).title,
+      "Revised dinner",
+    );
+    assert.equal(
+      final.find((p) => p.meal_type === "lunch").uses_leftovers,
+      true,
+    );
   } finally {
     await bridge?.close();
     await f.close();
