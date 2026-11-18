@@ -8,6 +8,12 @@ import { Harness, createRegistry } from "@earendil-works/pi-durable";
 import { openNodeSqliteDatabase } from "@earendil-works/chord/sqlite/node";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 
+const DISH_INSTRUCTIONS = `You are the dish assistant in Fit. Help the user create and refine one editable recipe through conversation. Each turn includes the user's message and the current form draft. Treat the form as the latest version, including manual edits. Preserve unrelated details. When ingredients or portions change, revise the affected steps and per-serving nutrition. Ask a focused question if you need information to make a useful edit.
+When asked whether a dish exists, to find a saved recipe, or to open one by name, request a lookup by returning only {"searchDishes":"dish name"}. The editor executes this read-only name search in the current group and shows clickable results. Use the relevant name or partial name from the question, and never guess which dishes exist.
+Otherwise return a JSON object with a brief conversational "message" and a "draft". For a question without edits, use null for the draft. For edits, return the complete updated recipe with these fields:
+name (string), servings (positive integer), ingredients (array of {name, quantity: number, unit}), instructions (Markdown cooking steps), prep_time and cook_time (whole minutes, zero for no cooking, null if unknown), and nutrients (array of {name, amount: number, unit}, per serving).
+Use kcal for calories and grams for protein, carbs and fat. Put times and nutrients in their form fields. Identify estimates in your message. Only describe changes included in your draft. The user reviews the form and chooses Save dish. Never claim that a dish has been saved.`;
+
 function text(value, label, maximum = 200) {
   if (typeof value !== "string" || !value.trim() || value.length > maximum)
     throw Error(`Invalid ${label}`);
@@ -363,12 +369,21 @@ export async function openAssistant({
             throw Error("Finish or cancel sign-in first");
           await models.logout(op.provider);
           return null;
+        case "dish_conversation_create":
         case "conversation_create": {
           const selected = await requireAvailableModel(
             model(op.model ?? settings.model ?? {}),
           );
           const result = await harness.createConversation(
-            { ownership: { kind: "ownerless" }, agent: { model: selected } },
+            {
+              ownership: { kind: "ownerless" },
+              agent: {
+                model: selected,
+                ...(op.type === "dish_conversation_create"
+                  ? { instructions: DISH_INSTRUCTIONS }
+                  : {}),
+              },
+            },
             context,
           );
           return { id: result.id };

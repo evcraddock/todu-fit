@@ -184,7 +184,7 @@ main {
 }
 section {
   max-width: 1050px;
-  margin: auto;
+  margin: 0;
 }
 header {
   display: flex;
@@ -2159,3 +2159,37 @@ a {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Dock the assistant beside the editor, above the shared status bar. */
+.app:has(> #dish-assistant-panel) { height: 100dvh; }
+.app:has(> #dish-assistant-panel) > main { overflow: auto; container-type: inline-size; }
+.dish-with-chat { max-width: 1050px; }
+#dish-assistant-panel { position:relative; flex:0 0 auto; min-width:0; max-width: min(60vw, max(200px, calc(100vw - 520px))); display:flex; flex-direction:column; border-left:1px solid var(--border); background:var(--page); }
+.dish-chat-divider { position:absolute; inset:0 auto 0 -4px; width:8px; z-index:2; touch-action:none; cursor:col-resize; }
+.dish-chat-divider:hover, .dish-chat-divider:focus-visible { background:var(--accent); opacity:.45; }
+.dish-chat-toggle { display:flex; flex-direction:row-reverse; align-items:center; justify-content:space-between; padding:16px; border:0; border-radius:0; background:transparent; font-weight:600; }
+#dish-assistant-panel[data-collapsed="true"] .dish-chat-toggle {flex-direction:column; gap:12px; padding:14px 7px;}
+#dish-assistant-panel[data-collapsed="true"] span {writing-mode:vertical-rl;}
+#dish-chat-body:not([hidden]), .dish-chat { flex:1; min-height:0; display:flex; flex-direction:column; }
+.recipe-messages { flex:1; min-height:0; overflow:auto; overflow-wrap:anywhere; padding:0 16px; }
+.dish-chat form { border-top:1px solid var(--border); padding:12px; display:flex; align-items:end; gap:8px; }
+.dish-chat form .field { flex:1; min-width:0; margin:0; }
+.dish-chat textarea { width:100%; resize:vertical; max-height:35vh; }
+@container (max-width: 650px) {
+  .dish-with-chat .editor-layout { grid-template-columns:minmax(0,1fr); }
+}
+
+.dish-chat-match {
+  display: block;
+  margin-block: 0.35rem;
+  text-align: left;
+}
+
+.dish-chat-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.dish-chat-header .dish-chat-toggle { flex: 1; }
+.dish-chat-clear { margin: 4px 8px; }

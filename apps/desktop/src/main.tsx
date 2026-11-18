@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { call, type Identity, type Status } from "./api";
-import { Dishes } from "./Dishes";
+import { Dishes, DishScope } from "./Dishes";
 import { Meals } from "./Meals";
 import { Shopping } from "./Shopping";
 import { Water } from "./Water";
@@ -242,43 +242,49 @@ function App() {
             key={`${identity.root_id}:${group?.id ?? ""}`}
             revision={revision}
           >
-            {page === "Settings" ? (
-              <Settings
-                status={status}
-                appearance={appearance}
-                onAppearanceChange={changeAppearance}
-                identity={identity}
-                revision={revision}
-                refresh={refresh}
-              />
-            ) : page === "Water" ? (
-              <Water revision={revision} refresh={refresh} />
-            ) : page === "Food log" ? (
-              <Meals
-                key="logs"
-                logs
-                hasGroup={Boolean(group)}
-                revision={revision}
-                refresh={refresh}
-              />
-            ) : !group ? (
-              <section>
-                <h1>Choose a group</h1>
-                <p>
-                  Create or join a group in Settings to work with shared dishes
-                  and plans.
-                </p>
-                <button onClick={() => setPage("Settings")}>
-                  Open settings
-                </button>
-              </section>
-            ) : page === "Dishes" ? (
-              <Dishes revision={revision} refresh={refresh} />
-            ) : page === "Meal plans" ? (
-              <Meals key="plans" revision={revision} refresh={refresh} />
-            ) : (
-              <Shopping revision={revision} refresh={refresh} />
-            )}
+            <DishScope.Provider
+              value={
+                group ? JSON.stringify([identity.root_id, group.id]) : undefined
+              }
+            >
+              {page === "Settings" ? (
+                <Settings
+                  status={status}
+                  appearance={appearance}
+                  onAppearanceChange={changeAppearance}
+                  identity={identity}
+                  revision={revision}
+                  refresh={refresh}
+                />
+              ) : page === "Water" ? (
+                <Water revision={revision} refresh={refresh} />
+              ) : page === "Food log" ? (
+                <Meals
+                  key="logs"
+                  logs
+                  hasGroup={Boolean(group)}
+                  revision={revision}
+                  refresh={refresh}
+                />
+              ) : !group ? (
+                <section>
+                  <h1>Choose a group</h1>
+                  <p>
+                    Create or join a group in Settings to work with shared
+                    dishes and plans.
+                  </p>
+                  <button onClick={() => setPage("Settings")}>
+                    Open settings
+                  </button>
+                </section>
+              ) : page === "Dishes" ? (
+                <Dishes revision={revision} refresh={refresh} />
+              ) : page === "Meal plans" ? (
+                <Meals key="plans" revision={revision} refresh={refresh} />
+              ) : (
+                <Shopping revision={revision} refresh={refresh} />
+              )}
+            </DishScope.Provider>
           </PreferencesProvider>
         )}
       </main>

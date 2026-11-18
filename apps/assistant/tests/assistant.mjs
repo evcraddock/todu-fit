@@ -610,3 +610,41 @@ test("ChatGPT sign-in chooses Pi browser login without an extra prompt", async (
     await runtime.close();
   }
 });
+
+test("only dish conversations send recipe instructions to the model, including after reopen", async (t) => {
+  const f = await fixture(t);
+  const contexts = [];
+  const respond = (ctx) => {
+    contexts.push(ctx);
+    return fauxAssistantMessage("ok");
+  };
+  f.faux.setResponses([respond, respond]);
+  let runtime = await openAssistant(f);
+  try {
+    const create = (type) =>
+      runtime.request({
+        type,
+        model: { provider: "test", modelId: "test-model" },
+      });
+    const dish = await create("dish_conversation_create"),
+      generic = await create("conversation_create");
+    await runtime.close();
+    runtime = await openAssistant(f);
+    for (const { id } of [dish, generic]) {
+      const sent = await runtime.request({
+        type: "conversation_send",
+        id,
+        requestId: "test",
+        content: "Hello",
+      });
+      assert.equal((await settle(runtime, sent.id)).status, "done");
+    }
+    assert.match(JSON.stringify(contexts[0]), /You are the dish assistant/);
+    assert.doesNotMatch(
+      JSON.stringify(contexts[1]),
+      /You are the dish assistant/,
+    );
+  } finally {
+    await runtime.close();
+  }
+});
