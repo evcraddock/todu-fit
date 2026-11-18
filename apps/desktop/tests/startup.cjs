@@ -546,3 +546,52 @@ test("CLI joins fail cleanly, can retry fresh setup, and preserve legacy stores"
     await legacy.close();
   }
 });
+
+test(
+  "CLI explains older daemon setup incompatibility and still reuses initialized identity",
+  { skip: !process.env.FIT_TEST_OLD_BINARY },
+  async () => {
+    const exec = require("node:util").promisify(
+      require("node:child_process").execFile,
+    );
+    const f = await fresh();
+    let bridge;
+    try {
+      const endpoint = await connectOrStart({
+        ...f.options,
+        binary: process.env.FIT_TEST_OLD_BINARY,
+      });
+      bridge = openApplicationBridge(endpoint);
+      const cli = (...args) =>
+        exec(binary, ["-c", f.options.config, ...args], {
+          env: f.options.env,
+          timeout: 20000,
+        });
+      await assert.rejects(
+        cli("init", "--new", "--group", "Household"),
+        /Upgrade the desktop\/daemon/,
+      );
+      assert.equal(
+        (await bridge.request({ type: "setup_status" })).data.state,
+        "required",
+      );
+      await bridge.request({
+        type: "setup_start",
+        root_id: null,
+        server_url: null,
+        group_name: "Desktop household",
+      });
+      assert.equal((await finish(bridge)).state, "ready");
+      const root = (await bridge.request({ type: "identity_get" })).data
+        .root_id;
+      assert.match((await cli("init")).stdout, /Identity ready/);
+      assert.equal(
+        (await bridge.request({ type: "identity_get" })).data.root_id,
+        root,
+      );
+    } finally {
+      await bridge?.close();
+      await f.close();
+    }
+  },
+);

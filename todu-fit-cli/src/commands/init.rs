@@ -85,7 +85,13 @@ impl InitCommand {
                 },
                 id,
             )
-            .map_err(|e| format!("{e}. Retry the same setup with FIT_REQUEST_ID={id}"))?;
+            .map_err(|e| {
+                if e.contains("unknown field") && e.contains("auto_sync") {
+                    "The running daemon predates CLI shared-setup support. Upgrade the desktop/daemon, then close its clients and restart that daemon before retrying fit init. No setup data was changed.".to_owned()
+                } else {
+                    format!("{e}. Retry the same setup with FIT_REQUEST_ID={id}")
+                }
+            })?;
             let V::Setup(started) = result else {
                 return Err("Invalid setup response".into());
             };

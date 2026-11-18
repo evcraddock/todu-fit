@@ -156,3 +156,5 @@ on Windows; successful macOS testing does not establish Windows readiness.
 Setup reports download progress on stderr and succeeds only after the daemon commits all required documents. Failed setup leaves the previous store unchanged. Re-running initialization against a ready store reuses its identity; a different requested personal sync code is rejected. `--force` cannot reset shared setup. Use a separate empty data directory to start fresh. `FIT_REQUEST_ID` supplies a stable setup request UUID for uncertain retries.
 
 The installed CLI 2.9.2 predates daemon routing. This behavior applies to newly built CLI binaries; releasing or installing an updated CLI is a separate step. The CLI and desktop must use the same configuration/data directory to share an owner. No automatic migration of old CLI files is performed.
+
+An already initialized older daemon can still serve CLI commands. If an older running daemon rejects the new setup options, the CLI reports that it must be upgraded and restarted before initialization; it does not terminate or replace the owner automatically.
