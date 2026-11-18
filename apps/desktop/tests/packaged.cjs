@@ -13,9 +13,9 @@ async function main() {
           base,
           "out",
           process.arch === "arm64" ? "mac-arm64" : "mac",
-          "Todu Fit Proof.app/Contents/MacOS/Todu Fit Proof",
+          "todufit.app/Contents/MacOS/todufit",
         )
-      : path.join(base, "out/win-unpacked/Todu Fit Proof.exe"));
+      : path.join(base, "out/win-unpacked/todufit.exe"));
   const f = await fixture();
   const results = path.join(base, "test-results");
   fs.mkdirSync(results, { recursive: true });

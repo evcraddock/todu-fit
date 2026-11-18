@@ -64,7 +64,7 @@ Use a separate private development/test store when validating this work. No auto
 
 `npm test` uses temporary daemons for cross-client visibility, protocol compatibility and replay-safe application requests. `npm run test:packaged` exercises real Electron screens for dishes/ingredients/nutrients, plans, portioned food logs, shopping, water/settings, route switching, renderer isolation and quit/reopen persistence. It verifies CLI visibility and changes while Electron is closed. Fixtures clean up only their own processes and data and never control managed dev services or the existing preview. Evidence is written to `test-results/`.
 
-Default packaged paths are `out/mac-arm64/Todu Fit Proof.app` (Apple Silicon), `out/mac/` (Intel), and `out/win-unpacked/Todu Fit Proof.exe`. `TODU_PACKAGED_EXECUTABLE` can select another executable. `TODU_FIT_PROOF_DATA` overrides Electron userData only; it does not select a Core document store. Old `core-proof/` data is untouched.
+Default packaged paths are `out/mac-arm64/todufit.app` (Apple Silicon), `out/mac/` (Intel), and `out/win-unpacked/todufit.exe`. `TODU_PACKAGED_EXECUTABLE` can select another executable. `TODU_FIT_PROOF_DATA` overrides Electron userData only; it does not select a Core document store. Old `core-proof/` data is untouched.
 
 The preload exposes only `request(operation, requestId?)`. Main validates sender/frame/URL, allowlisted application operation types, request size and IDs. The daemon strictly validates the full operation schema. No renderer filesystem access, arbitrary IPC, raw CLI execution, identity replacement or configuration-path operations are exposed. Errors, sync state and revision polling remain visible.
 
