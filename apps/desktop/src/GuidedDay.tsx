@@ -196,7 +196,11 @@ export function GuidedDay({
     if (!draft?.pending || !slot) return;
     const snapshot = draft,
       pending = draft.pending,
-      type = slot.type;
+      type = slot.type,
+      baseline = draft.candidate ?? slot.original,
+      usesLeftovers = draft.candidate
+        ? draft.leftovers
+        : !!slot.original?.uses_leftovers;
     let cancelled = false,
       terminal = false;
     async function resume() {
@@ -239,11 +243,11 @@ export function GuidedDay({
               pending: undefined,
               candidate: parsed.meals?.[0] ?? snapshot.candidate,
               leftovers:
-                snapshot.leftovers &&
+                usesLeftovers &&
                 (!parsed.meals ||
-                  (snapshot.candidate?.dish_ids.length ===
+                  (baseline?.dish_ids.length ===
                     parsed.meals[0].dish_ids.length &&
-                    snapshot.candidate.dish_ids.every((id) =>
+                    baseline.dish_ids.every((id) =>
                       parsed.meals![0].dish_ids.includes(id),
                     ))),
               messages: [
