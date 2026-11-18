@@ -98,6 +98,8 @@ pub enum Operation {
         group_name: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         group_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        auto_sync: Option<bool>,
     },
     IdentityGet,
     IdentityCreate {

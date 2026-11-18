@@ -24,9 +24,123 @@ pub struct InitCommand {
     /// Force reset - delete existing data and start fresh
     #[arg(long, short)]
     force: bool,
+
+    /// Optional group to create with a new identity
+    #[arg(long, requires = "new")]
+    #[serde(default)]
+    group: Option<String>,
+
+    /// Sync server for setup (defaults to configured server)
+    #[arg(long, value_name = "URL")]
+    #[serde(default)]
+    server: Option<String>,
 }
 
 impl InitCommand {
+    pub fn run_daemon(&self, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+        use todu_fit_protocol::{Operation as Op, Value as V};
+        let call =
+            |op, id| crate::daemon::application_request(config, op, id).map_err(|e| e.to_string());
+        let id = match std::env::var("FIT_REQUEST_ID") {
+            Ok(id) => uuid::Uuid::parse_str(&id)?,
+            Err(_) => uuid::Uuid::new_v4(),
+        };
+        if self.force {
+            return Err("Shared setup never replaces an existing identity. Select a separate empty data_dir to start fresh; --force is not supported.".into());
+        }
+        let V::Setup(mut state) = call(Op::SetupStatus, uuid::Uuid::new_v4())? else {
+            return Err("Invalid setup response".into());
+        };
+        if state.state != "ready" && state.state != "running" {
+            if !self.new && self.join.is_none() {
+                if state.state == "failed" {
+                    return Err(format!(
+                        "{}. Retry fit init with --new or --join and the intended options.",
+                        state.message
+                    )
+                    .into());
+                }
+                println!("Choose setup: fit init --new [--group <NAME>] or fit init --join <PERSONAL_SYNC_CODE> [--server <URL>]");
+                return Ok(());
+            }
+            let server = self
+                .server
+                .as_ref()
+                .or(config.sync.server_url.as_ref())
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty());
+            if self.join.is_some() && server.is_none() {
+                return Err(
+                    "Joining existing data requires --server <URL> or a configured sync server."
+                        .into(),
+                );
+            }
+            let result = call(
+                Op::SetupStart {
+                    root_id: self.join.as_ref().map(|s| s.trim().to_owned()),
+                    server_url: server,
+                    group_name: self.group.as_ref().map(|s| s.trim().to_owned()),
+                    group_id: None,
+                    auto_sync: Some(config.sync.auto_sync),
+                },
+                id,
+            )
+            .map_err(|e| {
+                if e.contains("unknown field") && e.contains("auto_sync") {
+                    "The running daemon predates CLI shared-setup support. Upgrade the desktop/daemon, then close its clients and restart that daemon before retrying fit init. No setup data was changed.".to_owned()
+                } else {
+                    format!("{e}. Retry the same setup with FIT_REQUEST_ID={id}")
+                }
+            })?;
+            let V::Setup(started) = result else {
+                return Err("Invalid setup response".into());
+            };
+            state = started;
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(315);
+        let mut previous = String::new();
+        while state.state == "running" {
+            let progress = format!(
+                "{} ({} documents downloaded)",
+                state.message, state.completed_documents
+            );
+            if progress != previous {
+                eprintln!("{progress}");
+                previous = progress;
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("Setup is still running. Run fit init to check its progress; existing data was not replaced.".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let V::Setup(next) = call(Op::SetupStatus, uuid::Uuid::new_v4())? else {
+                return Err("Invalid setup response".into());
+            };
+            state = next;
+        }
+        if state.state != "ready" {
+            return Err(state.message.into());
+        }
+        let V::Identity(identity) = call(Op::IdentityGet, uuid::Uuid::new_v4())? else {
+            return Err("Invalid identity response".into());
+        };
+        if let Some(expected) = &self.join {
+            if identity.root_id.as_deref() != Some(expected.trim()) {
+                return Err(
+                    "This store already has a different identity. Existing data was not replaced."
+                        .into(),
+                );
+            }
+        }
+        println!("Identity ready.");
+        println!(
+            "Personal sync code: {}",
+            identity.root_id.as_deref().ok_or("Missing identity")?
+        );
+        if identity.groups.is_empty() {
+            println!("Create a group with: fit group create <NAME>");
+        }
+        Ok(())
+    }
     pub fn run(&self, config: &Config) -> Result<(), InitError> {
         let data_dir = &config.data_dir.value;
         let storage = MultiDocStorage::new(data_dir.clone());

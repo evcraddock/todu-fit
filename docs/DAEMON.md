@@ -1,6 +1,6 @@
 # Shared local daemon
 
-The CLI and Electron client use one Rust owner: `fit daemon`. Electron connects or starts it automatically; CLI auto-start remains deferred.
+The CLI and Electron client use one Rust owner: `fit daemon`. Both clients connect to an existing owner or start it automatically for the same configured data directory.
 Closing Electron leaves that process running. There is no automatic service installation, shutdown, migration, or fallback to direct client writes. No web login is used.
 
 ## Isolated setup
@@ -15,8 +15,7 @@ sync:
   auto_sync: false
 ```
 
-Build with `cargo build -p todu-fit-cli`. In a terminal, run
-`target/debug/fit -c /path/to/isolated-config.yaml daemon`.
+Build with `cargo build -p todu-fit-cli`. Run `target/debug/fit -c /path/to/isolated-config.yaml init --new --group "My household"`, or `init --join <PERSONAL_SYNC_CODE> --server <URL>`. The CLI starts the daemon if necessary and waits for setup to finish. `fit daemon` remains available for explicit foreground operation.
 On macOS/Linux, keep the absolute data path short enough for a Unix socket (about 100 bytes).
 The directory has mode 0700; the owner holds an exclusive OS lock for its lifetime.
 On Windows the transport is a named pipe, rejects remote connections, and uses the
@@ -76,7 +75,7 @@ the same ID if the response is lost. CLI timeout/transport errors print an expli
 of the same name during its session. After losing the whole desktop session, inspect the
 list before initiating a new create; persistent client-side retry intents are not yet provided.
 
-A daemon reset through `init --new --force` changes only the transactional documents;
+The legacy version-1 reset operation changes only the transactional documents;
 receipts remain so delayed retries cannot repeat a prior committed operation. A sync started
 for a different root ID is discarded at merge time. Existing legacy clients must never be
 pointed at a daemon store; the new CLI has no direct-storage fallback.
@@ -114,7 +113,7 @@ on a network port. Windows has no TCP fallback.
 
 Most command arguments, validation, output, and domain behavior remain unchanged. Differences:
 
-- A running daemon and explicitly chosen new store are required.
+- The CLI starts a detached daemon when needed, with a 15-second readiness deadline. Startup errors identify the log next to the configured data directory (`<data_dir>.daemon-startup.log`). The daemon remains running after the CLI exits. Legacy nonempty stores are refused without modification; select the existing desktop daemon store or a separate empty store.
 - Destructive commands require the existing `--force`/`--yes` option. The daemon never reads stdin.
 - Sync scheduling/status/output follow the policy above.
 - Configuration and host timezone defaults used during domain execution belong to the daemon.
@@ -149,3 +148,13 @@ CLI feature fixtures now run through IPC with test-only database import/export.
 disposable JavaScript Repo server. It is not an automatic CI job or delivery gate. `npm test` and `npm run test:packaged` in `apps/desktop` test shared CLI/desktop access.
 All fixtures use temporary stores and test-owned processes. Windows runtime checks must run
 on Windows; successful macOS testing does not establish Windows readiness.
+
+## CLI first-run setup
+
+`fit init` uses the Rust application API, without Electron or JavaScript. With no arguments it shows setup choices, waits for setup already in progress, or reports the existing personal sync code. `fit init --new` creates a personal identity; optionally include `--group <NAME>` to create and select a group. Without that option, `fit group create <NAME>` remains the next step. `fit init --join <PERSONAL_SYNC_CODE>` requires `--server <URL>` or a server in the CLI configuration. The CLI preserves the configured automatic-sync setting.
+
+Setup reports download progress on stderr and succeeds only after the daemon commits all required documents. Failed setup leaves the previous store unchanged. Re-running initialization against a ready store reuses its identity; a different requested personal sync code is rejected. `--force` cannot reset shared setup. Use a separate empty data directory to start fresh. `FIT_REQUEST_ID` supplies a stable setup request UUID for uncertain retries.
+
+The installed CLI 2.9.2 predates daemon routing. This behavior applies to newly built CLI binaries; releasing or installing an updated CLI is a separate step. The CLI and desktop must use the same configuration/data directory to share an owner. No automatic migration of old CLI files is performed.
+
+An already initialized older daemon can still serve CLI commands. If an older running daemon rejects the new setup options, the CLI reports that it must be upgraded and restarted before initialization; it does not terminate or replace the owner automatically.
