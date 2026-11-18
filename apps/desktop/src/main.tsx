@@ -7,6 +7,7 @@ import { Shopping } from "./Shopping";
 import { Water } from "./Water";
 import { PreferencesProvider } from "./preferences";
 import { NavigationIcon } from "./NavigationIcon";
+import { ModelStatus } from "./ModelStatus";
 import { Settings } from "./Settings";
 import "./style.css";
 import { BrandIcon } from "./BrandIcon";
@@ -303,6 +304,7 @@ function App() {
           </svg>
           <span>{group ? `Group: ${group.name}` : "No group selected"}</span>
         </div>
+        <ModelStatus />
       </footer>
     </div>
   );

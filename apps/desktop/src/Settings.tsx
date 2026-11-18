@@ -1,3 +1,4 @@
+import { AISettings } from "./AISettings";
 import { useState } from "react";
 import { usePreferences } from "./preferences";
 import { ActionIcon } from "./ActionIcon";
@@ -46,31 +47,34 @@ export function Settings({
         role="tablist"
         aria-label="Settings sections"
       >
-        {["General", "Water", "Groups", "Sync"].map((name, index, tabs) => (
-          <button
-            key={name}
-            id={`settings-tab-${name}`}
-            role="tab"
-            aria-selected={tab === name}
-            aria-controls={`settings-panel-${name}`}
-            tabIndex={tab === name ? 0 : -1}
-            onClick={() => setTab(name)}
-            onKeyDown={(event) => {
-              let next = index;
-              if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
-              else if (event.key === "ArrowLeft")
-                next = (index + tabs.length - 1) % tabs.length;
-              else if (event.key === "Home") next = 0;
-              else if (event.key === "End") next = tabs.length - 1;
-              else return;
-              event.preventDefault();
-              setTab(tabs[next]);
-              document.getElementById(`settings-tab-${tabs[next]}`)?.focus();
-            }}
-          >
-            {name}
-          </button>
-        ))}
+        {["General", "AI", "Water", "Groups", "Sync"].map(
+          (name, index, tabs) => (
+            <button
+              key={name}
+              id={`settings-tab-${name}`}
+              role="tab"
+              aria-selected={tab === name}
+              aria-controls={`settings-panel-${name}`}
+              tabIndex={tab === name ? 0 : -1}
+              onClick={() => setTab(name)}
+              onKeyDown={(event) => {
+                let next = index;
+                if (event.key === "ArrowRight")
+                  next = (index + 1) % tabs.length;
+                else if (event.key === "ArrowLeft")
+                  next = (index + tabs.length - 1) % tabs.length;
+                else if (event.key === "Home") next = 0;
+                else if (event.key === "End") next = tabs.length - 1;
+                else return;
+                event.preventDefault();
+                setTab(tabs[next]);
+                document.getElementById(`settings-tab-${tabs[next]}`)?.focus();
+              }}
+            >
+              {name}
+            </button>
+          ),
+        )}
       </div>
       <div
         className="settings-tab-panel"
@@ -303,6 +307,15 @@ export function Settings({
             )}
           </div>
         </article>
+      </div>
+      <div
+        className="settings-tab-panel"
+        role="tabpanel"
+        id="settings-panel-AI"
+        aria-labelledby="settings-tab-AI"
+        hidden={tab !== "AI"}
+      >
+        {tab === "AI" && <AISettings />}
       </div>
       {leaving && (
         <Confirm
