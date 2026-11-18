@@ -69,43 +69,9 @@ make test-cli
 - Prefer small functions with clear responsibilities.
 - Keep modules focused on one area of behavior.
 
-## TypeScript / React / Hono standards
+## Desktop TypeScript and React
 
-Applies to `web/`.
-
-### Type safety
-
-- Prefer explicit types when inference is unclear.
-- Avoid `any` unless there is a strong reason and it is documented.
-- Keep API and state shapes consistent with existing app types.
-
-### React
-
-- Prefer small components with clear responsibilities.
-- Keep state as local as practical.
-- Follow existing patterns for hooks, routing, and data access.
-- Avoid introducing new state-management patterns without strong justification.
-
-### Server code
-
-- Keep Hono handlers focused and composable.
-- Validate inputs at boundaries.
-- Return clear, contextual errors.
-- Reuse existing helpers for auth, database access, and sync behavior where available.
-
-### Verification
-
-Run:
-
-```bash
-make web-lint
-```
-
-For build-impacting changes, also run:
-
-```bash
-make web-build
-```
+Keep API and state shapes consistent, prefer explicit types over `any`, and keep React components focused. Follow the checks in [the desktop guide](../apps/desktop/README.md).
 
 ## Documentation standards
 
@@ -118,7 +84,7 @@ make web-build
 
 - Use the existing Makefile commands instead of inventing parallel workflows.
 - Do not control the dev server lifecycle unless explicitly asked.
-- Respect the separation between shared Rust code, CLI code, and web code.
+- Respect the separation between shared Rust code and platform clients.
 - If a feature is platform-specific, keep the platform-specific logic at the edge and avoid leaking it into shared models unless intentional.
 
 ## Before finishing work

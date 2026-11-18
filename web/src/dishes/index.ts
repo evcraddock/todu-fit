@@ -1,5 +1,0 @@
-export { DishList } from './DishList'
-export { DishDetail } from './DishDetail'
-export { DishForm } from './DishForm'
-export { useDishes } from './useDishes'
-export type { Dish, Ingredient, Nutrient, DishesDoc } from './types'

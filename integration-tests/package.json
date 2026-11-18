@@ -1,0 +1,16 @@
+{
+  "name": "todu-fit-compatibility-tests",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test automerge-fixtures.test.mts"
+  },
+  "devDependencies": {
+    "@automerge/automerge": "3.5.0",
+    "@automerge/automerge-repo": "2.5.6",
+    "@automerge/automerge-repo-network-websocket": "2.5.6",
+    "ws": "8.19.0"
+  }
+}

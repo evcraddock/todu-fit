@@ -1,9 +1,0 @@
-node_modules
-dist
-dist-server
-dev.log
-dev-prev.log
-.shoreman.pid
-.git
-.github
-*.md

@@ -19,7 +19,7 @@ The presentation adapts the web forms and dish selector and reuses its Markdown 
 
 After installing dependencies and building the daemon once (`npm ci` and `npm run build:daemon`), run `npm run dev` from `apps/desktop`. This opens a development Electron window using Vite at `http://127.0.0.1:5174`. Saving renderer TypeScript or CSS updates the window automatically. Changes to Electron main/preload code require quitting and running the command again; Rust changes require rebuilding the daemon and restarting its owner separately.
 
-The development window uses a separate Electron profile at `data/dev/desktop-profile`, but uses the normal configured Fit daemon and data. Edits to records therefore affect that configured store. Use `FIT_CONFIG` or `FIT_DATA_DIR` to select a separate store, or `FIT_DAEMON_ENDPOINT` to connect to an existing daemon. Closing the window stops its Vite server and leaves the persistent Fit daemon running. The existing web dev services are independent.
+The development window uses a separate Electron profile at `data/dev/desktop-profile`, but uses the normal configured Fit daemon and data. Edits to records therefore affect that configured store. Use `FIT_CONFIG` or `FIT_DATA_DIR` to select a separate store, or `FIT_DAEMON_ENDPOINT` to connect to an existing daemon. Closing the window stops its Vite server and leaves the persistent Fit daemon running.
 
 ## Packaging and validation
 

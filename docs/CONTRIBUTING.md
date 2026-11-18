@@ -18,7 +18,8 @@ This document defines how to work in `todu-fit`.
 
 - `todu-fit-core/` - shared Rust models and sync logic
 - `todu-fit-cli/` - Rust CLI
-- `web/` - React frontend with Hono server code
+- `apps/desktop/` - Electron desktop client
+- `integration-tests/` - cross-client compatibility checks
 
 Contributions should match the conventions already present in the part of the repo being changed.
 
@@ -59,19 +60,9 @@ make lint
 make test-cli
 ```
 
-### Web changes
+### JavaScript compatibility checks
 
-Use these for `web/` frontend or server work:
-
-```bash
-make web-lint
-```
-
-If the change affects production build behavior, also run:
-
-```bash
-make web-build
-```
+Use Node 24 and run `npm ci --prefix integration-tests && npm test --prefix integration-tests` when changing the document compatibility fixtures or tests.
 
 ### Manual/integration checks
 

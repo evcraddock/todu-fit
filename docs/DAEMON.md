@@ -145,7 +145,7 @@ across SIGKILL, process exit during an uncommitted multidocument transaction, in
 write failure, concurrent-merge preservation, offline saves, and owner exclusion. Existing
 CLI feature fixtures now run through IPC with test-only database import/export.
 `node integration-tests/automerge-compatibility.mjs` is an optional manual check against a
-disposable JavaScript Repo server. It is not an automatic CI job or delivery gate. `npm test` and `npm run test:packaged` in `apps/desktop` test shared CLI/desktop access.
+disposable JavaScript Repo server (install dependencies with `npm ci --prefix integration-tests` first). It is not an automatic CI job or delivery gate. `npm test` and `npm run test:packaged` in `apps/desktop` test shared CLI/desktop access.
 All fixtures use temporary stores and test-owned processes. Windows runtime checks must run
 on Windows; successful macOS testing does not establish Windows readiness.
 

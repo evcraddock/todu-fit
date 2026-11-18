@@ -99,8 +99,7 @@ not use phone data or restart the managed sync server.
 
 The matching iOS branch includes the opt-in `TodufitLiveCoreCompatibility`
 scheme. Build the current CLI (`cargo build -p todu-fit-cli`) and packaged desktop
-(`npm run package` in `apps/desktop`), with dependencies installed in `web` and
-`apps/desktop`. Start the host while the local sync server is already running:
+(`npm run package` in `apps/desktop`), with dependencies installed in `apps/desktop` and `integration-tests` (`npm ci --prefix integration-tests` from the repository root). Start the host while the local sync server is already running:
 
 ```sh
 node integration-tests/ios-live-host.cjs

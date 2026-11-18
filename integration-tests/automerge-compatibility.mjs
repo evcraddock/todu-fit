@@ -5,16 +5,14 @@ import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
-const require = createRequire(new URL('../web/package.json', import.meta.url))
-const { Repo, ImmutableString } = await import(require.resolve('@automerge/automerge-repo'))
-const { WebSocketServerAdapter } = await import(require.resolve('@automerge/automerge-repo-network-websocket'))
-const { WebSocketServer } = require('ws')
+import { Repo, ImmutableString } from '@automerge/automerge-repo'
+import { WebSocketServerAdapter } from '@automerge/automerge-repo-network-websocket'
+import { WebSocketServer } from 'ws'
 const exec = promisify(execFile)
 const repository = fileURLToPath(new URL('../', import.meta.url))
 const binary = resolve(repository, process.argv[2] ?? 'target/debug/fit')

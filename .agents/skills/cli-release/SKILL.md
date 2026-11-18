@@ -7,8 +7,6 @@ description: Create a new CLI release tag based on conventional commits. Use whe
 
 Create a new CLI release tag (`cli-v*`) based on conventional commits since the last release.
 
-**Note:** This is for CLI releases only. Web releases use `web-v*` tags and are handled separately.
-
 ## Instructions
 
 1. **Verify on main branch with no unpushed commits**:

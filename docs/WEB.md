@@ -1,5 +1,7 @@
 # Web Application Architecture
 
+Historical design for the retired browser client; this is not a development or deployment guide.
+
 ## Overview
 
 The web application provides a browser-based UI for todufit, using server-side rendering with HTMX for interactivity. No SPA framework required.
