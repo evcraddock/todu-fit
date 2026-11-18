@@ -610,3 +610,87 @@ test("ChatGPT sign-in chooses Pi browser login without an extra prompt", async (
     await runtime.close();
   }
 });
+
+test("only dish conversations send recipe instructions to the model, including after reopen", async (t) => {
+  const f = await fixture(t);
+  const contexts = [];
+  const respond = (ctx) => {
+    contexts.push(ctx);
+    return fauxAssistantMessage("ok");
+  };
+  f.faux.setResponses([respond, respond]);
+  let runtime = await openAssistant(f);
+  try {
+    const create = (type) =>
+      runtime.request({
+        type,
+        model: { provider: "test", modelId: "test-model" },
+      });
+    const dish = await create("dish_conversation_create"),
+      generic = await create("conversation_create");
+    await runtime.close();
+    runtime = await openAssistant(f);
+    for (const { id } of [dish, generic]) {
+      const sent = await runtime.request({
+        type: "conversation_send",
+        id,
+        requestId: "test",
+        content: "Hello",
+      });
+      assert.equal((await settle(runtime, sent.id)).status, "done");
+    }
+    assert.match(JSON.stringify(contexts[0]), /You are the dish assistant/);
+    assert.doesNotMatch(
+      JSON.stringify(contexts[1]),
+      /You are the dish assistant/,
+    );
+  } finally {
+    await runtime.close();
+  }
+});
+
+test("dish editor polls the requested turn across cancellation and later replies", async (t) => {
+  const fixtureData = await fixture(t);
+  const started = Promise.withResolvers();
+  fixtureData.faux.setResponses([
+    async (_, { signal }) => {
+      started.resolve();
+      await new Promise((_, reject) =>
+        signal.addEventListener("abort", () => reject(Error("cancelled")), {
+          once: true,
+        }),
+      );
+    },
+    fauxAssistantMessage("second answer"),
+  ]);
+  const runtime = await openAssistant(fixtureData);
+  try {
+    const { id } = await runtime.request({
+      type: "dish_conversation_create",
+      model: { provider: "test", modelId: "test-model" },
+    });
+    const send = (requestId) =>
+      runtime.request({
+        type: "conversation_send",
+        id,
+        requestId,
+        content: requestId,
+      });
+    const poll = (requestId) =>
+      runtime.request({ type: "conversation_reply", id, requestId });
+    const first = await send("first");
+    await started.promise;
+    assert.equal((await poll("first")).status, "placed");
+    await runtime.request({ type: "conversation_cancel", id });
+    await settle(runtime, first.id);
+    const second = await send("second");
+    await settle(runtime, second.id);
+    assert.equal((await poll("first")).status, "unanswered");
+    assert.match(
+      JSON.stringify((await poll("second")).answer),
+      /second answer/,
+    );
+  } finally {
+    await runtime.close();
+  }
+});
