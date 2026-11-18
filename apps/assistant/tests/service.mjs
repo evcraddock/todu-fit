@@ -308,3 +308,28 @@ test("pending legacy credentials gate runtime until a successful one-time import
     await service.close();
   }
 });
+
+test("migration accepts an interrupted first launch without a database but rejects corruption", async (t) => {
+  const root = await temporary(t);
+  const legacy = path.join(root, "legacy"),
+    directory = path.join(root, "shared");
+  await fs.mkdir(legacy);
+  await fs.mkdir(directory);
+  await fs.writeFile(
+    path.join(legacy, "installation.json"),
+    '{"id":"preserved"}',
+  );
+  await migrate(directory, legacy);
+  assert.equal(
+    JSON.parse(await fs.readFile(path.join(directory, "installation.json"))).id,
+    "preserved",
+  );
+  await fs.writeFile(
+    path.join(legacy, "conversations.sqlite"),
+    "corrupt database",
+  );
+  const invalid = path.join(root, "invalid");
+  await fs.mkdir(invalid);
+  await assert.rejects(migrate(invalid, legacy));
+  await assert.rejects(fs.access(path.join(invalid, "migration.json")));
+});

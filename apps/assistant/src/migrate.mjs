@@ -40,19 +40,30 @@ export async function migrate(directory, legacy) {
       if (e.code !== "ENOENT") throw e;
     }
   }
+  let hasConversations = true;
   try {
-    const source = new DatabaseSync(path.join(legacy, "conversations.sqlite"), {
-      readOnly: true,
-    });
-    try {
-      await backup(source, path.join(staging, "conversations.sqlite"));
-    } finally {
-      source.close();
-    }
-  } catch (e) {
-    if (e.code !== "ERR_SQLITE_ERROR") throw e;
-    throw Error("Cannot back up legacy conversations");
+    await fs.stat(path.join(legacy, "conversations.sqlite"));
+  } catch (error) {
+    if (error.code === "ENOENT") hasConversations = false;
+    else throw error;
   }
+  if (hasConversations)
+    try {
+      const source = new DatabaseSync(
+        path.join(legacy, "conversations.sqlite"),
+        {
+          readOnly: true,
+        },
+      );
+      try {
+        await backup(source, path.join(staging, "conversations.sqlite"));
+      } finally {
+        source.close();
+      }
+    } catch (e) {
+      if (e.code !== "ERR_SQLITE_ERROR") throw e;
+      throw Error("Cannot back up legacy conversations");
+    }
   let credentialsPending = false;
   try {
     await fs.access(path.join(legacy, "credentials.enc"));
