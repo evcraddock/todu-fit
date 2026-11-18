@@ -541,7 +541,7 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                     "The week, dishes or targets changed. Review a fresh proposal before saving.",
                 ));
             }
-            if (!guided && meals.is_empty()) || meals.len() > 28 {
+            if !guided && (meals.is_empty() || meals.len() > 28) {
                 return Err(invalid("Propose 1 to 28 meals in the selected week"));
             }
             let mut saved = Vec::new();

@@ -126,7 +126,11 @@ function openApplicationBridge(endpoint, timeoutMs = 15000) {
           )
             throw new Error("Invalid daemon response");
           if (r.outcome.status === "error")
-            return finish(new Error(r.outcome.error.message), undefined);
+            return finish(
+              Object.assign(new Error(r.outcome.error.message), {
+                code: r.outcome.error.code,
+              }),
+            );
           if (
             r.outcome.status !== "ok" ||
             typeof r.outcome.value?.type !== "string"

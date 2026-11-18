@@ -238,7 +238,14 @@ export function GuidedDay({
               ...snapshot,
               pending: undefined,
               candidate: parsed.meals?.[0] ?? snapshot.candidate,
-              leftovers: parsed.meals ? false : snapshot.leftovers,
+              leftovers:
+                snapshot.leftovers &&
+                (!parsed.meals ||
+                  (snapshot.candidate?.dish_ids.length ===
+                    parsed.meals[0].dish_ids.length &&
+                    snapshot.candidate.dish_ids.every((id) =>
+                      parsed.meals![0].dish_ids.includes(id),
+                    ))),
               messages: [
                 ...snapshot.messages,
                 { role: "Assistant", text: parsed.message },
@@ -277,26 +284,30 @@ export function GuidedDay({
       try {
         await call<Plan[]>(approval.operation, "plans", approval.id);
       } catch (e) {
-        if (/changed/i.test((e as Error).message)) {
+        const code = (e as { code?: string }).code;
+        if (code === "invalid_input") store({ ...draft, approval: undefined });
+        if (code === "conflict" || code === "not_found") {
           store({ ...draft, approval: undefined });
           setConflict(true);
         }
         throw e;
       }
+      const exceptionKey = JSON.stringify([
+        "fit.guided-day-exception",
+        scope.root_id,
+        scope.group_id,
+        draft.date,
+      ]);
       if (draft.exception.trim())
         localStorage.setItem(
-          JSON.stringify([
-            "fit.guided-day-exception",
-            scope.root_id,
-            scope.group_id,
-            draft.date,
-          ]),
+          exceptionKey,
           JSON.stringify({
             date: draft.date,
             exception: draft.exception,
             issues,
           }),
         );
+      else localStorage.removeItem(exceptionKey);
       store({ ...draft, approval: undefined, saved: true });
       if (mounted.current) refresh();
     });
@@ -333,9 +344,18 @@ export function GuidedDay({
             </tr>
           </thead>
           <tbody>
-            {Object.entries(person.targets)
-              .filter(([k]) => k !== "water_fl_oz")
-              .map(([k, b]) => {
+            {Array.from(
+              new Set([
+                "calories_kcal",
+                "protein_g",
+                "carbohydrates_g",
+                "fat_g",
+                ...Object.keys(person.targets),
+              ]),
+            )
+              .filter((k) => k !== "water_fl_oz")
+              .map((k) => {
+                const b = person.targets[k as keyof typeof metrics];
                 const [name, unit] = metrics[k as keyof typeof metrics];
                 const a = comparison(
                     accepted.data,
@@ -354,8 +374,8 @@ export function GuidedDay({
                 if (
                   !slot &&
                   (a.partial ||
-                    (b.min != null && a.total < b.min) ||
-                    (b.max != null && a.total > b.max))
+                    (b?.min != null && a.total < b.min) ||
+                    (b?.max != null && a.total > b.max))
                 )
                   issues.push(
                     person.name +
@@ -374,7 +394,7 @@ export function GuidedDay({
                     </th>
                     <td>{display(a)}</td>
                     {slot && draft.candidate && <td>{display(p)}</td>}
-                    <td>{range(b.min, b.max)}</td>
+                    <td>{(b && range(b.min, b.max)) || "No target"}</td>
                   </tr>
                 );
               })}
@@ -414,8 +434,10 @@ export function GuidedDay({
   const validCandidate =
     candidate &&
     candidate.dish_ids.length > 0 &&
-    candidate.dish_ids.every((d) =>
-      Object.values(candidate.portions).some((v) => v[d] > 0),
+    candidate.dish_ids.every(
+      (d) =>
+        data?.dishes.some((dish) => dish.id === d) &&
+        Object.values(candidate.portions).some((v) => v[d] > 0),
     ) &&
     Object.entries(candidate.portions).every(
       ([id, v]) =>
@@ -431,6 +453,9 @@ export function GuidedDay({
           <>
             {draft?.saved && (
               <p role="status">{draft.date} saved and verified.</p>
+            )}
+            {draft?.saved && draft.exception && (
+              <p>Recorded exception: {draft.exception}</p>
             )}
             <Field label="Day to plan">
               <input
@@ -533,7 +558,8 @@ export function GuidedDay({
                     {candidate.dish_ids.map((d) => (
                       <div key={d}>
                         <strong>
-                          {data.dishes.find((v) => v.id === d)?.name}
+                          {data.dishes.find((v) => v.id === d)?.name ??
+                            "Missing dish"}
                         </strong>
                         {Object.entries(data.people).map(([id, p]) => (
                           <label className="portion-input" key={id}>

@@ -114,7 +114,7 @@ else {
               value: await bridge.request(operation, requestId),
             };
           } catch (error) {
-            return { ok: false, error: error.message };
+            return { ok: false, error: error.message, code: error.code };
           }
         },
       );
