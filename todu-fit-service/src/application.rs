@@ -93,7 +93,8 @@ fn failure(e: impl Into<Box<dyn std::error::Error>>) -> api::ApiError {
     } else if let Some(e) = e.downcast_ref::<core::IdentityError>() {
         match e {
             core::IdentityError::NotInitialized => Code::NotInitialized,
-            core::IdentityError::NutritionTargetsShared => Code::InvalidInput,
+            core::IdentityError::NutritionTargetsShared
+            | core::IdentityError::NutritionWithdrawalPending => Code::InvalidInput,
             core::IdentityError::AlreadyInitialized | core::IdentityError::AlreadyInGroup(_) => {
                 Code::Conflict
             }

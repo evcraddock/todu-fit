@@ -57,6 +57,35 @@ pub fn nutrition_share_key(group: &DocumentId) -> String {
     format!("nutrition_share_{}", group.to_bs58check())
 }
 
+/// Clear a pending withdrawal after a peer confirms the current group heads.
+pub fn acknowledge_nutrition_withdrawal(
+    root: &mut AutoCommit,
+    group: &DocumentId,
+    confirmed: &AutoCommit,
+) -> Result<bool, automerge::AutomergeError> {
+    let key = nutrition_share_key(group);
+    let Some((value, _)) = root.get(automerge::ROOT, &key)? else {
+        return Ok(false);
+    };
+    let Some(hashes) = value
+        .as_str()
+        .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+    else {
+        return Ok(false);
+    };
+    if hashes.is_empty()
+        || !hashes.iter().all(|s| {
+            s.parse()
+                .ok()
+                .is_some_and(|hash| confirmed.get_change_by_hash(&hash).is_some())
+        })
+    {
+        return Ok(false);
+    }
+    root.delete(automerge::ROOT, key)?;
+    Ok(true)
+}
+
 impl Identity {
     /// Create a new identity manager with the given storage.
     pub fn new(storage: MultiDocStorage) -> Self {
@@ -304,12 +333,15 @@ impl Identity {
             .ok_or(IdentityError::DocumentNotFound(root))?;
         let doc =
             AutoCommit::load(&bytes).map_err(|e| IdentityError::AutomergeError(e.to_string()))?;
-        if doc
+        if let Some((value, _)) = doc
             .get(automerge::ROOT, nutrition_share_key(group_doc_id))
             .map_err(|e| IdentityError::AutomergeError(e.to_string()))?
-            .is_some()
         {
-            return Err(IdentityError::NutritionTargetsShared);
+            return Err(if value.as_str() == Some("true") {
+                IdentityError::NutritionTargetsShared
+            } else {
+                IdentityError::NutritionWithdrawalPending
+            });
         }
         identity.remove_group(group_doc_id);
         self.save_identity(&identity)?;
@@ -560,6 +592,7 @@ pub enum IdentityError {
     /// Already a member of this group.
     AlreadyInGroup(DocumentId),
     NutritionTargetsShared,
+    NutritionWithdrawalPending,
     /// Serialization error.
     SerializationError(serde_json::Error),
     /// Stored state is invalid or incomplete.
@@ -577,6 +610,10 @@ impl std::fmt::Display for IdentityError {
             IdentityError::DocumentNotFound(id) => {
                 write!(f, "Document not found: {}", id.to_bs58check())
             }
+            IdentityError::NutritionWithdrawalPending => write!(
+                f,
+                "Sync your nutrition sharing change before leaving this group."
+            ),
             IdentityError::NutritionTargetsShared => write!(
                 f,
                 "Stop sharing your nutrition targets with this group before leaving."

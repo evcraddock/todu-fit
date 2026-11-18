@@ -246,9 +246,23 @@ fn apply(
         let after = doc.save();
         if after != before {
             snapshot.insert(name, after);
-            store.commit(&snapshot, None)?;
             changed = true;
         }
+    }
+    let root_id = std::str::from_utf8(root)?.trim();
+    if id != root_id && next_state.their_heads.as_ref() == Some(&doc.get_heads()) {
+        let mut identity_doc = load(&snapshot, root_id)?;
+        if todu_fit_core::identity::acknowledge_nutrition_withdrawal(
+            &mut identity_doc,
+            &DocumentId::from_bs58check(id)?,
+            &doc,
+        )? {
+            snapshot.insert(format!("{root_id}.automerge"), identity_doc.save());
+            changed = true;
+        }
+    }
+    if changed {
+        store.commit(&snapshot, None)?;
     }
     *state = next_state;
     let response = doc.sync().generate_sync_message(state);

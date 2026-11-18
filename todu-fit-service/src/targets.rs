@@ -1,5 +1,5 @@
 use crate::{error, storage};
-use automerge::{transaction::Transactable, AutoCommit, ReadDoc, ROOT};
+use automerge::{transaction::Transactable, AutoCommit, ObjType, ReadDoc, ROOT};
 use sha2::{Digest, Sha256};
 use todu_fit_core::{DocumentId, Identity};
 use todu_fit_protocol::{ApiError, ErrorCode, PersonalTargets, TargetProfile};
@@ -71,8 +71,11 @@ pub fn personal(identity: &Identity) -> Result<PersonalTargets, ApiError> {
     let shared_groups = groups
         .into_iter()
         .filter(|g| {
-            doc.keys(ROOT)
-                .any(|key| key == nutrition_share_key(&g.doc_id))
+            doc.get(ROOT, nutrition_share_key(&g.doc_id))
+                .ok()
+                .flatten()
+                .and_then(|(value, _)| value.as_str().map(|v| v == "true"))
+                == Some(true)
         })
         .map(|g| g.doc_id.to_bs58check())
         .collect();
@@ -176,12 +179,37 @@ pub fn save(
     publish(identity, &state)?;
     Ok(state)
 }
+// Revoking the parent map wins over concurrent edits to its children.
+fn update_member(
+    doc: &mut AutoCommit,
+    key: &str,
+    profile: &TargetProfile,
+    grant: bool,
+) -> Result<(), ApiError> {
+    let slot = match doc.get(ROOT, key).map_err(storage)? {
+        Some((automerge::Value::Object(ObjType::Map), slot)) => slot,
+        _ if grant => doc.put_object(ROOT, key, ObjType::Map).map_err(storage)?,
+        _ => return Ok(()),
+    };
+    doc.put(
+        slot,
+        "profile",
+        serde_json::to_string(profile).map_err(storage)?,
+    )
+    .map_err(storage)
+}
+
 fn publish(identity: &Identity, state: &PersonalTargets) -> Result<(), ApiError> {
     if let Some(profile) = &state.profile {
         let id = root(identity)?;
         for shared in &state.shared_groups {
             let group = group(identity, shared)?;
-            write(identity, group, &member_key(id, group), Some(profile))?;
+            let mut doc = load(identity, group)?;
+            update_member(&mut doc, &member_key(id, group), profile, false)?;
+            identity
+                .storage()
+                .save(&group, &doc.save())
+                .map_err(storage)?;
         }
     }
     Ok(())
@@ -201,35 +229,59 @@ pub fn share(
     let group = group(identity, group_id)?;
     let mut state = personal(identity)?;
     check_expected(state.profile.as_ref(), Some(expected))?;
-    write(
-        identity,
-        group,
-        &member_key(id, group),
-        if enabled {
-            state.profile.as_ref()
-        } else {
-            None
-        },
-    )?;
+    if state.shared_groups.contains(group_id) == enabled {
+        return Ok(state);
+    }
+    let key = member_key(id, group);
+    let grant = nutrition_share_key(&group);
+    let mut doc = load(identity, group)?;
     if enabled {
+        update_member(
+            &mut doc,
+            &key,
+            state.profile.as_ref().expect("profile checked above"),
+            true,
+        )?;
         state.shared_groups.insert(group_id.to_string());
     } else {
+        if doc.get(ROOT, &key).map_err(storage)?.is_none() {
+            return Err(error(
+                ErrorCode::PendingSync,
+                "Sync the shared targets before withdrawing them from this device",
+            ));
+        }
+        doc.delete(ROOT, &key).map_err(storage)?;
         state.shared_groups.remove(group_id);
     }
-    write(
-        identity,
-        id,
-        &nutrition_share_key(&group),
-        enabled.then_some(&true),
-    )?;
+    let heads = doc.get_heads();
+    identity
+        .storage()
+        .save(&group, &doc.save())
+        .map_err(storage)?;
+    if enabled {
+        write(identity, id, &grant, Some(&true))?;
+    } else {
+        // Retain the group reference until the peer acknowledges the withdrawal.
+        let hashes: Vec<_> = heads.iter().map(ToString::to_string).collect();
+        write(identity, id, &grant, Some(&hashes))?;
+    }
     Ok(state)
 }
 pub fn members(identity: &Identity, group_id: &str) -> Result<Vec<TargetProfile>, ApiError> {
     let doc = load(identity, group(identity, group_id)?)?;
     let mut members = Vec::<TargetProfile>::new();
     for k in doc.keys(ROOT).filter(|k| k.starts_with(MEMBER)) {
-        if let Some(profile) = read(&doc, &k)? {
-            members.push(profile);
+        if let Some((_, slot)) = doc.get(ROOT, &k).map_err(storage)? {
+            if let Some((value, _)) = doc.get(slot, "profile").map_err(storage)? {
+                members.push(
+                    serde_json::from_str(
+                        value
+                            .as_str()
+                            .ok_or_else(|| storage("Invalid nutrition profile"))?,
+                    )
+                    .map_err(storage)?,
+                );
+            }
         }
     }
     members.sort_by_cached_key(|p| p.name.to_lowercase());
@@ -308,11 +360,35 @@ mod tests {
         assert!(!keys
             .iter()
             .any(|k| k == PERSONAL || k == &nutrition_share_key(&household)));
+        let mut offline = load(&a, household).unwrap().fork();
+        update_member(
+            &mut offline,
+            &member_key(root(&a).unwrap(), household),
+            &person,
+            false,
+        )
+        .unwrap();
         share(&a, &home, false, &updated).unwrap();
+        let mut revoked = load(&a, household).unwrap();
+        revoked.merge(&mut offline).unwrap();
+        a.storage().save(&household, &revoked.save()).unwrap();
         save(&a, &person, Some(&updated)).unwrap();
         copy_group(&a, &b, household);
         assert_eq!(members(&b, &home).unwrap(), [second]);
         assert!(personal(&a).unwrap().shared_groups.is_empty());
+        assert!(matches!(
+            a.leave_group(&household),
+            Err(todu_fit_core::IdentityError::NutritionWithdrawalPending)
+        ));
+        let root_id = root(&a).unwrap();
+        let mut owner_doc = load(&a, root_id).unwrap();
+        assert!(todu_fit_core::identity::acknowledge_nutrition_withdrawal(
+            &mut owner_doc,
+            &household,
+            &load(&a, household).unwrap()
+        )
+        .unwrap());
+        a.storage().save(&root_id, &owner_doc.save()).unwrap();
         a.leave_group(&household).unwrap();
     }
 
