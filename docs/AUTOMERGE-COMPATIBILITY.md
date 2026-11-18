@@ -29,23 +29,22 @@ Committed regression coverage:
 
 - [Four synthetic binary fixtures](../todu-fit-core/tests/fixtures/README.md), written by the actual pre-upgrade Rust 0.7.2 / JS 3.2.1 engines and the upgraded Rust 0.12.0 / JS 3.5.0 engines. They contain scalar strings, nested ingredients, numeric quantities, tags and Unicode collaborative text.
 - [Five Rust compatibility tests](../todu-fit-core/tests/automerge_compatibility.rs): old/new snapshots load, edit and save without losing heads/history; encoded sync messages converge after concurrent edits and sync-state reset.
-- [Four JS compatibility tests](../web/src/repo/automergeCompatibility.test.ts): the same old/new snapshots retain field types, values, heads and history through load/save/edit.
-- [Isolated CLI↔JS Repo integration check](../integration-tests/automerge-compatibility.mjs): builds a disposable identity and group, syncs dishes/nutrients from the actual CLI through Repo's WebSocket/CBOR adapter, sends JS updates and a nested JS-created dish back to the CLI, then verifies a CLI update after reconnect. It binds a random loopback port, removes only its own temporary data and never controls the managed dev environment. CI runs this check and the web unit tests.
+- [Four JS compatibility tests](../integration-tests/automerge-fixtures.test.mts): the same old/new snapshots retain field types, values, heads and history through load/save/edit.
+- [Isolated CLI↔JS Repo integration check](../integration-tests/automerge-compatibility.mjs): builds a disposable identity and group, syncs dishes/nutrients from the actual CLI through Repo's WebSocket/CBOR adapter, sends JS updates and a nested JS-created dish back to the CLI, then verifies a CLI update after reconnect. It binds a random loopback port, removes only its own temporary data and never controls the managed dev environment. CI runs the JS fixture tests; the isolated CLI↔JS check is manual.
 
-Local checks passed:
+To run the current checks (Node 24 for JavaScript):
 
 ```bash
 make lint
 make test-cli
 cargo clippy --all-targets --all-features -- -D warnings
-make web-lint
-make web-test
-make web-build
+npm ci --prefix integration-tests
+npm test --prefix integration-tests
 cargo build --locked -p todu-fit-cli
 node integration-tests/automerge-compatibility.mjs
 ```
 
-Rust: 241 existing unit tests plus five new compatibility tests passed; one existing test remains ignored. Web: 41 tests passed. The frontend and server production builds passed, with warnings about outdated Browserslist data, mixed static/dynamic UUID imports and large chunks; no warning was suppressed.
+At the time of the upgrade, Rust: 241 existing unit tests plus five new compatibility tests passed; one existing test remains ignored. Web: 41 tests passed. The frontend and server production builds passed, with warnings about outdated Browserslist data, mixed static/dynamic UUID imports and large chunks; no warning was suppressed.
 
 Additional disposable probes exchanged raw sync messages between the upgraded Rust and JS engines and verified content/heads preservation and convergence after state reset. These are supplemental evidence, not a substitute for the committed Repo-envelope integration check.
 

@@ -18,7 +18,7 @@ for (const [filename, quantity, tags] of [
   ['js-3.5.0.automerge', 3.5, 2],
 ] as const) {
   test(`loads and edits ${filename} while preserving scalar types, heads and history`, () => {
-    const bytes = readFileSync(new URL(`../../../todu-fit-core/tests/fixtures/${filename}`, import.meta.url))
+    const bytes = readFileSync(new URL(`../todu-fit-core/tests/fixtures/${filename}`, import.meta.url))
     let doc = Automerge.load<Fixture>(bytes)
     const heads = Automerge.getHeads(doc)
     const changes = Automerge.getAllChanges(doc)

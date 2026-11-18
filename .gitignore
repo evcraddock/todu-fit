@@ -11,12 +11,9 @@
 # Server config (may contain secrets)
 /config/server.yaml
 
-# Web build artifacts (also in web/.gitignore)
-/web/node_modules/
-/web/dist/
-/web/dist-server/
-/web/*.sqlite*
-web/tsconfig.node.tsbuildinfo
+# Ignore artifacts and local data left by older website checkouts
+/web/
+/integration-tests/node_modules/
 
 /apps/desktop/node_modules/
 /apps/desktop/dist/

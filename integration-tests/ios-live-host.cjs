@@ -16,25 +16,9 @@ const { openApplicationBridge } = require(
 );
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
-  const { pathToFileURL } = require("node:url");
-  const { Repo } = await import(
-    pathToFileURL(
-      require.resolve(base + "/web/node_modules/@automerge/automerge-repo"),
-    )
-  );
-  const A = await import(
-    pathToFileURL(
-      base +
-        "/web/node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_node.js",
-    )
-  );
-  const { WebSocketClientAdapter } = await import(
-    pathToFileURL(
-      require.resolve(
-        base + "/web/node_modules/@automerge/automerge-repo-network-websocket",
-      ),
-    )
-  );
+  const { Repo } = await import("@automerge/automerge-repo");
+  const A = await import("@automerge/automerge");
+  const { WebSocketClientAdapter } = await import("@automerge/automerge-repo-network-websocket");
   const repo = new Repo({
     network: [new WebSocketClientAdapter("ws://127.0.0.1:8080")],
     sharePolicy: async () => true,

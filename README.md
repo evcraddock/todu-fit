@@ -10,40 +10,20 @@ Local-first meal planning and nutrition tracking with cross-device sync.
 - **Shopping Lists** - Auto-generated from meal plans with check-off tracking
 - **Groups** - Share dishes and meal plans with family or household
 - **Offline-first** - Works without internet, syncs when connected
-- **Cross-device** - CLI and web app share the same data
+- **Cross-device** - CLI and desktop share the same data
 
 ## Components
 
 | Component | Description |
 |-----------|-------------|
 | **todu-fit-cli** | Command-line interface (`fit` binary) |
-| **todu-fit-web** | React web application |
+| **[Fit Desktop](apps/desktop/README.md)** | Electron desktop client |
 | **todu-fit-core** | Shared Rust library (models, sync) |
 | **[todu-sync](https://github.com/evcraddock/todu-sync)** | Automerge sync server (separate repo) |
 
 ## How It Works
 
-```
-┌─────────────┐     ┌─────────────┐
-│   fit CLI   │     │   Web App   │
-│  (Rust)     │     │  (React)    │
-└──────┬──────┘     └──────┬──────┘
-       │                   │
-       │  Automerge CRDT   │
-       │                   │
-       └─────────┬─────────┘
-                 │ WebSocket
-                 ▼
-          ┌─────────────┐
-          │  todu-sync  │
-          │   server    │
-          └─────────────┘
-```
-
-- **Automerge** CRDTs store all data locally
-- Changes sync via WebSocket when online
-- Works offline - edits merge automatically when reconnected
-- CLI and web share the same identity to see the same data
+The CLI and desktop use the same local Rust daemon. Automerge stores changes locally and syncs documents over WebSocket when connected. See [the shared-core architecture](docs/SHARED-CORE-APPS.md) for details.
 
 ## CLI Installation
 
@@ -128,55 +108,9 @@ sync:
   auto_sync: true               # Sync after every write
 ```
 
-## Web App
-
-The web app provides the same features with a browser UI. See [web/README.md](web/README.md) for details.
-
-To connect CLI and web:
-1. Initialize CLI: `fit init --new && fit group create "Home"`
-2. Get identity: `fit device show` (copy the ID)
-3. In web app Settings → Sync Settings → enter the ID
-
-Both will now share the same data.
-
 ## Development
 
-### Prerequisites
-
-- **Rust** (latest stable) - CLI
-- **Node.js** (v20+) - Web app
-- **Docker** - Sync server
-- **Overmind** - Process manager ([install](https://github.com/DarthSim/overmind#installation))
-- **tmux** - Required by Overmind
-
-### Services
-
-Development runs three services via Overmind:
-
-| Service | Port | Description |
-|---------|------|-------------|
-| **vite** | 5173 | React dev server with HMR |
-| **hono** | 3000 | Auth API server |
-| **sync** | 8080 | Automerge sync server (Docker) |
-
-### Quick Start
-
-```bash
-# Install web dependencies
-make web-install
-
-# Start all services (runs in background)
-make dev
-
-# Check status
-make status
-
-# View web app
-open http://localhost:5173
-
-# Stop services
-make stop
-```
+Use stable Rust for the CLI and Node.js 24 for desktop, the assistant worker and JavaScript compatibility tests. The local Automerge sync server runs at `ws://localhost:8080` using Docker Compose and Overmind (requires tmux). See [desktop development](apps/desktop/README.md) for the Electron client.
 
 ### Environments
 
@@ -191,8 +125,6 @@ Services run in tmux panes:
 
 ```bash
 make logs           # Stream all logs (Ctrl+C to stop)
-make connect-hono   # Attach to hono pane
-make connect-vite   # Attach to vite pane
 make connect-sync   # Attach to sync pane
 ```
 
