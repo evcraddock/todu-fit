@@ -288,13 +288,30 @@ async function main() {
     );
     await page.getByRole("radio", { name: "API key", exact: true }).check();
     await page.getByLabel("Provider", { exact: true }).selectOption("openai");
-    await page.locator('input[type="password"]').waitFor();
-    assert.equal(
+    if ((await assistant({ type: "settings" })).secureStorage) {
+      await page.locator('input[type="password"]').waitFor();
+      assert.equal(
+        await page
+          .getByRole("button", { name: "Save API key", exact: true })
+          .isDisabled(),
+        true,
+      );
+    } else {
       await page
-        .getByRole("button", { name: "Save API key", exact: true })
-        .isDisabled(),
-      true,
-    );
+        .getByText("Unlock your system keychain to save a connection.", {
+          exact: true,
+        })
+        .waitFor();
+      assert.equal(await page.locator('input[type="password"]').count(), 0);
+      await assert.rejects(
+        assistant({
+          type: "login_start",
+          provider: "openai",
+          method: "api_key",
+        }),
+        /Secure credential storage is unavailable/,
+      );
+    }
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.waitForFunction(
       (expected) =>

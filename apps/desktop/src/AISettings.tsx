@@ -586,11 +586,12 @@ export function AISettings() {
                       Uses this provider’s environment or system credentials.
                     </p>
                   )}
-                  {!settings.secureStorage && !connected && (
-                    <p role="alert">
-                      Unlock your system keychain to save a connection.
-                    </p>
-                  )}
+                  {!settings.secureStorage &&
+                    (!connected || authMethod === "api_key") && (
+                      <p role="alert">
+                        Unlock your system keychain to save a connection.
+                      </p>
+                    )}
                 </div>
               )}
             </section>
