@@ -648,3 +648,49 @@ test("only dish conversations send recipe instructions to the model, including a
     await runtime.close();
   }
 });
+
+test("dish editor polls the requested turn across cancellation and later replies", async (t) => {
+  const fixtureData = await fixture(t);
+  const started = Promise.withResolvers();
+  fixtureData.faux.setResponses([
+    async (_, { signal }) => {
+      started.resolve();
+      await new Promise((_, reject) =>
+        signal.addEventListener("abort", () => reject(Error("cancelled")), {
+          once: true,
+        }),
+      );
+    },
+    fauxAssistantMessage("second answer"),
+  ]);
+  const runtime = await openAssistant(fixtureData);
+  try {
+    const { id } = await runtime.request({
+      type: "dish_conversation_create",
+      model: { provider: "test", modelId: "test-model" },
+    });
+    const send = (requestId) =>
+      runtime.request({
+        type: "conversation_send",
+        id,
+        requestId,
+        content: requestId,
+      });
+    const poll = (requestId) =>
+      runtime.request({ type: "conversation_reply", id, requestId });
+    const first = await send("first");
+    await started.promise;
+    assert.equal((await poll("first")).status, "placed");
+    await runtime.request({ type: "conversation_cancel", id });
+    await settle(runtime, first.id);
+    const second = await send("second");
+    await settle(runtime, second.id);
+    assert.equal((await poll("first")).status, "unanswered");
+    assert.match(
+      JSON.stringify((await poll("second")).answer),
+      /second answer/,
+    );
+  } finally {
+    await runtime.close();
+  }
+});

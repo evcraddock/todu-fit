@@ -17,35 +17,37 @@ type Session = {
   messages: { role: string; text: string; dishes?: DishMatch[] }[];
   draft?: Draft;
   pending?: { id: string; content: string; submitted: boolean };
-  last: number;
-  saveId: string;
 };
 const fresh = (): Session => ({
   messages: [],
-  last: 0,
-  saveId: crypto.randomUUID(),
 });
 async function ai<T>(op: Operation): Promise<T> {
   const r = await window.fit.assistant(op);
   if (!r.ok) throw Error(r.error);
   return r.value as T;
 }
-type View = {
-  entries: {
-    id: number;
+type ReplyStatus = {
+  status: "queued" | "placed" | "unanswered" | "done";
+  reason?: string;
+  detail?: string;
+  answer?: {
     model?: {
       role: string;
       content: { type: string; text?: string }[];
       errorMessage?: string;
     }[];
-  }[];
+  };
 };
 function authFailure(text: string) {
   return /invalid x-api-key|invalid.api.key|^401\b|authentication_error/i.test(
     text,
   );
 }
-function reply(text: string): { message: string; draft?: Draft; search?: string } {
+function reply(text: string): {
+  message: string;
+  draft?: Draft;
+  search?: string;
+} {
   const match = text
     .trim()
     .match(/^(?:```(?:json)?\s*)?(\{[\s\S]*\})(?:\s*```)?$/i);
@@ -128,7 +130,11 @@ export function DishAssistant({
   );
   const current = useRef(s);
   function store(next: Session) {
-    localStorage.setItem(key, JSON.stringify(next));
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      setError("The conversation could not be cached on this computer.");
+    }
     current.current = next;
     set(next);
   }
@@ -160,36 +166,50 @@ export function DishAssistant({
             pending: { ...pending, submitted: true },
           });
         }
-        const view = await ai<View>({ type: "conversation_get", id });
+        const result = await ai<ReplyStatus>({
+          type: "conversation_reply",
+          id,
+          requestId: pending.id,
+        });
         if (!active) return;
-        for (const e of view.entries) {
-          if (e.id <= current.current.last) continue;
-          const m = e.model?.find((m) => m.role === "assistant");
-          if (!m) continue;
+        if (result.status === "done" || result.status === "unanswered") {
+          const answer = result.answer?.model?.find(
+            (m) => m.role === "assistant",
+          );
+          const failure =
+            typeof result.detail === "string" ? result.detail : result.reason;
           const response = reply(
-            m.errorMessage ||
-              m.content
+            answer?.errorMessage ||
+              answer?.content
                 .filter((c) => c.type === "text")
                 .map((c) => c.text)
                 .join("\n") ||
-              "The assistant returned an empty response.",
+              (failure
+                ? `Message failed: ${failure}`
+                : "The assistant returned an empty response."),
           );
           let dishes: DishMatch[] | undefined;
           if (response.search) {
             const query = response.search;
-            const found = await call<Dish[]>({ type: "dishes_list", query }, "dishes");
+            const found = await call<Dish[]>(
+              { type: "dishes_list", query },
+              "dishes",
+            );
             if (!active) return;
-            const matches = found.filter(dish => dish.name.toLowerCase().includes(query.toLowerCase()))
+            const matches = found
+              .filter((dish) =>
+                dish.name.toLowerCase().includes(query.toLowerCase()),
+              )
               .sort((a, b) => a.name.localeCompare(b.name));
             dishes = matches.slice(0, 12).map(({ id, name }) => ({ id, name }));
-            response.message = matches.length === 0
-              ? `No saved dish names match “${query}”.`
-              : `Found ${matches.length} saved ${matches.length === 1 ? "dish" : "dishes"} matching “${query}”.${matches.length > 12 ? " Showing the first 12." : ""}`;
+            response.message =
+              matches.length === 0
+                ? `No saved dish names match “${query}”.`
+                : `Found ${matches.length} saved ${matches.length === 1 ? "dish" : "dishes"} matching “${query}”.${matches.length > 12 ? " Showing the first 12." : ""}`;
           }
           if (response.draft) onDraft(response.draft);
           store({
             ...current.current,
-            last: e.id,
             pending: undefined,
             draft: response.draft ?? current.current.draft,
             messages: [
@@ -239,7 +259,10 @@ export function DishAssistant({
             })
           ).id;
       const content = JSON.stringify({
-        recentSearchResults: s.messages.filter(m => m.dishes).at(-1)?.dishes?.map(d => d.name),
+        recentSearchResults: s.messages
+          .filter((m) => m.dishes)
+          .at(-1)
+          ?.dishes?.map((d) => d.name),
         message: message.trim(),
         draft,
         ...(!reuse && s.messages.length
@@ -256,7 +279,6 @@ export function DishAssistant({
         conversation: id,
         dishPrompt: 2,
         model,
-        last: reuse ? s.last : 0,
         messages: [...s.messages, { role: "You", text: message.trim() }],
         pending: { id: crypto.randomUUID(), content, submitted: false },
       });
@@ -269,17 +291,20 @@ export function DishAssistant({
   }
   return (
     <section className="dish-chat" aria-label="Dish assistant">
-      {headerActions && createPortal(
-        <button
-          type="button"
-          className="dish-chat-clear"
-          disabled={!s.messages.length || disabled || busy || (!!s.pending && !paused)}
-          onClick={() => setConfirmClear(true)}
-        >
-          Clear conversation
-        </button>,
-        headerActions,
-      )}
+      {headerActions &&
+        createPortal(
+          <button
+            type="button"
+            className="dish-chat-clear"
+            disabled={
+              !s.messages.length || disabled || busy || (!!s.pending && !paused)
+            }
+            onClick={() => setConfirmClear(true)}
+          >
+            Clear conversation
+          </button>,
+          headerActions,
+        )}
       {confirmClear && (
         <Confirm
           title="Clear this dish conversation?"
@@ -311,16 +336,23 @@ export function DishAssistant({
                 ? "The provider rejected its credentials. Reconnect it in Settings → AI or choose another model."
                 : m.text}
             </Markdown>
-            {m.dishes?.map(dish => (
-              <button type="button" className="dish-chat-match" key={dish.id}
+            {m.dishes?.map((dish) => (
+              <button
+                type="button"
+                className="dish-chat-match"
+                key={dish.id}
                 onClick={async () => {
                   try {
-                    const saved = await call<Dish>({ type: "dish_get", identifier: dish.id }, "dish");
+                    const saved = await call<Dish>(
+                      { type: "dish_get", identifier: dish.id },
+                      "dish",
+                    );
                     onOpenDish(saved);
                   } catch (e) {
                     setError((e as Error).message);
                   }
-                }}>
+                }}
+              >
                 {dish.name}
               </button>
             ))}

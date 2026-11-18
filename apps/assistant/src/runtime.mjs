@@ -406,6 +406,23 @@ export async function openAssistant({
           observation.detach();
           return view;
         }
+        case "conversation_reply": {
+          const { id } = await conversation(op.id);
+          const requestId = text(op.requestId, "request ID");
+          return harness.commit(async (tx) => {
+            const submission = await tx.submissionByRequest(id, requestId);
+            if (!submission) throw Error("Message not found");
+            if (submission.status === "done") {
+              const answer = await tx.entry(submission.answer);
+              return { status: "done", answer };
+            }
+            return {
+              status: submission.status,
+              reason: submission.reason,
+              detail: submission.detail,
+            };
+          }, context);
+        }
         case "conversation_entries":
           return (await conversation(op.id)).entries(
             { order: "descending" },

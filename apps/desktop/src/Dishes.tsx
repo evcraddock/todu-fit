@@ -31,6 +31,7 @@ export function Dishes({
   const [tagFilter, setTagFilter] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Dish | undefined>(initialDish);
+  const [saveNotice, setSaveNotice] = useState("");
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState<Dish>();
   const loaded = useLoad(
@@ -82,7 +83,8 @@ export function Dishes({
         }}
         dish={selected}
         onCancel={() => setEditing(false)}
-        onSaved={(d) => {
+        onSaved={(d, notice) => {
+          setSaveNotice(notice ?? "");
           setSelected(d);
           setEditing(false);
           refresh();
@@ -120,7 +122,7 @@ export function Dishes({
             </button>
           </div>
         </header>
-        <LoadError error={action.error} />
+        <LoadError error={saveNotice || action.error} />
         <p>{d.tags.join(" · ")}</p>
         <p>
           Prep: {d.prep_time ?? "—"} min · Cook: {d.cook_time ?? "—"} min ·
@@ -302,7 +304,7 @@ function DishEditor({
   groupScope?: string;
   onOpenDish: (dish: Dish) => void;
   dish?: Dish;
-  onSaved: (d: Dish) => void;
+  onSaved: (d: Dish, notice?: string) => void;
   onCancel: () => void;
 }) {
   const scope =
@@ -332,6 +334,7 @@ function DishEditor({
       dish ??
       (chatKey && JSON.parse(localStorage.getItem(chatKey) || "{}").draft),
   );
+  const [draftCacheError, setDraftCacheError] = useState("");
   const [waiting, setWaiting] = useState(false);
   const [name, setName] = useState(initial?.name ?? "");
   const [instructions, setInstructions] = useState(initial?.instructions ?? "");
@@ -349,23 +352,39 @@ function DishEditor({
   const [preview, setPreview] = useState(false);
   const action = useAction(() => {});
   useEffect(() => {
-    if (formKey)
-      localStorage.setItem(
-        formKey,
-        JSON.stringify({
-          name,
-          instructions,
-          servings: servings || null,
-          prep_time: prep,
-          cook_time: cook,
-          source_url: source,
-          ingredients,
-          nutrients,
-          tags: tags.split(",").map((t) => t.trim()),
-        }),
-      );
+    if (!formKey) return;
+    const form = {
+      name,
+      instructions,
+      servings,
+      prep_time: prep,
+      cook_time: cook,
+      source_url: source,
+      ingredients,
+      nutrients,
+      tags: tags.split(",").map((t) => t.trim()),
+    };
+    const unchanged =
+      dish &&
+      name === dish.name &&
+      instructions === dish.instructions &&
+      servings === String(dish.servings ?? "") &&
+      prep === String(dish.prep_time ?? "") &&
+      cook === String(dish.cook_time ?? "") &&
+      source === (dish.source_url ?? "") &&
+      tags === dish.tags.join(", ") &&
+      JSON.stringify(ingredients) === JSON.stringify(dish.ingredients) &&
+      JSON.stringify(nutrients) === JSON.stringify(dish.nutrients ?? []);
+    try {
+      if (unchanged) localStorage.removeItem(formKey);
+      else localStorage.setItem(formKey, JSON.stringify(form));
+      setDraftCacheError("");
+    } catch {
+      setDraftCacheError("Your draft could not be cached on this computer.");
+    }
   }, [
     formKey,
+    dish,
     name,
     instructions,
     servings,
@@ -395,15 +414,15 @@ function DishEditor({
     if (next.nutrients !== undefined) setNutrients(next.nutrients);
   }
   function clearDraft(savedId?: string) {
+    if (formKey) localStorage.removeItem(formKey);
     if (!dish && chatKey) {
       const session = localStorage.getItem(chatKey);
+      localStorage.removeItem(chatKey);
       if (savedId && session) {
         const savedScope = JSON.stringify([groupScope, savedId]);
         localStorage.setItem("fit.dish-assistant.v1." + savedScope, session);
       }
-      localStorage.removeItem(chatKey);
     }
-    if (formKey) localStorage.removeItem(formKey);
   }
   const updateIngredient = (index: number, patch: Partial<Ingredient>) =>
     setIngredients(
@@ -436,7 +455,7 @@ function DishEditor({
           </button>
         </div>
       </header>
-      <LoadError error={action.error} />
+      <LoadError error={action.error || draftCacheError} />
       <div className={chatKey ? "dish-compose" : undefined}>
         <form
           id="dish-editor-form"
@@ -469,8 +488,14 @@ function DishEditor({
                   : { type: "dish_create", name, fields },
                 "dish",
               );
-              clearDraft(saved.id);
-              onSaved(saved);
+              let notice;
+              try {
+                clearDraft(saved.id);
+              } catch {
+                notice =
+                  "Dish saved. The local recipe draft or chat cache could not be updated.";
+              }
+              onSaved(saved, notice);
             });
           }}
         >
@@ -747,32 +772,32 @@ function DishEditor({
                 />
               )}
               <div className="dish-chat-header">
-              <button
-                className="dish-chat-toggle"
-                type="button"
-                aria-expanded={!collapsed}
-                aria-controls="dish-chat-body"
-                onClick={() => {
-                  setCollapsed(!collapsed);
-                  localStorage.setItem(
-                    "fit.dish-chat.collapsed",
-                    String(!collapsed),
-                  );
-                }}
-              >
-                <svg
-                  aria-hidden="true"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
+                <button
+                  className="dish-chat-toggle"
+                  type="button"
+                  aria-expanded={!collapsed}
+                  aria-controls="dish-chat-body"
+                  onClick={() => {
+                    setCollapsed(!collapsed);
+                    localStorage.setItem(
+                      "fit.dish-chat.collapsed",
+                      String(!collapsed),
+                    );
+                  }}
                 >
-                  <path d={collapsed ? "m10 3-5 5 5 5" : "m6 3 5 5-5 5"} />
-                </svg>
-                <span>Dish assistant</span>
-              </button>
+                  <svg
+                    aria-hidden="true"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <path d={collapsed ? "m10 3-5 5 5 5" : "m6 3 5 5-5 5"} />
+                  </svg>
+                  <span>Dish assistant</span>
+                </button>
                 <div ref={setChatActions} hidden={collapsed} />
               </div>
               <div id="dish-chat-body" hidden={collapsed}>
