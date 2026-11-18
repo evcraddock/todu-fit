@@ -226,8 +226,23 @@ async function main() {
     });
     await nav("Dishes");
     await page.screenshot({ path: path.join(results, "dishes.png") });
+    const { request: workerRequest } = await import(
+      "../../assistant/src/protocol.mjs"
+    );
+    const workerDirectory = path.join(f.root, "desktop", "shared-assistant");
+    const workerBefore = await workerRequest(workerDirectory, {
+      type: "worker_status",
+    });
     await app.close();
     app = undefined;
+    assert.equal(
+      (await workerRequest(workerDirectory, { type: "worker_status" })).pid,
+      workerBefore.pid,
+    );
+    assert.deepEqual(
+      (await workerRequest(workerDirectory, { type: "settings" })).model,
+      selectedModel,
+    );
     await f.cli("dish", "create", "CLI while desktop closed");
     await launch();
     assert.deepEqual(
@@ -375,6 +390,9 @@ async function main() {
     throw e;
   } finally {
     if (app) await app.close();
+    await require("./assistant-cleanup.cjs").stopWorker(
+      path.join(f.root, "desktop", "shared-assistant"),
+    );
     await f.close();
   }
 }

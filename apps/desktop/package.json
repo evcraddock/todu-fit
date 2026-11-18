@@ -8,13 +8,14 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build:native": "node scripts/build-native.cjs",
-    "build": "npm run build:daemon && tsc --noEmit && vite build",
+    "build": "npm run build:daemon && npm run build:assistant && tsc --noEmit && vite build",
     "package": "npm run build && electron-builder --dir",
     "package:installer": "npm run build && electron-builder",
-    "test": "node --test tests/daemon.cjs tests/startup.cjs tests/pointer-hover.mjs tests/external-links.cjs tests/meal-data.mjs tests/theme.mjs tests/dates.mjs tests/assistant.mjs",
+    "test": "node --test tests/daemon.cjs tests/startup.cjs tests/pointer-hover.mjs tests/external-links.cjs tests/meal-data.mjs tests/theme.mjs tests/dates.mjs ../assistant/tests/assistant.mjs ../assistant/tests/service.mjs ../assistant/tests/cli.mjs",
     "test:packaged": "node tests/packaged.cjs && node tests/packaged-setup.cjs",
     "build:daemon": "node scripts/build-daemon.cjs",
-    "test:native-proof": "node --test tests/native.cjs"
+    "test:native-proof": "node --test tests/native.cjs",
+    "build:assistant": "node ../assistant/scripts/bundle.mjs"
   },
   "build": {
     "appId": "com.todu.fit.proof",
@@ -40,6 +41,14 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "assistant-worker",
+        "to": "assistant-worker"
+      },
+      {
+        "from": "assistant-worker/node_modules",
+        "to": "assistant-worker/node_modules"
       }
     ],
     "artifactName": "todu-fit-desktop-${version}-${os}-${arch}.${ext}",
@@ -53,7 +62,8 @@
       "forceCodeSigning": true,
       "hardenedRuntime": true,
       "binaries": [
-        "Contents/Resources/daemon/fit"
+        "Contents/Resources/daemon/fit",
+        "Contents/Resources/assistant-worker/node"
       ],
       "extendInfo": {
         "NSLocalNetworkUsageDescription": "Todu Fit uses its background daemon to sync your nutrition data with your configured server on the local network."
@@ -68,9 +78,6 @@
     "afterSign": "scripts/verify-mac-signing.cjs"
   },
   "dependencies": {
-    "@earendil-works/chord": "1.5.2",
-    "@earendil-works/pi-ai": "1.5.2",
-    "@earendil-works/pi-durable": "1.5.2",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-markdown": "10.1.0"
@@ -83,10 +90,5 @@
     "playwright": "1.64.1",
     "typescript": "7.0.2",
     "vite": "8.3.5"
-  },
-  "overrides": {
-    "@earendil-works/chord": {
-      "react": "$react"
-    }
   }
 }

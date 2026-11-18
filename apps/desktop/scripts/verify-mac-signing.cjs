@@ -7,7 +7,7 @@ module.exports = async function verifyMacSigning(context) {
   const app = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   const daemon = path.join(app, 'Contents/Resources/daemon/fit');
   let appTeam;
-  for (const target of [app, daemon]) {
+  for (const target of [app, daemon, path.join(app, 'Contents/Resources/assistant-worker/node')]) {
     execFileSync('codesign', ['--verify', '--deep', '--strict', target], { stdio: 'inherit' });
     // codesign prints signature details on stderr.
     const { spawnSync } = require('node:child_process');

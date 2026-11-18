@@ -1,7 +1,7 @@
 // Disposable child used only by the interrupted-process recovery regression.
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import { openAssistant } from "../electron/assistant/runtime.mjs";
+import { openAssistant } from "../src/runtime.mjs";
 const models = createModels();
 const faux = fauxProvider({ provider: "test", models: [{ id: "test-model" }] });
 models.setProvider(faux.provider);

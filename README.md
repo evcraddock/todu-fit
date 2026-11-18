@@ -66,6 +66,8 @@ Pre-built binaries on the [releases page](https://github.com/evcraddock/todu-fit
 git clone https://github.com/evcraddock/todu-fit.git
 cd todu-fit
 cargo install --path todu-fit-cli
+# Include the shared AI worker (requires Node.js 24 and npm to build).
+node apps/assistant/scripts/bundle.mjs "${CARGO_HOME:-$HOME/.cargo}/bin/assistant-worker"
 ```
 
 ## CLI Quick Start

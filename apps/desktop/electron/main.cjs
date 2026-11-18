@@ -4,7 +4,6 @@ const {
   ipcMain,
   dialog,
   shell,
-  utilityProcess,
   safeStorage,
 } = require("electron");
 const path = require("node:path");
@@ -48,9 +47,38 @@ else {
       });
       bridge = openApplicationBridge(endpoint);
       const { createAssistantHost } = require("./assistant/host.cjs");
+      const { promisify } = require("node:util");
+      const { execFile } = require("node:child_process");
+      let assistantDirectory = process.env.FIT_ASSISTANT_DIR;
+      if (!assistantDirectory && process.env.TODU_FIT_PROOF_DATA) {
+        assistantDirectory = path.join(
+          app.getPath("userData"),
+          "shared-assistant",
+        );
+      }
+      if (!assistantDirectory) {
+        const args = process.env.FIT_CONFIG
+          ? ["-c", process.env.FIT_CONFIG]
+          : [];
+        const { stdout } = await promisify(execFile)(
+          binary,
+          [...args, "config", "show", "--format", "json"],
+          { timeout: 10000, windowsHide: true },
+        );
+        assistantDirectory = path.join(
+          JSON.parse(stdout).data_dir.value,
+          "assistant",
+        );
+      }
       assistant = createAssistantHost({
-        directory: path.join(app.getPath("userData"), "assistant"),
-        utilityProcess,
+        directory: assistantDirectory,
+        legacyDirectory: path.join(app.getPath("userData"), "assistant"),
+        bundle: path.join(
+          app.isPackaged
+            ? process.resourcesPath
+            : path.resolve(__dirname, ".."),
+          "assistant-worker",
+        ),
         safeStorage,
         shell,
       });

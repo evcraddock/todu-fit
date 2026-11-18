@@ -36,6 +36,8 @@ struct Cli {
 enum Commands {
     /// Run the shared local owner (explicit startup; no store adoption)
     Daemon,
+    /// Use the shared background AI worker
+    Ai(commands::ai::AiCommand),
     /// Initialize identity (new or join existing)
     Init(InitCommand),
 
@@ -93,6 +95,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if matches!(cli.command, Some(Commands::Daemon)) {
         return daemon::serve(config);
     }
+    if let Some(Commands::Ai(command)) = &cli.command {
+        return command.run(&config);
+    }
     if matches!(cli.command, Some(Commands::Config(_)) | None) {
         return execute_command(&cli.command, &config, cli_config_path);
     }
@@ -143,7 +148,7 @@ fn execute_command_ref(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cli_config_path = config.config_file.clone();
     match command {
-        Commands::Daemon => return Err("Nested daemon request denied".into()),
+        Commands::Daemon | Commands::Ai(_) => return Err("Nested service request denied".into()),
         Commands::Init(cmd) => {
             cmd.run(config)?;
         }

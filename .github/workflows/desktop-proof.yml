@@ -3,9 +3,9 @@ name: Desktop build checks
 on:
   push:
     branches: [main]
-    paths: ['apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'todu-fit-cli/**', 'todu-fit-protocol/**', 'todu-fit-service/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
+    paths: ['apps/assistant/**', 'apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'todu-fit-cli/**', 'todu-fit-protocol/**', 'todu-fit-service/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
   pull_request:
-    paths: ['apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'todu-fit-cli/**', 'todu-fit-protocol/**', 'todu-fit-service/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
+    paths: ['apps/assistant/**', 'apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'todu-fit-cli/**', 'todu-fit-protocol/**', 'todu-fit-service/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
   workflow_dispatch:
 
 jobs:
@@ -25,6 +25,8 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+        working-directory: apps/assistant
       - run: npm ci
         working-directory: apps/desktop
       - run: cargo fmt --all --check

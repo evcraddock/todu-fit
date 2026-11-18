@@ -53,6 +53,17 @@ tar -xzf "$TEMP_DIR/todu-fit.tar.gz" -C "$TEMP_DIR"
 
 # Install
 mkdir -p "$INSTALL_DIR"
+# Keep the worker next to fit so it is discoverable without system Node.
+# Older releases may not include it yet.
+if [ -d "$TEMP_DIR/assistant-worker" ]; then
+    STAGED_WORKER="$INSTALL_DIR/.assistant-worker-$$"
+    cp -R "$TEMP_DIR/assistant-worker" "$STAGED_WORKER"
+    if [ -e "$INSTALL_DIR/assistant-worker" ]; then
+        mv "$INSTALL_DIR/assistant-worker" "$INSTALL_DIR/.assistant-worker-previous-$$"
+    fi
+    mv "$STAGED_WORKER" "$INSTALL_DIR/assistant-worker"
+    rm -rf "$INSTALL_DIR/.assistant-worker-previous-$$"
+fi
 mv "$TEMP_DIR/fit" "$INSTALL_DIR/fit"
 chmod +x "$INSTALL_DIR/fit"
 

@@ -285,6 +285,26 @@ export function AISettings() {
   return (
     <article className="settings-panel ai-settings">
       <LoadError error={error} />
+      {error.includes("Assistant update is ready") && (
+        <section className="ai-section">
+          <p>
+            Restart the AI worker to finish updating. Running requests may be
+            retried; saved tasks will resume.
+          </p>
+          <button
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await request({ type: "worker_restart" });
+                setSettings(await request<Settings>({ type: "settings" }));
+                window.dispatchEvent(new Event(MODEL_CHANGED_EVENT));
+              })
+            }
+          >
+            Restart AI worker
+          </button>
+        </section>
+      )}
       {!settings ? (
         <p role="status">Loading providers…</p>
       ) : (

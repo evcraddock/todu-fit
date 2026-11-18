@@ -1,3 +1,4 @@
+pub mod ai;
 mod config_cmd;
 mod device;
 mod dish;
