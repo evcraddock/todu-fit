@@ -77,6 +77,7 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
         server_url,
         group_name,
         group_id,
+        ..
     } = &request.operation
     else {
         return Err("Expected setup_start".into());
@@ -103,7 +104,8 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
         }
     } else if group_name
         .as_ref()
-        .is_none_or(|n| n.trim().is_empty() || n.len() > 512)
+        .is_some_and(|n| n.trim().is_empty() || n.len() > 512)
+        || (root_id.is_none() && group_id.is_some() && group_name.is_none())
     {
         return Err("Enter a group name (1–512 bytes)".into());
     }
@@ -147,6 +149,7 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
                 server_url,
                 group_name,
                 group_id,
+                auto_sync,
             } = &request.operation
             else {
                 unreachable!()
@@ -154,13 +157,14 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
             let mut completed = 0;
             if root_id.is_none() {
                 identity.initialize_new()?;
-                let name = group_name.as_deref().ok_or("Group required")?.trim();
-                if let Some(group) = group_id {
-                    identity.join_group(DocumentId::from_bs58check(group)?, name)?;
-                } else {
-                    identity.create_group(name)?;
+                if let Some(name) = group_name.as_deref().map(str::trim) {
+                    if let Some(group) = group_id {
+                        identity.join_group(DocumentId::from_bs58check(group)?, name)?;
+                    } else {
+                        identity.create_group(name)?;
+                    }
+                    fs::write(workspace.path().join("current_group"), name)?;
                 }
-                fs::write(workspace.path().join("current_group"), name)?;
             }
             if let Some(root) = root_id {
                 let root = DocumentId::from_bs58check(root)?;
@@ -203,7 +207,9 @@ pub(super) fn start(owner: &Arc<Owner>, request: &api::Request) -> Result<api::S
             }
             fs::write(
                 workspace.path().join(SETTINGS),
-                serde_json::to_vec(&json!({"server_url": server_url}))?,
+                serde_json::to_vec(
+                    &json!({"server_url": server_url, "auto_sync": auto_sync.unwrap_or(server_url.is_some())}),
+                )?,
             )?;
             let after = collect(workspace.path())?;
             let ready = api::SetupStatus {

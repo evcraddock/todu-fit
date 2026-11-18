@@ -1,6 +1,8 @@
 //! Shared local owner. Transport is versioned, bounded newline-delimited JSON.
 //! CLI adapters execute against disposable workspaces; only this owner commits.
+mod client;
 mod live_sync;
+pub use client::{application_request, ensure_running};
 mod setup;
 mod store;
 #[cfg(windows)]
@@ -23,7 +25,7 @@ use std::{
 use store::{collect, materialize, Store};
 use todu_fit_core::{sync::SyncCoordinator, Dish, DishRepository, MultiDocStorage};
 #[cfg(windows)]
-use windows::exchange;
+use windows::exchange_value;
 #[cfg(windows)]
 pub use windows::serve;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -309,6 +311,10 @@ pub fn serve(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 pub fn call_cli(command: Commands, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    ensure_running(config).map_err(|e| e.to_string())?;
+    if let Commands::Init(init) = &command {
+        return init.run_daemon(config);
+    }
     let wait_sync = matches!(&command, Commands::Sync(cmd) if !cmd.is_status());
     let operation = match command {
         Commands::Sync(cmd) if cmd.is_status() => Operation::Status,
@@ -365,21 +371,29 @@ pub fn call_cli(command: Commands, config: &Config) -> Result<(), Box<dyn std::e
     }
     Ok(())
 }
-#[cfg(unix)]
 fn exchange(request: &Request, config: &Config) -> Result<Response, Error> {
-    use std::os::unix::net::UnixStream;
-    let mut stream = UnixStream::connect(endpoint(&config.data_dir.value)).map_err(|e| format!("Daemon unavailable ({e}). Start fit -c <config> daemon with the same new data_dir. No direct-storage fallback"))?;
-    stream.set_read_timeout(Some(Duration::from_secs(15)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-    let mut bytes = serde_json::to_vec(request)?;
-    bytes.push(b'\n');
-    stream.write_all(&bytes)?;
-    let line = read_frame(&mut stream, Duration::from_secs(15))?;
-    let response: Response = serde_json::from_str(&line)?;
+    let value = exchange_value(
+        &serde_json::to_value(request)?,
+        config,
+        Duration::from_secs(15),
+    )?;
+    let response: Response = serde_json::from_value(value)?;
     if response.error.is_none() && response.id != request.id {
         return Err("Mismatched response ID".into());
     }
     Ok(response)
+}
+#[cfg(unix)]
+fn exchange_value(request: &Value, config: &Config, timeout: Duration) -> Result<Value, Error> {
+    use std::os::unix::net::UnixStream;
+    let mut stream = UnixStream::connect(endpoint(&config.data_dir.value))?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+    let mut bytes = serde_json::to_vec(request)?;
+    bytes.push(b'\n');
+    stream.write_all(&bytes)?;
+    let line = read_frame(&mut stream, timeout)?;
+    Ok(serde_json::from_str(&line)?)
 }
 
 #[cfg(unix)]

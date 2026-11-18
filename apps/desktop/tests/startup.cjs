@@ -215,12 +215,23 @@ test(
         (await b.request({ type: "identity_get" })).data.state,
         "uninitialized",
       );
-      await b.request({
-        type: "setup_start",
-        root_id,
-        server_url,
-        group_name: null,
-      });
+      const exec = require("node:util").promisify(
+        require("node:child_process").execFile,
+      );
+      const joinedCli = await exec(
+        binary,
+        [
+          "-c",
+          second.options.config,
+          "init",
+          "--join",
+          root_id,
+          "--server",
+          server_url,
+        ],
+        { env: second.options.env, timeout: 30000 },
+      );
+      assert.match(joinedCli.stdout, /Identity ready/);
       const state = await finish(b);
       assert.equal(state.state, "ready", state.message);
       assert.equal(state.completed_documents, 7);
@@ -413,5 +424,125 @@ test("joining a group requires a server and failed downloads leave setup untouch
   } finally {
     await bridge?.close();
     await f.close();
+  }
+});
+
+test("CLI auto-start shares setup and owner with Electron without Electron running", async () => {
+  const { execFile } = require("node:child_process");
+  const exec = require("node:util").promisify(execFile);
+  const f = await fresh();
+  let bridge;
+  const cli = (...args) =>
+    exec(binary, ["-c", f.options.config, ...args], {
+      env: f.options.env,
+      timeout: 22000,
+    });
+  try {
+    await Promise.all([
+      ...Array.from({ length: 4 }, () => cli("init")),
+      connectOrStart(f.options),
+    ]);
+    const pid = await fs.readFile(path.join(f.data, "daemon.pid"), "utf8");
+    const result = await cli("init", "--new", "--group", "CLI household");
+    assert.match(result.stdout, /Identity ready/);
+    const endpoint = await connectOrStart(f.options);
+    bridge = openApplicationBridge(endpoint);
+    const identity = (await bridge.request({ type: "identity_get" })).data;
+    assert.equal(identity.groups.length, 1);
+    assert.equal(identity.groups[0].name, "CLI household");
+    assert.equal(
+      (await bridge.request({ type: "config_get" })).data.auto_sync,
+      false,
+    );
+    await cli("init", "--new");
+    assert.equal(
+      (await bridge.request({ type: "identity_get" })).data.root_id,
+      identity.root_id,
+    );
+    await cli("dish", "create", "CLI shared dish");
+    assert.equal(
+      (await bridge.request({ type: "dishes_list" })).data[0].name,
+      "CLI shared dish",
+    );
+    assert.equal(
+      await fs.readFile(path.join(f.data, "daemon.pid"), "utf8"),
+      pid,
+    );
+    await assert.rejects(cli("init", "--new", "--force"), /never replaces/);
+    await bridge.close();
+    bridge = undefined;
+    process.kill(Number(pid));
+    await pause(250);
+    assert.match((await cli("dish", "list")).stdout, /CLI shared dish/);
+    assert.notEqual(
+      await fs.readFile(path.join(f.data, "daemon.pid"), "utf8"),
+      pid,
+    );
+    bridge = openApplicationBridge(await connectOrStart(f.options));
+    assert.equal(
+      (await bridge.request({ type: "identity_get" })).data.root_id,
+      identity.root_id,
+    );
+  } finally {
+    await bridge?.close();
+    await f.close();
+  }
+});
+
+test("CLI joins fail cleanly, can retry fresh setup, and preserve legacy stores", async () => {
+  const exec = require("node:util").promisify(
+    require("node:child_process").execFile,
+  );
+  const f = await fresh();
+  const legacy = await fresh();
+  let bridge;
+  const cli = (...args) =>
+    exec(binary, ["-c", f.options.config, ...args], {
+      env: f.options.env,
+      timeout: 22000,
+    });
+  try {
+    await assert.rejects(
+      cli("init", "--join", "2i6KmWQkkfQdFhXC9n65UZshA7eQ"),
+      /requires --server/,
+    );
+    await assert.rejects(
+      cli(
+        "init",
+        "--join",
+        "2i6KmWQkkfQdFhXC9n65UZshA7eQ",
+        "--server",
+        "ws://127.0.0.1:1",
+      ),
+      /Setup incomplete/,
+    );
+    bridge = openApplicationBridge(await connectOrStart(f.options));
+    assert.equal(
+      (await bridge.request({ type: "identity_get" })).data.state,
+      "uninitialized",
+    );
+    await cli("init", "--new");
+    assert.equal(
+      (await bridge.request({ type: "setup_status" })).data.state,
+      "ready",
+    );
+    await fs.mkdir(legacy.data);
+    await fs.writeFile(path.join(legacy.data, "root_doc_id"), "preserve");
+    await assert.rejects(
+      exec(binary, ["-c", legacy.options.config, "dish", "list"], {
+        env: legacy.options.env,
+        timeout: 5000,
+      }),
+      /legacy CLI data/,
+    );
+    assert.deepEqual(await fs.readdir(legacy.data), ["root_doc_id"]);
+    assert.equal(
+      await fs.readFile(path.join(legacy.data, "root_doc_id"), "utf8"),
+      "preserve",
+    );
+  } finally {
+    await bridge?.close();
+    await f.close();
+    await legacy.close();
   }
 });

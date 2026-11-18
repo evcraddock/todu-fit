@@ -108,13 +108,17 @@ fn serve_inner(config: Config) -> Result<(), Error> {
         Ok::<(), Error>(())
     })
 }
-pub(super) fn exchange(request: &Request, config: &Config) -> Result<Response, Error> {
+pub(super) fn exchange_value(
+    request: &Value,
+    config: &Config,
+    timeout: Duration,
+) -> Result<Value, Error> {
     let endpoint = pipe_path(&config.data_dir.value)?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
     runtime.block_on(async {
-        tokio::time::timeout(Duration::from_secs(15), async {
+        tokio::time::timeout(timeout, async {
             let mut pipe = loop {
                 match ClientOptions::new().open(&endpoint) {
                     Ok(pipe) => break pipe,
@@ -134,11 +138,7 @@ pub(super) fn exchange(request: &Request, config: &Config) -> Result<Response, E
             if line.len() as u64 > MAX_FRAME || !line.ends_with('\n') {
                 return Err("Invalid or incomplete daemon response".into());
             }
-            let response: Response = serde_json::from_str(&line)?;
-            if response.error.is_none() && response.id != request.id {
-                return Err("Mismatched response ID".into());
-            }
-            Ok::<Response, Error>(response)
+            Ok::<Value, Error>(serde_json::from_str(&line)?)
         })
         .await
         .map_err(|e| -> Error { e.into() })?
