@@ -451,3 +451,84 @@ test("dynamic catalog cache survives reopening and deletion", async (t) => {
   await store.delete("local/provider");
   assert.equal(await store.read("local/provider"), undefined);
 });
+
+test("default model selection requires authentication for that provider", async (t) => {
+  const f = await fixture(t);
+  const provider = {
+    ...f.faux.provider,
+    auth: {
+      apiKey: {
+        name: "Test credentials",
+        resolve: async () => undefined,
+      },
+    },
+  };
+  f.models.setProvider(provider);
+  const runtime = await openAssistant(f);
+  try {
+    await assert.rejects(
+      runtime.request({
+        type: "settings_save",
+        model: { provider: "test", modelId: "test-model" },
+      }),
+      /Connect this provider/,
+    );
+    assert.equal((await runtime.request({ type: "settings" })).model, null);
+    f.models.setProvider(f.faux.provider);
+    await runtime.request({
+      type: "settings_save",
+      model: { provider: "test", modelId: "test-model" },
+    });
+    assert.equal(
+      (await runtime.request({ type: "settings" })).model.modelId,
+      "test-model",
+    );
+  } finally {
+    await runtime.close();
+  }
+});
+
+test("model listing and selection honor provider credential filters", async (t) => {
+  const f = await fixture(t);
+  const faux = fauxProvider({
+    provider: "filtered",
+    models: [{ id: "allowed" }, { id: "restricted" }],
+  });
+  f.models.setProvider({
+    ...faux.provider,
+    filterModels: (models) => models.filter((model) => model.id === "allowed"),
+  });
+  const runtime = await openAssistant(f);
+  try {
+    assert.deepEqual(
+      (await runtime.request({ type: "models", provider: "filtered" })).map(
+        (model) => model.id,
+      ),
+      ["allowed"],
+    );
+    await assert.rejects(
+      runtime.request({
+        type: "settings_save",
+        model: { provider: "filtered", modelId: "restricted" },
+      }),
+      /not available/,
+    );
+    await assert.rejects(
+      runtime.request({
+        type: "conversation_create",
+        model: { provider: "filtered", modelId: "restricted" },
+      }),
+      /not available/,
+    );
+    f.models.setProvider({
+      ...faux.provider,
+      auth: { apiKey: { name: "Missing key", resolve: async () => undefined } },
+    });
+    assert.deepEqual(
+      await runtime.request({ type: "models", provider: "filtered" }),
+      [],
+    );
+  } finally {
+    await runtime.close();
+  }
+});

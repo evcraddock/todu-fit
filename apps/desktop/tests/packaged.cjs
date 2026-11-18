@@ -27,6 +27,7 @@ async function main() {
       executablePath,
       env: {
         ...process.env,
+        OPENAI_API_KEY: "test-only-no-model-requests",
         TODU_FIT_PROOF_DATA: path.join(f.root, "desktop"),
         FIT_DAEMON_ENDPOINT: f.endpoint,
       },

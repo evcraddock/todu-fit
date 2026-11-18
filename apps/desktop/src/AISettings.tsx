@@ -185,6 +185,7 @@ export function AISettings() {
                 disabled={busy || pending}
                 onChange={(e) => {
                   const next = e.target.value;
+                  setAuth("");
                   setProvider(next);
                   setModel(
                     settings.model?.provider === next
@@ -380,8 +381,8 @@ export function AISettings() {
             <div className="ai-model-control">
               <select
                 aria-label="Default model"
-                value={modelId}
-                disabled={busy || pending || !provider}
+                value={connected ? modelId : ""}
+                disabled={busy || pending || !connected}
                 onChange={(e) => {
                   const next = e.target.value;
                   if (!next) return;
@@ -397,7 +398,11 @@ export function AISettings() {
                 }}
               >
                 <option value="">
-                  {provider ? "Select a model" : "Choose a provider first"}
+                  {!provider
+                    ? "Choose a provider first"
+                    : !connected
+                      ? "Connect this provider first"
+                      : "Select a model"}
                 </option>
                 {[...models]
                   .sort((a, b) => a.name.localeCompare(b.name))
@@ -411,7 +416,7 @@ export function AISettings() {
                 className="ai-refresh"
                 aria-label="Refresh models"
                 title="Refresh models"
-                disabled={busy || pending || !provider}
+                disabled={busy || pending || !connected}
                 onClick={() =>
                   run(async () => {
                     setModels(

@@ -117,6 +117,16 @@ export async function openAssistant({
       throw Error("Unknown model");
     return { provider: value.provider, modelId: value.modelId };
   }
+  async function availableModels(id) {
+    provider(id);
+    return models.getAvailable(id, { signal: AbortSignal.timeout(10_000) });
+  }
+  async function requireAvailableModel(selected) {
+    const available = await availableModels(selected.provider);
+    if (!available.some((item) => item.id === selected.modelId))
+      throw Error("This model is not available for the connected provider.");
+    return selected;
+  }
   async function conversation(id) {
     if (!Number.isSafeInteger(id) || id < 0)
       throw Error("Invalid conversation");
@@ -192,7 +202,19 @@ export async function openAssistant({
         { agentName: "todufit", getDeviceId: () => installation.id },
       )
       .then(
-        () => {
+        async () => {
+          try {
+            const refreshed = await models.refresh({
+              providers: [p.id],
+              signal: AbortSignal.timeout(15_000),
+            });
+            if (refreshed.aborted || refreshed.errors.size)
+              state.error =
+                "Connected, but the model list could not be refreshed. Try Refresh models.";
+          } catch {
+            state.error =
+              "Connected, but the model list could not be refreshed. Try Refresh models.";
+          }
           state.status = "done";
         },
         () => {
@@ -242,9 +264,10 @@ export async function openAssistant({
         }
         case "models":
           provider(op.provider);
-          return models
-            .getModels(op.provider)
-            .map((m) => ({ id: m.id, name: m.name }));
+          return (await availableModels(op.provider)).map((m) => ({
+            id: m.id,
+            name: m.name,
+          }));
         case "models_refresh": {
           provider(op.provider);
           const result = await models.refresh({
@@ -255,9 +278,10 @@ export async function openAssistant({
             throw Error(
               "Unable to refresh models. Check the provider connection.",
             );
-          return models
-            .getModels(op.provider)
-            .map((m) => ({ id: m.id, name: m.name }));
+          return (await availableModels(op.provider)).map((m) => ({
+            id: m.id,
+            name: m.name,
+          }));
         }
         case "auth_status": {
           provider(op.provider);
@@ -275,6 +299,14 @@ export async function openAssistant({
         }
         case "settings_save": {
           const next = { model: model(op.model) };
+          const authentication = await models.checkAuth(next.model.provider, {
+            signal: AbortSignal.timeout(10_000),
+          });
+          if (!authentication)
+            throw Error(
+              "Connect this provider before selecting a default model.",
+            );
+          await requireAvailableModel(next.model);
           await writeJson(settingsFile, next);
           settings = next;
           return settings;
@@ -311,7 +343,9 @@ export async function openAssistant({
           await models.logout(op.provider);
           return null;
         case "conversation_create": {
-          const selected = model(op.model ?? settings.model ?? {});
+          const selected = await requireAvailableModel(
+            model(op.model ?? settings.model ?? {}),
+          );
           const result = await harness.createConversation(
             { ownership: { kind: "ownerless" }, agent: { model: selected } },
             context,
