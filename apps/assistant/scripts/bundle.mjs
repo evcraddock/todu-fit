@@ -46,27 +46,21 @@ if (!bytes || createHash("sha256").update(bytes).digest("hex") !== expected) {
   await fs.writeFile(archivePath, bytes);
 }
 const extraction = path.join(cache, distribution);
+const binaryMember = platform === "win32" ? "node.exe" : "bin/node";
 try {
-  await fs.access(extraction);
-} catch {
-  if (platform === "win32")
-    execFileSync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "Expand-Archive -LiteralPath $env:FIT_NODE_ARCHIVE -DestinationPath $env:FIT_NODE_CACHE -Force",
-      ],
-      {
-        env: {
-          ...process.env,
-          FIT_NODE_ARCHIVE: archivePath,
-          FIT_NODE_CACHE: cache,
-        },
-      },
-    );
-  else execFileSync("tar", ["-xzf", archivePath, "-C", cache]);
+  await fs.access(path.join(extraction, binaryMember));
+  await fs.access(path.join(extraction, "LICENSE"));
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+  // Windows ships bsdtar, which can also read the Node distribution's ZIP.
+  execFileSync(platform === "win32" ? "tar.exe" : "tar", [
+    "-xf",
+    archivePath,
+    "-C",
+    cache,
+    distribution + "/" + binaryMember,
+    distribution + "/LICENSE",
+  ]);
 }
 const staging = output + "." + randomUUID();
 await fs.mkdir(staging, { recursive: true });
@@ -82,7 +76,7 @@ try {
     { cwd: staging, stdio: "inherit", shell: platform === "win32" },
   );
   await fs.copyFile(
-    path.join(extraction, platform === "win32" ? "node.exe" : "bin/node"),
+    path.join(extraction, binaryMember),
     path.join(staging, platform === "win32" ? "node.exe" : "node"),
   );
   await fs.copyFile(
