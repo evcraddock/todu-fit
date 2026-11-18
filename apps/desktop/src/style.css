@@ -1932,20 +1932,95 @@ a {
 }
 
 .ai-settings {
-  max-width: 760px;
+  max-width: 660px;
+  padding-top: 24px;
 }
-.ai-settings > .actions {
-  margin: 12px 0 24px;
-  flex-wrap: wrap;
+.ai-section {
+  padding: 8px 0 28px;
+}
+.ai-section + .ai-section {
+  border-top: 1px solid var(--border);
+  padding-top: 26px;
+}
+.ai-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.ai-section-heading h2 {
+  margin: 0;
+}
+.ai-section-heading p {
+  margin: 7px 0 0;
+}
+.ai-settings .field {
+  max-width: 440px;
+  margin: 0 0 14px;
 }
 .ai-settings select {
   width: 100%;
+  min-width: 0;
+}
+.ai-connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-connection-status > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ai-connection-status.connected {
+  color: var(--focus);
+}
+.ai-account {
+  max-width: 440px;
+}
+.ai-auth-description {
+  margin: 12px 0;
+}
+.ai-account > button + button {
+  margin-left: 8px;
+}
+.ai-model-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 480px;
+}
+.ai-model-control select {
+  flex: 1;
+}
+.ai-refresh {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ai-save-status {
+  min-height: 18px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 .ai-login {
-  padding: 16px;
-  margin: 20px 0;
+  padding: 18px;
+  margin: 0 0 24px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
+  max-width: 480px;
+}
+.ai-login h3 {
+  margin-top: 0;
 }
 .ai-login form {
   margin: 16px 0;

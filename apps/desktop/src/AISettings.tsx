@@ -47,6 +47,8 @@ export function AISettings() {
   const [settings, setSettings] = useState<Settings>();
   const [providerId, setProvider] = useState("");
   const [modelId, setModel] = useState("");
+  const [authMethod, setAuthMethod] = useState("");
+  const [changingConnection, setChangingConnection] = useState(false);
   const [models, setModels] = useState<Model[]>([]);
   const [login, setLogin] = useState<Login | null>(null);
   const [auth, setAuth] = useState<string>("");
@@ -55,6 +57,11 @@ export function AISettings() {
   const [busy, setBusy] = useState(false);
   const provider = settings?.providers.find((p) => p.id === providerId);
   const pending = login?.status === "pending";
+  const method =
+    provider?.methods.find((m) => m.id === authMethod) ??
+    provider?.methods.find((m) => m.id === "oauth") ??
+    provider?.methods[0];
+  const connected = auth.startsWith("Connected");
   const loadSettings = async () => {
     const value = await request<Settings>({ type: "settings" });
     setSettings(value);
@@ -119,6 +126,7 @@ export function AISettings() {
         setLogin(value);
         if (value?.status === "pending") timer = setTimeout(poll, 300);
         else if (value?.status === "done") {
+          setChangingConnection(false);
           setMessage("Connected.");
           await loadSettings();
         }
@@ -148,69 +156,127 @@ export function AISettings() {
     run(() => request({ type: "login_open_link", url }));
   return (
     <article className="settings-panel ai-settings">
-      <h2>AI assistant</h2>
-      <p className="muted">
-        Choose a provider and default model for assistant conversations.
-      </p>
       <LoadError error={error} />
       {!settings ? (
         <p role="status">Loading providers…</p>
       ) : (
         <>
-          <Field label="Provider">
-            <select
-              aria-label="Provider"
-              value={providerId}
-              disabled={busy || pending}
-              onChange={(e) => {
-                setProvider(e.target.value);
-                setModel("");
-                setMessage("");
-                setError("");
-              }}
-            >
-              <option value="">Select a provider</option>
-              {[...settings.providers]
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-            </select>
-          </Field>
-          {provider && (
-            <>
-              <p role="status" className="settings-note">
-                {auth || "Checking connection…"}
-              </p>
-              {!settings.secureStorage && (
-                <p role="alert">
-                  Secure credential storage is unavailable. Unlock your system
-                  keychain to sign in. Providers configured through the
-                  environment remain available.
-                </p>
+          <section className="ai-section" aria-labelledby="ai-connection-title">
+            <div className="ai-section-heading">
+              <h2 id="ai-connection-title">Connection</h2>
+              {provider && (
+                <span
+                  role="status"
+                  className={`ai-connection-status${connected ? " connected" : ""}`}
+                >
+                  <span aria-hidden="true" />
+                  {connected
+                    ? "Connected"
+                    : auth
+                      ? "Not connected"
+                      : "Checking…"}
+                </span>
               )}
-              <div className="actions">
-                {provider.methods.map((method) => (
+            </div>
+            <Field label="Provider">
+              <select
+                aria-label="Provider"
+                value={providerId}
+                disabled={busy || pending}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setProvider(next);
+                  setModel(
+                    settings.model?.provider === next
+                      ? settings.model.modelId
+                      : "",
+                  );
+                  setAuthMethod("");
+                  setChangingConnection(false);
+                  setMessage("");
+                  setError("");
+                }}
+              >
+                <option value="">Select a provider</option>
+                {[...settings.providers]
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            {provider && (
+              <div className="ai-account">
+                {(!connected || changingConnection) && method && (
+                  <>
+                    {provider.methods.length > 1 ? (
+                      <Field label="Sign-in method">
+                        <select
+                          aria-label="Sign-in method"
+                          value={method.id}
+                          disabled={busy || pending}
+                          onChange={(e) => setAuthMethod(e.target.value)}
+                        >
+                          {provider.methods.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                    ) : (
+                      <p className="muted ai-auth-description">
+                        {method.label}
+                      </p>
+                    )}
+                    <button
+                      className="primary"
+                      disabled={busy || pending || !settings.secureStorage}
+                      onClick={() =>
+                        run(async () => {
+                          setLogin(
+                            await request<Login>({
+                              type: "login_start",
+                              provider: providerId,
+                              method: method.id,
+                            }),
+                          );
+                        })
+                      }
+                    >
+                      {pending
+                        ? "Signing in…"
+                        : method.id === "oauth"
+                          ? "Sign in"
+                          : "Connect"}
+                    </button>
+                  </>
+                )}
+                {connected && (
+                  <p className="muted ai-auth-description">
+                    {auth.replace(/^Connected[ ·]*/, "") || provider.name}
+                  </p>
+                )}
+                {connected &&
+                  !changingConnection &&
+                  provider.methods.length > 0 && (
+                    <button
+                      disabled={busy || pending}
+                      onClick={() => setChangingConnection(true)}
+                    >
+                      Change connection
+                    </button>
+                  )}
+                {changingConnection && !pending && (
                   <button
-                    key={method.id}
-                    disabled={busy || pending || !settings.secureStorage}
-                    onClick={() =>
-                      run(async () => {
-                        setLogin(
-                          await request<Login>({
-                            type: "login_start",
-                            provider: providerId,
-                            method: method.id,
-                          }),
-                        );
-                      })
-                    }
+                    disabled={busy}
+                    onClick={() => setChangingConnection(false)}
                   >
-                    {method.label}
+                    Cancel
                   </button>
-                ))}
+                )}
                 {provider.stored && (
                   <button
                     disabled={busy || pending}
@@ -218,22 +284,26 @@ export function AISettings() {
                       run(async () => {
                         await request({ type: "logout", provider: providerId });
                         await loadSettings();
-                        setMessage("Saved credentials removed.");
+                        setMessage("Signed out.");
                       })
                     }
                   >
                     Sign out
                   </button>
                 )}
+                {!provider.methods.length && !connected && (
+                  <p className="muted">
+                    Uses this provider’s environment or system credentials.
+                  </p>
+                )}
+                {!settings.secureStorage && !connected && (
+                  <p role="alert">
+                    Unlock your system keychain to save a connection.
+                  </p>
+                )}
               </div>
-              {!provider.methods.length && (
-                <p className="muted">
-                  This provider uses credentials from its environment or system
-                  configuration.
-                </p>
-              )}
-            </>
-          )}
+            )}
+          </section>
           {pending && (
             <section className="ai-login" aria-label="Provider sign-in">
               <h3>
@@ -297,41 +367,51 @@ export function AISettings() {
             </section>
           )}
           {login?.error && <LoadError error={login.error} />}
-          {provider && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  await request({
-                    type: "settings_save",
-                    model: { provider: providerId, modelId },
+          <section
+            className="ai-section ai-model-section"
+            aria-labelledby="ai-model-title"
+          >
+            <div className="ai-section-heading">
+              <div>
+                <h2 id="ai-model-title">Default model</h2>
+                <p className="muted">Used for new conversations.</p>
+              </div>
+            </div>
+            <div className="ai-model-control">
+              <select
+                aria-label="Default model"
+                value={modelId}
+                disabled={busy || pending || !provider}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (!next) return;
+                  void run(async () => {
+                    await request({
+                      type: "settings_save",
+                      model: { provider: providerId, modelId: next },
+                    });
+                    setModel(next);
+                    await loadSettings();
+                    setMessage("Model saved.");
                   });
-                  await loadSettings();
-                  setMessage("Default model saved.");
-                });
-              }}
-            >
-              <Field label="Default model">
-                <select
-                  aria-label="Default model"
-                  value={modelId}
-                  required
-                  disabled={busy || pending}
-                  onChange={(e) => setModel(e.target.value)}
-                >
-                  <option value="">Select a model</option>
-                  {[...models]
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                </select>
-              </Field>
+                }}
+              >
+                <option value="">
+                  {provider ? "Select a model" : "Choose a provider first"}
+                </option>
+                {[...models]
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+              </select>
               <button
-                type="button"
-                disabled={busy || pending}
+                className="ai-refresh"
+                aria-label="Refresh models"
+                title="Refresh models"
+                disabled={busy || pending || !provider}
                 onClick={() =>
                   run(async () => {
                     setModels(
@@ -340,33 +420,30 @@ export function AISettings() {
                         provider: providerId,
                       }),
                     );
-                    setMessage("Model list refreshed.");
+                    setMessage("Models refreshed.");
                   })
                 }
               >
-                Refresh models
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M20 7v5h-5M4 17v-5h5" />
+                  <path d="M6.1 6.1A8 8 0 0 1 19.8 10M4.2 14a8 8 0 0 0 13.7 3.9" />
+                </svg>
               </button>
-              <button
-                className="primary"
-                disabled={
-                  busy ||
-                  pending ||
-                  !modelId ||
-                  (settings.model?.provider === providerId &&
-                    settings.model?.modelId === modelId)
-                }
-              >
-                Save model
-              </button>
-            </form>
-          )}
-          <p role="status" className="settings-note">
-            {message}
-          </p>
-          <p className="muted">
-            Settings and saved conversations are stored on this computer.
-            Conversations resume when you reopen todufit.
-          </p>
+            </div>
+            <p role="status" className="ai-save-status">
+              {busy ? "Working…" : message}
+            </p>
+          </section>
         </>
       )}
     </article>

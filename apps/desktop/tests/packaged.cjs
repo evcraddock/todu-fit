@@ -231,9 +231,27 @@ async function main() {
       await page.getByLabel("Provider", { exact: true }).inputValue(),
       "openai",
     );
+    const alternateModel = models.find(
+      (model) => model.id !== selectedModel.modelId,
+    ).id;
     await page
-      .getByLabel("Default model", { exact: true })
-      .selectOption(selectedModel.modelId);
+      .getByRole("combobox", { name: "Default model", exact: true })
+      .selectOption(alternateModel);
+    await page.getByText("Model saved.", { exact: true }).waitFor();
+    assert.equal(
+      (await assistant({ type: "settings" })).model.modelId,
+      alternateModel,
+    );
+    await page
+      .getByLabel("Provider", { exact: true })
+      .selectOption("anthropic");
+    await page.getByLabel("Provider", { exact: true }).selectOption("openai");
+    await page.waitForFunction(
+      (expected) =>
+        document.querySelector('select[aria-label="Default model"]')?.value ===
+        expected,
+      alternateModel,
+    );
     await page.screenshot({ path: path.join(results, "ai-settings.png") });
     await nav("Dishes");
     await page
