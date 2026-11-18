@@ -38,15 +38,21 @@ const memoryVault = () => ({
 });
 
 test("worker survives client exit, retains one owner, and resumes after process failure", async (t) => {
-  const directory = await temporary(t);
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "fit-worker-"));
   const fixture = fileURLToPath(
     new URL("./service-child.mjs", import.meta.url),
   );
   const children = [];
   t.after(async () => {
-    for (const child of children)
-      if (child.exitCode === null && child.signalCode === null) child.kill();
-    await pause(150);
+    await Promise.all(
+      children.map(async (child) => {
+        if (child.exitCode !== null || child.signalCode !== null) return;
+        const exited = new Promise((resolve) => child.once("exit", resolve));
+        child.kill();
+        await exited;
+      }),
+    );
+    await fs.rm(directory, { recursive: true, force: true, maxRetries: 5 });
   });
   const launch = () => {
     const child = spawn(process.execPath, [fixture, directory], {
