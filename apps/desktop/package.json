@@ -35,12 +35,17 @@
           "fit",
           "fit.exe"
         ]
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
       }
     ],
     "artifactName": "todu-fit-desktop-${version}-${os}-${arch}.${ext}",
     "linux": {
       "target": "AppImage",
-      "category": "Utility"
+      "category": "Utility",
+      "icon": "build/icon.png"
     },
     "mac": {
       "target": "dmg",
@@ -51,11 +56,13 @@
       ],
       "extendInfo": {
         "NSLocalNetworkUsageDescription": "Todu Fit uses its background daemon to sync your nutrition data with your configured server on the local network."
-      }
+      },
+      "icon": "build/icon.icns"
     },
     "win": {
       "target": "nsis",
-      "signAndEditExecutable": false
+      "icon": "build/icon.ico",
+      "signExecutable": false
     },
     "afterSign": "scripts/verify-mac-signing.cjs"
   },
