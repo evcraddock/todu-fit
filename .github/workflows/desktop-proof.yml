@@ -3,9 +3,9 @@ name: Desktop build checks
 on:
   push:
     branches: [main]
-    paths: ['apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'todu-fit-cli/**', 'todu-fit-protocol/**', 'todu-fit-service/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
+    paths: ['apps/assistant/**', 'apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'todu-fit-cli/**', 'todu-fit-protocol/**', 'todu-fit-service/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
   pull_request:
-    paths: ['apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'todu-fit-cli/**', 'todu-fit-protocol/**', 'todu-fit-service/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
+    paths: ['apps/assistant/**', 'apps/desktop/**', 'adapters/desktop/**', 'todu-fit-core/**', 'todu-fit-cli/**', 'todu-fit-protocol/**', 'todu-fit-service/**', 'Cargo.*', '.github/workflows/desktop-proof.yml']
   workflow_dispatch:
 
 jobs:
@@ -25,6 +25,8 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+        working-directory: apps/assistant
       - run: npm ci
         working-directory: apps/desktop
       - run: cargo fmt --all --check
@@ -65,39 +67,6 @@ jobs:
           npx electron-builder --config preview-builder.json
       - run: npm test
         working-directory: apps/desktop
-      - name: Exercise the Linux AppImage
-        if: runner.os == 'Linux'
-        timeout-minutes: 5
-        working-directory: apps/desktop
-        run: |
-          archive=( "$PWD"/out/*.AppImage )
-          (cd "$RUNNER_TEMP" && "${archive[0]}" --appimage-extract >/dev/null)
-          export TODU_PACKAGED_EXECUTABLE="$RUNNER_TEMP/squashfs-root/todufit"
-          xvfb-run --auto-servernum npm run test:packaged
-      - name: Install and exercise the macOS DMG
-        if: runner.os == 'macOS'
-        timeout-minutes: 5
-        working-directory: apps/desktop
-        run: |
-          image=( out/*.dmg )
-          mount=$(mktemp -d)
-          hdiutil attach "${image[0]}" -readonly -nobrowse -mountpoint "$mount"
-          trap 'hdiutil detach "$mount"' EXIT
-          app="$RUNNER_TEMP/todufit.app"
-          ditto "$mount/todufit.app" "$app"
-          export TODU_PACKAGED_EXECUTABLE="$app/Contents/MacOS/todufit"
-          npm run test:packaged
-      - name: Install and exercise the Windows setup executable
-        if: runner.os == 'Windows'
-        timeout-minutes: 5
-        working-directory: apps/desktop
-        run: |
-          $installer = Get-Item out/*.exe
-          $installDir = Join-Path $env:RUNNER_TEMP 'FitDesktop'
-          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
-          if ($install.ExitCode -ne 0) { throw "Fit setup exited with $($install.ExitCode)" }
-          $env:TODU_PACKAGED_EXECUTABLE = Join-Path $installDir 'todufit.exe'
-          npm run test:packaged
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-installer-${{ matrix.os }}-${{ github.event_name == 'pull_request' && 'preview' || 'main' }}

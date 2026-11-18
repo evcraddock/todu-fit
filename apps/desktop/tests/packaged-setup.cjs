@@ -47,6 +47,12 @@ async function main() {
     const page = await app.firstWindow({ timeout: 30000 });
     page.setDefaultTimeout(30000);
     page.on("pageerror", (e) => errors.push(e.message));
+    // Let the detached startup finish before tests close this short-lived window.
+    // Cleanup must never race a launcher still copying its private runtime.
+    await page.evaluate(async () => {
+      const result = await window.fit.assistant({ type: "settings" });
+      if (!result.ok) throw Error(result.error);
+    });
     console.log(`Opened packaged setup window: ${name}`);
     return page;
   }
@@ -64,7 +70,11 @@ async function main() {
       exited,
       application.close().then(() => exited),
     ]);
-    assert.equal(code, 0, `Electron exited with code ${code}, signal ${signal}`);
+    assert.equal(
+      code,
+      0,
+      `Electron exited with code ${code}, signal ${signal}`,
+    );
   }
   async function bridge(name) {
     return openApplicationBridge(
@@ -165,6 +175,9 @@ async function main() {
       if (app) await close();
     } finally {
       for (const data of new Set(stores)) {
+        await require("./assistant-cleanup.cjs").stopWorker(
+          path.join(root, `${path.basename(data)}-ui`, "shared-assistant"),
+        );
         try {
           process.kill(
             Number(await fs.readFile(path.join(data, "daemon.pid"), "utf8")),

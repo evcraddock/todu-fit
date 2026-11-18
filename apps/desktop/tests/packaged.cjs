@@ -3,6 +3,7 @@ const { _electron: electron } = require("playwright");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { once } = require("node:events");
 const { fixture } = require("./daemon-fixture.cjs");
 async function main() {
   const base = path.resolve(__dirname, "..");
@@ -37,6 +38,27 @@ async function main() {
     console.log("Opened packaged workflow window");
     page.setDefaultTimeout(30000);
     page.on("pageerror", (e) => errors.push(e.message));
+  };
+  const close = async () => {
+    const application = app;
+    app = undefined;
+    const child = application.process();
+    const exited =
+      child.exitCode === null && child.signalCode === null
+        ? once(child, "exit", { signal: AbortSignal.timeout(10000) })
+        : Promise.resolve([child.exitCode, child.signalCode]);
+    // Detached services can keep Playwright's transport open on Linux.
+    // The client's actual process exit is the lifecycle assertion.
+    const [code, signal] = await Promise.race([
+      exited,
+      application.close().then(() => exited),
+    ]);
+    assert.equal(
+      code,
+      0,
+      `Electron exited with code ${code}, signal ${signal}`,
+    );
+    console.log("Closed packaged client; independent worker retained");
   };
   const nav = async (name) =>
     page
@@ -226,8 +248,23 @@ async function main() {
     });
     await nav("Dishes");
     await page.screenshot({ path: path.join(results, "dishes.png") });
-    await app.close();
+    const { request: workerRequest } = await import(
+      "../../assistant/src/protocol.mjs"
+    );
+    const workerDirectory = path.join(f.root, "desktop", "shared-assistant");
+    const workerBefore = await workerRequest(workerDirectory, {
+      type: "worker_status",
+    });
+    await close();
     app = undefined;
+    assert.equal(
+      (await workerRequest(workerDirectory, { type: "worker_status" })).pid,
+      workerBefore.pid,
+    );
+    assert.deepEqual(
+      (await workerRequest(workerDirectory, { type: "settings" })).model,
+      selectedModel,
+    );
     await f.cli("dish", "create", "CLI while desktop closed");
     await launch();
     assert.deepEqual(
@@ -351,7 +388,7 @@ async function main() {
     await page.screenshot({ path: path.join(results, "water.png") });
     assert.deepEqual(errors, []);
     const versions = await app.evaluate(() => process.versions);
-    await app.close();
+    await close();
     app = undefined;
     const evidence = {
       passed: true,
@@ -374,7 +411,10 @@ async function main() {
     }
     throw e;
   } finally {
-    if (app) await app.close();
+    if (app) await close();
+    await require("./assistant-cleanup.cjs").stopWorker(
+      path.join(f.root, "desktop", "shared-assistant"),
+    );
     await f.close();
   }
 }

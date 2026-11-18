@@ -25,3 +25,8 @@ web/tsconfig.node.tsbuildinfo
 /apps/desktop/test-results/
 
 /apps/desktop/daemon/
+
+# Shared assistant generated runtimes
+apps/assistant/node_modules/
+apps/assistant/.runtime-cache/
+apps/desktop/assistant-worker/

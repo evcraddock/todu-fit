@@ -9,11 +9,8 @@ import {
   fauxAssistantMessage,
 } from "@earendil-works/pi-ai/providers/faux";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
-import {
-  openAssistant,
-  credentialStore,
-} from "../electron/assistant/runtime.mjs";
-import { credentialVault } from "../electron/assistant/credentials.cjs";
+import { openAssistant, credentialStore } from "../src/runtime.mjs";
+import { credentialVault } from "../../desktop/electron/assistant/credentials.cjs";
 
 async function fixture(t) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "fit-assistant-"));
@@ -438,7 +435,7 @@ test("conversations share the injected tool registry without sharing their trans
 });
 
 test("dynamic catalog cache survives reopening and deletion", async (t) => {
-  const { modelCatalog } = await import("../electron/assistant/catalog.mjs");
+  const { modelCatalog } = await import("../src/catalog.mjs");
   const f = await fixture(t);
   let store = await modelCatalog(f.directory);
   const entry = {
