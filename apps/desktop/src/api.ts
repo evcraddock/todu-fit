@@ -88,6 +88,9 @@ export type Operation = { type: string; [key: string]: unknown };
 declare global {
   interface Window {
     fit: {
+      assistant(
+        operation: Operation,
+      ): Promise<{ ok: true; value: unknown } | { ok: false; error: string }>;
       request(
         operation: Operation,
         requestId?: string,

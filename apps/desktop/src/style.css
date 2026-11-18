@@ -1930,3 +1930,23 @@ a {
   font-size: 13px;
   font-weight: 500;
 }
+
+.ai-settings {
+  max-width: 760px;
+}
+.ai-settings > .actions {
+  margin: 12px 0 24px;
+  flex-wrap: wrap;
+}
+.ai-settings select {
+  width: 100%;
+}
+.ai-login {
+  padding: 16px;
+  margin: 20px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ai-login form {
+  margin: 16px 0;
+}

@@ -52,6 +52,18 @@ async function main() {
     }, op);
   try {
     await launch();
+    const assistant = async (operation) =>
+      page.evaluate(async (operation) => {
+        const result = await window.fit.assistant(operation);
+        if (!result.ok) throw Error(result.error);
+        return result.value;
+      }, operation);
+    const providers = await assistant({ type: "settings" });
+    assert.ok(providers.providers.some((p) => p.id === "openai"));
+    const models = await assistant({ type: "models", provider: "openai" });
+    const selectedModel = { provider: "openai", modelId: models[0].id };
+    await assistant({ type: "settings_save", model: selectedModel });
+    const savedConversation = await assistant({ type: "conversation_create" });
     await page.getByRole("button", { name: "New dish", exact: true }).click();
     await page
       .getByLabel("Dish name", { exact: true })
@@ -78,6 +90,7 @@ async function main() {
     assert.match(await f.cli("dish", "show", dish.id), /Packaged lentil soup/);
     assert.equal(await page.evaluate(() => typeof window.require), "undefined");
     assert.deepEqual(await page.evaluate(() => Object.keys(window.fit)), [
+      "assistant",
       "request",
     ]);
     const invalid = await page.evaluate(() =>
@@ -203,6 +216,26 @@ async function main() {
     app = undefined;
     await f.cli("dish", "create", "CLI while desktop closed");
     await launch();
+    assert.deepEqual(
+      (await assistant({ type: "settings" })).model,
+      selectedModel,
+    );
+    assert.ok(
+      (await assistant({ type: "conversation_list" })).items.some(
+        (c) => c.id === savedConversation.id,
+      ),
+    );
+    await nav("Settings");
+    await page.getByRole("tab", { name: "AI", exact: true }).click();
+    assert.equal(
+      await page.getByLabel("Provider", { exact: true }).inputValue(),
+      "openai",
+    );
+    await page
+      .getByLabel("Default model", { exact: true })
+      .selectOption(selectedModel.modelId);
+    await page.screenshot({ path: path.join(results, "ai-settings.png") });
+    await nav("Dishes");
     await page
       .getByRole("heading", { name: "CLI while desktop closed", exact: true })
       .waitFor();

@@ -1,4 +1,12 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  utilityProcess,
+  safeStorage,
+} = require("electron");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { openApplicationBridge } = require("./application-bridge.cjs");
@@ -10,7 +18,8 @@ if (process.env.TODU_FIT_PROOF_DATA) {
     throw new Error("Test data path must be absolute");
   app.setPath("userData", process.env.TODU_FIT_PROOF_DATA);
 }
-let bridge,
+let assistant,
+  bridge,
   window,
   shutdown,
   readyToQuit = false;
@@ -38,6 +47,29 @@ else {
         logPath: path.join(app.getPath("userData"), "daemon-startup.log"),
       });
       bridge = openApplicationBridge(endpoint);
+      const { createAssistantHost } = require("./assistant/host.cjs");
+      assistant = createAssistantHost({
+        directory: path.join(app.getPath("userData"), "assistant"),
+        utilityProcess,
+        safeStorage,
+        shell,
+      });
+      // Assistant failure must not prevent normal nutrition workflows.
+      assistant.start().catch(() => {});
+      ipcMain.handle("assistant:request", async (event, operation) => {
+        if (
+          event.sender !== window?.webContents ||
+          event.senderFrame !== window.webContents.mainFrame ||
+          event.senderFrame.url !== pageUrl
+        )
+          return { ok: false, error: "Request denied" };
+        try {
+          return { ok: true, value: await assistant.request(operation) };
+        } catch (error) {
+          return { ok: false, error: error.message };
+        }
+      });
+
       ipcMain.handle(
         "application:request",
         async (event, operation, requestId) => {
@@ -105,8 +137,7 @@ app.on("before-quit", (event) => {
   if (readyToQuit || !bridge) return;
   event.preventDefault();
   if (shutdown) return;
-  shutdown = bridge
-    .close()
+  shutdown = Promise.all([bridge.close(), assistant?.close()])
     .catch(() => {
       process.exitCode = 1;
     })
