@@ -93,6 +93,7 @@ fn failure(e: impl Into<Box<dyn std::error::Error>>) -> api::ApiError {
     } else if let Some(e) = e.downcast_ref::<core::IdentityError>() {
         match e {
             core::IdentityError::NotInitialized => Code::NotInitialized,
+            core::IdentityError::NutritionTargetsShared => Code::InvalidInput,
             core::IdentityError::AlreadyInitialized | core::IdentityError::AlreadyInGroup(_) => {
                 Code::Conflict
             }
@@ -718,6 +719,18 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                 water.recent_entries(*limit).map_err(failure)?,
             )?))
         }
+        Op::NutritionTargetsGet => Ok(V::NutritionTargets(crate::targets::personal(&identity)?)),
+        Op::NutritionTargetsSave { profile, expected } => {
+            crate::targets::save(&identity, profile, expected.as_ref()).map(V::NutritionTargets)
+        }
+        Op::NutritionTargetsShare {
+            group_id,
+            share,
+            expected,
+        } => crate::targets::share(&identity, group_id, *share, expected).map(V::NutritionTargets),
+        Op::GroupNutritionTargets { group_id } => {
+            crate::targets::members(&identity, group_id).map(V::GroupNutritionTargets)
+        }
         Op::WaterSettingsGet => Ok(V::WaterSettings(convert(
             water.get_settings().map_err(failure)?,
         )?)),
@@ -737,9 +750,11 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
             }
             .apply_to(&mut settings);
             settings.validate().map_err(invalid)?;
-            Ok(V::WaterSettings(convert(
-                water.save_settings(&settings).map_err(failure)?,
-            )?))
+            let saved = water.save_settings(&settings).map_err(failure)?;
+            if fields.goal.is_some() {
+                crate::targets::publish_water_goal(path)?;
+            }
+            Ok(V::WaterSettings(convert(saved)?))
         }
         Op::WaterDelete { id } => {
             let entry = water

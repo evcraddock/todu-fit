@@ -2,7 +2,9 @@
 //! No CLI parser, terminal output, transport, or platform service lifecycle.
 mod application;
 pub mod store;
+mod targets;
 pub use application::{execute, Context};
+pub use targets::publish_water_goal;
 use todu_fit_protocol as api;
 
 pub fn error(code: api::ErrorCode, message: impl Into<String>) -> api::ApiError {

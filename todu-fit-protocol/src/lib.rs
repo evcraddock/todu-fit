@@ -260,6 +260,19 @@ pub enum Operation {
         from: NaiveDate,
         to: NaiveDate,
     },
+    NutritionTargetsGet,
+    NutritionTargetsSave {
+        profile: TargetProfile,
+        expected: Option<TargetProfile>,
+    },
+    NutritionTargetsShare {
+        group_id: String,
+        share: bool,
+        expected: TargetProfile,
+    },
+    GroupNutritionTargets {
+        group_id: String,
+    },
     WaterSettingsGet,
     WaterSettingsUpdate {
         fields: HydrationFields,
@@ -290,6 +303,8 @@ impl Operation {
                 | Self::WaterToday
                 | Self::WaterRecent { .. }
                 | Self::WaterHistory { .. }
+                | Self::NutritionTargetsGet
+                | Self::GroupNutritionTargets { .. }
                 | Self::WaterSettingsGet
                 | Self::Status
                 | Self::Changes { .. }
@@ -386,6 +401,8 @@ pub enum Value {
     Meal(Meal),
     Meals(Vec<Meal>),
     Shopping(Shopping),
+    NutritionTargets(PersonalTargets),
+    GroupNutritionTargets(Vec<TargetProfile>),
     WaterEntry(WaterEntry),
     WaterEntries(Vec<WaterEntry>),
     WaterSettings(HydrationSettings),
@@ -400,4 +417,42 @@ pub struct SetupStatus {
     pub state: String,
     pub message: String,
     pub completed_documents: usize,
+}
+
+/// Units are part of the metric so clients never have to infer them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetMetric {
+    CaloriesKcal,
+    ProteinG,
+    CarbohydratesG,
+    FatG,
+    SaturatedFatG,
+    FiberG,
+    AddedSugarG,
+    SodiumMg,
+    WaterFlOz,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DailyTarget {
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    /// Informational only; reference bounds do not change the goal.
+    pub reference_min: Option<f64>,
+    pub reference_max: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetProfile {
+    pub name: String,
+    pub targets: std::collections::BTreeMap<TargetMetric, DailyTarget>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PersonalTargets {
+    pub profile: Option<TargetProfile>,
+    pub shared_groups: std::collections::BTreeSet<String>,
 }

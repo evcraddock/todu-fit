@@ -13,3 +13,4 @@ uuid = { version = "1", features = ["v4", "serde"] }
 automerge = "0.12"
 rusqlite = { version = "0.32", features = ["bundled"] }
 tempfile = "3"
+sha2 = "0.10"

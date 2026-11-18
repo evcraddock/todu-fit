@@ -2193,3 +2193,13 @@ a {
 }
 .dish-chat-header .dish-chat-toggle { flex: 1; }
 .dish-chat-clear { margin: 4px 8px; }
+
+.nutrition-editor { border: 0; margin: 0; padding: 0; display: grid; gap: 16px; max-width: 42rem; }
+.nutrition-editor table { width: 100%; border-collapse: collapse; }
+.nutrition-editor th { text-align: left; font-weight: 500; }
+.nutrition-editor td, .nutrition-editor th { padding: 4px 8px 4px 0; }
+.nutrition-editor td { width: 24%; }
+.nutrition-editor td input { width: 100%; min-width: 0; }
+.nutrition-editor small { color: var(--muted); }
+.target-share, .shared-targets div { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-block: 6px; max-width: 42rem; }
+.shared-targets dd { margin: 0; }

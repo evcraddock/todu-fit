@@ -52,6 +52,11 @@ pub struct Identity {
     storage: MultiDocStorage,
 }
 
+/// Personal-document key for an explicit nutrition-sharing grant.
+pub fn nutrition_share_key(group: &DocumentId) -> String {
+    format!("nutrition_share_{}", group.to_bs58check())
+}
+
 impl Identity {
     /// Create a new identity manager with the given storage.
     pub fn new(storage: MultiDocStorage) -> Self {
@@ -172,7 +177,18 @@ impl Identity {
             .map_err(IdentityError::StorageError)?
             .ok_or(IdentityError::NotInitialized)?;
 
-        let bytes = self.serialize_identity_document(doc)?;
+        let bytes = self
+            .storage
+            .load(&root_id)
+            .map_err(IdentityError::StorageError)?
+            .ok_or(IdentityError::DocumentNotFound(root_id))?;
+        let mut document =
+            AutoCommit::load(&bytes).map_err(|e| IdentityError::AutomergeError(e.to_string()))?;
+        let json = serde_json::to_string(doc).map_err(IdentityError::SerializationError)?;
+        document
+            .put(automerge::ROOT, "data", json)
+            .map_err(|e| IdentityError::AutomergeError(e.to_string()))?;
+        let bytes = document.save();
         self.storage
             .save(&root_id, &bytes)
             .map_err(IdentityError::StorageError)?;
@@ -280,6 +296,21 @@ impl Identity {
         }
 
         let mut identity = self.load_identity()?;
+        let root = self.root_doc_id()?.ok_or(IdentityError::NotInitialized)?;
+        let bytes = self
+            .storage
+            .load(&root)
+            .map_err(IdentityError::StorageError)?
+            .ok_or(IdentityError::DocumentNotFound(root))?;
+        let doc =
+            AutoCommit::load(&bytes).map_err(|e| IdentityError::AutomergeError(e.to_string()))?;
+        if doc
+            .get(automerge::ROOT, nutrition_share_key(group_doc_id))
+            .map_err(|e| IdentityError::AutomergeError(e.to_string()))?
+            .is_some()
+        {
+            return Err(IdentityError::NutritionTargetsShared);
+        }
         identity.remove_group(group_doc_id);
         self.save_identity(&identity)?;
 
@@ -528,6 +559,7 @@ pub enum IdentityError {
     DocumentNotFound(DocumentId),
     /// Already a member of this group.
     AlreadyInGroup(DocumentId),
+    NutritionTargetsShared,
     /// Serialization error.
     SerializationError(serde_json::Error),
     /// Stored state is invalid or incomplete.
@@ -545,6 +577,10 @@ impl std::fmt::Display for IdentityError {
             IdentityError::DocumentNotFound(id) => {
                 write!(f, "Document not found: {}", id.to_bs58check())
             }
+            IdentityError::NutritionTargetsShared => write!(
+                f,
+                "Stop sharing your nutrition targets with this group before leaving."
+            ),
             IdentityError::AlreadyInGroup(id) => {
                 write!(f, "Already a member of group: {}", id.to_bs58check())
             }
