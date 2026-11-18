@@ -56,7 +56,7 @@ try {
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "Expand-Archive -LiteralPath $env.FIT_NODE_ARCHIVE -DestinationPath $env.FIT_NODE_CACHE -Force",
+        "Expand-Archive -LiteralPath $env:FIT_NODE_ARCHIVE -DestinationPath $env:FIT_NODE_CACHE -Force",
       ],
       {
         env: {
