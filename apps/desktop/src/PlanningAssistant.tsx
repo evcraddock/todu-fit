@@ -35,6 +35,7 @@ type Session = {
   messages: Turn[];
   meals: Proposal[];
   data?: Context;
+  pending?: { id: number; requestId: string; content: string };
   approval?: { id: string; operation: Operation };
 };
 export function PlanningAssistant({
@@ -60,8 +61,10 @@ export function PlanningAssistant({
       },
   );
   const [input, setInput] = useState(""),
-    [busy, setBusy] = useState(false),
+    [working, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const busy = working || !!session.pending;
   const end = shift(week, 6);
   const active = useRef(true),
     running = useRef(false);
@@ -76,11 +79,12 @@ export function PlanningAssistant({
     if (active.current) setSession(next);
   }
   async function send() {
-    if (!input.trim() || running.current || session.approval) return;
+    if (!input.trim() || running.current || session.approval || session.pending)
+      return;
     running.current = true;
     setBusy(true);
     setError("");
-    let messages = session.messages;
+    const messages = session.messages;
     try {
       const { model } = await ai<{ model: unknown }>({ type: "settings" });
       if (!model) throw Error("Choose a model in Settings → AI first.");
@@ -111,43 +115,18 @@ export function PlanningAssistant({
         type: "planning_conversation_create",
         model,
       });
-      const requestId = crypto.randomUUID();
-      await ai({ type: "conversation_send", id, requestId, content });
       if (!active.current) return;
-      messages = [...messages, { role: "You", text: input.trim() }];
+      if (content.length > 100_000)
+        throw Error(
+          "The planning context exceeds the assistant message size limit.",
+        );
+      store({
+        data,
+        meals,
+        messages: [...messages, { role: "You", text: input.trim() }],
+        pending: { id, requestId: crypto.randomUUID(), content },
+      });
       setInput("");
-      store({ ...session, messages });
-      while (active.current) {
-        const r = await ai<Reply>({
-          type: "conversation_reply",
-          id,
-          requestId,
-        });
-        if (!active.current) return;
-        if (r.status === "unanswered")
-          throw Error(
-            r.detail ||
-              r.reason ||
-              "The assistant could not finish its response.",
-          );
-        if (r.status === "done") {
-          const answer = r.answer?.model?.find((m) => m.role === "assistant");
-          if (answer?.errorMessage) throw Error(answer.errorMessage);
-          const text = answer?.content
-            .filter((c) => c.type === "text")
-            .map((c) => c.text)
-            .join("\n");
-          if (!text) throw Error("The assistant returned an empty response.");
-          const reply = parseReply(text, data, week, end);
-          store({
-            data,
-            meals: reply.meals ?? meals,
-            messages: [...messages, { role: "Assistant", text: reply.message }],
-          });
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 750));
-      }
     } catch (e) {
       if (active.current) setError((e as Error).message);
     } finally {
@@ -155,8 +134,75 @@ export function PlanningAssistant({
       if (active.current) setBusy(false);
     }
   }
+  useEffect(() => {
+    const { pending, data } = session;
+    if (!pending || !data) return;
+    let cancelled = false;
+    async function resume(
+      p: NonNullable<Session["pending"]>,
+      context: Context,
+    ) {
+      let terminal = false;
+      try {
+        // The worker deduplicates submissions by requestId, including after a lost response.
+        await ai({ type: "conversation_send", ...p });
+        while (!cancelled) {
+          const reply = await ai<Reply>({
+            type: "conversation_reply",
+            id: p.id,
+            requestId: p.requestId,
+          });
+          if (cancelled) return;
+          terminal = reply.status === "done" || reply.status === "unanswered";
+          if (terminal) {
+            const answer = reply.answer?.model?.find(
+              (m) => m.role === "assistant",
+            );
+            if (reply.status === "unanswered" || answer?.errorMessage)
+              throw Error(
+                answer?.errorMessage ||
+                  reply.detail ||
+                  reply.reason ||
+                  "The assistant could not finish its response.",
+              );
+            const text = answer?.content
+              .filter((c) => c.type === "text")
+              .map((c) => c.text)
+              .join("\n");
+            if (!text) throw Error("The assistant returned an empty response.");
+            const parsed = parseReply(text, context, week, end);
+            store({
+              ...session,
+              pending: undefined,
+              meals: parsed.meals ?? session.meals,
+              messages: [
+                ...session.messages,
+                { role: "Assistant", text: parsed.message },
+              ],
+            });
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 750));
+        }
+      } catch (e) {
+        if (cancelled) return;
+        if (terminal) store({ ...session, pending: undefined });
+        setError((e as Error).message);
+      }
+    }
+    void resume(pending, data);
+    return () => {
+      cancelled = true;
+    };
+  }, [session.pending, retry]);
   async function save() {
-    if (running.current || !session.data || !session.meals.length) return;
+    if (
+      running.current ||
+      session.pending ||
+      !session.data ||
+      !session.meals.length
+    )
+      return;
     running.current = true;
     setBusy(true);
     setError("");
@@ -318,7 +364,17 @@ export function PlanningAssistant({
               {session.approval ? "Retry approved save" : "Save approved meals"}
             </button>
           )}
-          {busy && <p role="status">Working…</p>}
+          {busy && !error && <p role="status">Working…</p>}
+          {session.pending && error && (
+            <button
+              onClick={() => {
+                setError("");
+                setRetry((n) => n + 1);
+              }}
+            >
+              Retry response
+            </button>
+          )}
           <LoadError error={error} />
         </div>
         <form

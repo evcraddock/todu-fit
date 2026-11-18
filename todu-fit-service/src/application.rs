@@ -439,9 +439,11 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                 .map(|id| id.to_bs58check())
                 .as_ref()
                 != Some(root_id)
-                || !groups(path, &identity)?
+                || groups(path, &identity)?
                     .iter()
-                    .any(|g| g.selected && &g.id == group_id)
+                    .find(|g| g.selected)
+                    .map(|g| &g.id)
+                    != Some(group_id)
             {
                 return Err(error(
                     Code::Conflict,
@@ -472,9 +474,28 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                 fingerprint: String::new(),
             };
             use sha2::{Digest, Sha256};
+            // A legacy plan can lack timestamps, which the reader fills with the current time.
+            // Compare only the fields that affect the proposal.
+            let existing: Vec<_> = data
+                .existing
+                .iter()
+                .map(|p| {
+                    (
+                        p.id,
+                        p.date,
+                        p.meal_type,
+                        &p.title,
+                        &p.dish_ids,
+                        &p.portions,
+                    )
+                })
+                .collect();
             data.fingerprint = format!(
                 "{:x}",
-                Sha256::digest(serde_json::to_vec(&data).map_err(crate::internal)?)
+                Sha256::digest(
+                    serde_json::to_vec(&(&data.dishes, &data.people, existing))
+                        .map_err(crate::internal)?
+                )
             );
             let Op::SavePlanningProposal {
                 fingerprint, meals, ..

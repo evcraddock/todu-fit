@@ -665,6 +665,14 @@ test("planning proposals commit together in the approved group and retry once", 
       group_id: identity.groups[0].id,
       week: "2026-11-08",
     };
+    const duplicate = await request({
+      type: "group_create",
+      name: "TEST KITCHEN",
+    });
+    await assert.rejects(
+      request({ type: "planning_context", ...scope, group_id: duplicate.id }),
+      /group changed/,
+    );
     const dish = await request({ type: "dish_create", name: "Soup" });
     const context = await request({ type: "planning_context", ...scope });
     assert.equal(context.existing.length, 0);
