@@ -734,12 +734,6 @@ export function GuidedDay({
                 )}
               </>
             )}
-            {slot && (
-              <p className="muted">
-                Suggestions use your selected AI provider and this group’s
-                dishes, plans and planning targets.
-              </p>
-            )}
           </>
         )}
         {busy && !error && <p role="status">Working…</p>}

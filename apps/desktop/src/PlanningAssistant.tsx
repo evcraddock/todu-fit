@@ -250,11 +250,7 @@ export function PlanningAssistant({
             {!session.messages.length && (
               <>
                 <h3>What meals would you like to plan?</h3>
-                <p>
-                  Ask for one meal, a day, or the week. Your selected AI
-                  provider receives the group’s dishes, planned meals, your
-                  targets and any targets shared with this group.
-                </p>
+                <p>Ask for one meal, a day, or the whole week.</p>
               </>
             )}
             {session.messages.map((m, i) => (

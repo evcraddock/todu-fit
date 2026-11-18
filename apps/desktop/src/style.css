@@ -2204,6 +2204,7 @@ a {
 .target-share, .shared-targets div { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-block: 6px; max-width: 42rem; }
 .shared-targets dd { margin: 0; }
 
+.planning-messages { padding-top: 16px; }
 .planning-messages fieldset { margin: 16px 0; padding: 12px; border: 1px solid var(--border); }
 .planning-messages article { padding-block: 12px; border-bottom: 1px solid var(--border); }
 .planning-messages article h3 { margin: 4px 0 10px; }
