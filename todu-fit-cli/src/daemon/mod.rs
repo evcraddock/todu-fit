@@ -407,9 +407,35 @@ fn read_frame(
         let remaining = deadline
             .checked_duration_since(std::time::Instant::now())
             .ok_or("Frame deadline exceeded")?;
-        stream.set_read_timeout(Some(remaining))?;
+        // macOS rejects SO_RCVTIMEO changes after peer close, even with buffered
+        // response bytes left to read. Wait for readability without changing it.
+        use std::os::fd::AsRawFd;
+        let mut descriptor = libc::pollfd {
+            fd: stream.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let wait_ms = remaining
+            .as_millis()
+            .saturating_add(1)
+            .min(i32::MAX as u128) as i32;
+        // SAFETY: descriptor is valid for one pollfd and remains alive during poll.
+        let ready = unsafe { libc::poll(&mut descriptor, 1, wait_ms) };
+        if ready < 0 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(error.into());
+        }
+        if ready == 0 {
+            return Err("Frame deadline exceeded".into());
+        }
         let mut chunk = [0u8; 8192];
-        let count = stream.read(&mut chunk)?;
+        let count = match stream.read(&mut chunk) {
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
         if count == 0 {
             return Err("Incomplete frame".into());
         }
@@ -550,4 +576,31 @@ fn handle_frame(owner: &Arc<Owner>, line: &str) -> Result<Value, Error> {
  Ok(response)
  })().unwrap_or_else(|e| rejected(api::ErrorCode::Unavailable,e.to_string()));
     Ok(serde_json::to_value(response)?)
+}
+
+#[cfg(all(test, unix))]
+mod frame_tests {
+    use super::*;
+    use std::os::unix::net::UnixStream;
+
+    #[test]
+    fn reads_buffered_frame_after_peer_closes() {
+        let (mut reader, mut writer) = UnixStream::pair().unwrap();
+        let expected = format!("{}\n", "x".repeat(1_000));
+        writer.write_all(expected.as_bytes()).unwrap();
+        drop(writer);
+        assert_eq!(
+            read_frame(&mut reader, Duration::from_secs(1)).unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn frame_deadline_bounds_stalled_peer() {
+        let (mut reader, _writer) = UnixStream::pair().unwrap();
+        let start = std::time::Instant::now();
+        let error = read_frame(&mut reader, Duration::from_millis(30)).unwrap_err();
+        assert!(error.to_string().contains("deadline"));
+        assert!(start.elapsed() < Duration::from_secs(1));
+    }
 }
