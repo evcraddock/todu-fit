@@ -18,7 +18,8 @@
   },
   "build": {
     "appId": "com.todu.fit.proof",
-    "productName": "Todu Fit Proof",
+    "productName": "todufit",
+    "executableName": "todufit",
     "directories": {
       "output": "out"
     },

@@ -59,7 +59,7 @@ else {
         },
       );
       window = new BrowserWindow({
-        title: development ? "Todu Fit — Development" : "Todu Fit",
+        title: development ? "todufit — Development" : "todufit",
         icon: path.join(
           app.isPackaged
             ? process.resourcesPath
