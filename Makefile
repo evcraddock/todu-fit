@@ -11,7 +11,7 @@ SOCKET := ./.overmind.sock
 
 # Record the mode only after a successful start; ignore it when Overmind is offline.
 TEST_MODE := data/.test-environment
-CLI_CONFIG ?= $(if $(shell test -S $(SOCKET) && test -f $(TEST_MODE) && echo test),config.test.yaml,config.dev.yaml)
+CLI_CONFIG ?= $(if $(shell test -f $(TEST_MODE) && overmind ps -s $(SOCKET) >/dev/null 2>&1 && echo test),config.test.yaml,config.dev.yaml)
 
 # =============================================================================
 # Help
