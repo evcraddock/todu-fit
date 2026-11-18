@@ -1,3 +1,4 @@
+import { NutritionTargets } from "./NutritionTargets";
 import { AISettings } from "./AISettings";
 import { useState } from "react";
 import { usePreferences } from "./preferences";
@@ -36,6 +37,7 @@ export function Settings({
     [leaving, setLeaving] = useState<string>();
   const [addingGroup, setAddingGroup] = useState(false);
   const [groupMode, setGroupMode] = useState<"create" | "join">("create");
+  const [nutritionVisited, setNutritionVisited] = useState(false);
   const [tab, setTab] = useState("General");
   const action = useAction(refresh);
   return (
@@ -47,7 +49,7 @@ export function Settings({
         role="tablist"
         aria-label="Settings sections"
       >
-        {["General", "AI", "Water", "Groups", "Sync"].map(
+        {["General", "AI", "Nutrition", "Water", "Groups", "Sync"].map(
           (name, index, tabs) => (
             <button
               key={name}
@@ -56,7 +58,10 @@ export function Settings({
               aria-selected={tab === name}
               aria-controls={`settings-panel-${name}`}
               tabIndex={tab === name ? 0 : -1}
-              onClick={() => setTab(name)}
+              onClick={() => {
+                if (name === "Nutrition") setNutritionVisited(true);
+                setTab(name);
+              }}
               onKeyDown={(event) => {
                 let next = index;
                 if (event.key === "ArrowRight")
@@ -67,6 +72,7 @@ export function Settings({
                 else if (event.key === "End") next = tabs.length - 1;
                 else return;
                 event.preventDefault();
+                if (tabs[next] === "Nutrition") setNutritionVisited(true);
                 setTab(tabs[next]);
                 document.getElementById(`settings-tab-${tabs[next]}`)?.focus();
               }}
@@ -76,6 +82,27 @@ export function Settings({
           ),
         )}
       </div>
+      {nutritionVisited && (
+        <div hidden={tab !== "Nutrition"}>
+          <NutritionTargets
+            waterGoal={
+              waterAmountInUnit(
+                settings.daily_goal_ml,
+                settings.preferred_unit,
+              ) + (settings.preferred_unit === "ml" ? " mL" : " oz")
+            }
+            onEditWater={() => {
+              setTab("Water");
+              requestAnimationFrame(() =>
+                document.getElementById("settings-water-goal")?.focus(),
+              );
+            }}
+            groups={identity.groups}
+            revision={revision}
+            refresh={refresh}
+          />
+        </div>
+      )}
       <div
         className="settings-tab-panel"
         role="tabpanel"
@@ -440,6 +467,7 @@ function WaterSettingsForm({
           </Field>
           <Field label={`Daily goal (${unit === "ml" ? "mL" : "oz"})`}>
             <input
+              id="settings-water-goal"
               type="number"
               min="0.01"
               step="any"

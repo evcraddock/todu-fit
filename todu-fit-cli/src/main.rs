@@ -193,6 +193,9 @@ fn execute_command_ref(
                 commands::detected_system_timezone,
             );
             cmd.run(&repo)?;
+            if cmd.updates_goal() {
+                todu_fit_service::publish_water_goal(&config.data_dir.value)?;
+            }
         }
         Commands::Config(cmd) => {
             cmd.run(config, cli_config_path)?;

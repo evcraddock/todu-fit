@@ -190,6 +190,30 @@ impl SyncCoordinator {
             let group_name = format!("group:{}", group_ref.name);
             results.push(self.sync_document(&group_ref.doc_id, &group_name).await?);
 
+            let load_saved = |id: &DocumentId| -> Result<AutoCommit, SyncCoordinatorError> {
+                let bytes = self
+                    .storage
+                    .load(id)
+                    .map_err(|e| SyncCoordinatorError::StorageError(e.to_string()))?
+                    .ok_or_else(|| {
+                        SyncCoordinatorError::StorageError("Missing synced document".into())
+                    })?;
+                AutoCommit::load(&bytes)
+                    .map_err(|e| SyncCoordinatorError::StorageError(e.to_string()))
+            };
+            let mut root = load_saved(&identity_doc_id)?;
+            if crate::identity::acknowledge_nutrition_withdrawal(
+                &mut root,
+                &group_ref.doc_id,
+                &load_saved(&group_ref.doc_id)?,
+            )
+            .map_err(|e| SyncCoordinatorError::StorageError(e.to_string()))?
+            {
+                self.storage
+                    .save(&identity_doc_id, &root.save())
+                    .map_err(|e| SyncCoordinatorError::StorageError(e.to_string()))?;
+            }
+
             // Load group to get dishes/mealplans doc IDs
             match identity.load_group(&group_ref.doc_id) {
                 Ok(group_doc) => {

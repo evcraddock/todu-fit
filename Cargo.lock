@@ -2260,6 +2260,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "todu-fit-core",
  "todu-fit-protocol",

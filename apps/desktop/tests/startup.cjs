@@ -204,6 +204,61 @@ test(
       assert.equal(personal.groups[0].id, existingGroup.id);
       assert.equal((await c.request({ type: "dishes_list" })).data.length, 0);
 
+      // Only the group projection should cross between these distinct identities.
+      const readShared = async () =>
+        (
+          await c.request({
+            type: "group_nutrition_targets",
+            group_id: existingGroup.id,
+          })
+        ).data;
+      const profile = {
+        name: "Fixture member",
+        targets: { fiber_g: { min: 20, max: null } },
+      };
+      const save = async (profile, expected) =>
+        (
+          await a.request({
+            type: "nutrition_targets_save",
+            profile,
+            expected,
+          })
+        ).data.profile;
+      let saved = await save(profile, null);
+      assert.deepEqual(await readShared(), []);
+      assert.equal(
+        (await c.request({ type: "nutrition_targets_get" })).data.profile,
+        null,
+      );
+      const share = (enabled) =>
+        a.request({
+          type: "nutrition_targets_share",
+          group_id: existingGroup.id,
+          share: enabled,
+          expected: saved,
+        });
+      async function expectShared(check) {
+        const deadline = Date.now() + 15000;
+        while (!check(await readShared())) {
+          assert(
+            Date.now() < deadline,
+            "Shared nutrition targets did not converge",
+          );
+          await pause(100);
+        }
+      }
+      await share(true);
+      await expectShared(
+        (rows) => rows.length === 1 && rows[0].targets.fiber_g.min === 20,
+      );
+      saved = await save(
+        { ...profile, targets: { fiber_g: { min: 25, max: null } } },
+        saved,
+      );
+      await expectShared((rows) => rows[0]?.targets.fiber_g.min === 25);
+      await share(false);
+      await expectShared((rows) => rows.length === 0);
+
       await b.request({
         type: "setup_start",
         root_id: "2i6KmWQkkfQdFhXC9n65UZshA7eQ",

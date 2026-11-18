@@ -126,6 +126,10 @@ pub enum WaterSubcommand {
 }
 
 impl WaterCommand {
+    pub fn updates_goal(&self) -> bool {
+        matches!(self.command, WaterSubcommand::Set { goal: Some(_), .. })
+    }
+
     pub fn run(&self, repo: &SyncHydrationRepository) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
             WaterSubcommand::Add { amount, unit, at } => self.add(repo, *amount, *unit, at),
