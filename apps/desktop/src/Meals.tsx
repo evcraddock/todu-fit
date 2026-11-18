@@ -1,4 +1,5 @@
 import { usePreferences } from "./preferences";
+import { PlanningAssistant } from "./PlanningAssistant";
 import { ActionIcon } from "./ActionIcon";
 import { Dishes } from "./Dishes";
 import { loadMealWeek, loadReferencedDishes } from "./mealData";
@@ -31,11 +32,13 @@ function foodLogNutrition(values: Record<string, number>) {
 export function Meals({
   revision,
   refresh,
+  planningScope,
   logs = false,
   hasGroup = true,
 }: {
   revision: number;
   refresh: () => void;
+  planningScope?: { root_id: string; group_id: string };
   logs?: boolean;
   hasGroup?: boolean;
 }) {
@@ -111,6 +114,14 @@ export function Meals({
     <section
       className={`meal-calendar${logs ? " food-log" : " meal-plans"}${selectedDay ? " meal-day-details" : ""}`}
     >
+      {planningScope && !logs && !selectedDay && (
+        <PlanningAssistant
+          key={start}
+          scope={planningScope}
+          week={start}
+          refresh={refresh}
+        />
+      )}
       {selectedDay && (
         <button
           className="back-to-week"
@@ -207,9 +218,25 @@ export function Meals({
             }, {})
           : dishNutrition(
               dayPlans.flatMap((p) =>
-                p.dish_ids.flatMap(
-                  (id) => dishes.find((d) => d.id === id) ?? [],
-                ),
+                p.dish_ids.flatMap((id) => {
+                  const dish = dishes.find((d) => d.id === id);
+                  if (!dish) return [];
+                  const servings =
+                    Object.values(p.portions ?? {}).reduce(
+                      (sum, person) => sum + (person.servings[id] ?? 0),
+                      0,
+                    ) || 1;
+                  return [
+                    {
+                      ...dish,
+                      nutrients:
+                        dish.nutrients?.map((n) => ({
+                          ...n,
+                          amount: n.amount * servings,
+                        })) ?? null,
+                    },
+                  ];
+                }),
               ),
             );
         return (
@@ -414,6 +441,20 @@ export function Meals({
                                       ) : (
                                         "Missing dish"
                                       )}
+                                      {Object.entries(p.portions ?? {})
+                                        .filter(
+                                          ([, person]) =>
+                                            person.servings[id] != null,
+                                        )
+                                        .map(([key, person]) => (
+                                          <small
+                                            className="planned-portion"
+                                            key={key}
+                                          >
+                                            {person.name} ·{" "}
+                                            {person.servings[id]} servings
+                                          </small>
+                                        ))}
                                     </li>
                                   ))}
                                 </ul>

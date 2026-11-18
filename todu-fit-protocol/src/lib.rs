@@ -162,6 +162,18 @@ pub enum Operation {
         identifier: String,
         name: String,
     },
+    PlanningContext {
+        root_id: String,
+        group_id: String,
+        week: NaiveDate,
+    },
+    SavePlanningProposal {
+        root_id: String,
+        group_id: String,
+        week: NaiveDate,
+        fingerprint: String,
+        meals: Vec<ProposedMeal>,
+    },
     PlanCreate {
         date: NaiveDate,
         meal_type: MealType,
@@ -297,6 +309,7 @@ impl Operation {
                 | Self::DishesList { .. }
                 | Self::DishGet { .. }
                 | Self::PlansList { .. }
+                | Self::PlanningContext { .. }
                 | Self::PlanGet { .. }
                 | Self::MealsHistory { .. }
                 | Self::ShoppingList { .. }
@@ -313,6 +326,27 @@ impl Operation {
                 | Self::SyncStart
         )
     }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProposedMeal {
+    pub date: NaiveDate,
+    pub meal_type: MealType,
+    pub title: String,
+    pub dish_ids: Vec<Uuid>,
+    pub portions: std::collections::BTreeMap<String, std::collections::BTreeMap<Uuid, f64>>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanningDish {
+    pub id: Uuid,
+    pub name: String,
+    pub nutrients: Option<Vec<Nutrient>>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanningContext {
+    pub dishes: Vec<PlanningDish>,
+    pub people: std::collections::BTreeMap<String, TargetProfile>,
+    pub existing: Vec<MealPlan>,
+    pub fingerprint: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Group {
@@ -396,6 +430,7 @@ pub enum Value {
     Dish(Dish),
     Dishes(Vec<Dish>),
     Plan(Plan),
+    PlanningContext(PlanningContext),
     PlanMatches(Vec<Plan>),
     Plans(Vec<MealPlan>),
     Meal(Meal),

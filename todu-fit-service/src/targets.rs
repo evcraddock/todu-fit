@@ -268,12 +268,39 @@ pub fn share(
     Ok(state)
 }
 pub fn members(identity: &Identity, group_id: &str) -> Result<Vec<TargetProfile>, ApiError> {
+    let mut members: Vec<_> = member_profiles(identity, group_id)?.into_values().collect();
+    members.sort_by_cached_key(|p| p.name.to_lowercase());
+    Ok(members)
+}
+pub(crate) fn planning_people(
+    identity: &Identity,
+    group_id: &str,
+    fallback: &str,
+) -> Result<std::collections::BTreeMap<String, TargetProfile>, ApiError> {
+    let mut people = member_profiles(identity, group_id)?;
+    let me = member_key(root(identity)?, group(identity, group_id)?);
+    people.insert(
+        me,
+        personal(identity)?
+            .profile
+            .unwrap_or_else(|| TargetProfile {
+                name: fallback.to_owned(),
+                targets: Default::default(),
+            }),
+    );
+    Ok(people)
+}
+fn member_profiles(
+    identity: &Identity,
+    group_id: &str,
+) -> Result<std::collections::BTreeMap<String, TargetProfile>, ApiError> {
     let doc = load(identity, group(identity, group_id)?)?;
-    let mut members = Vec::<TargetProfile>::new();
+    let mut members = std::collections::BTreeMap::new();
     for k in doc.keys(ROOT).filter(|k| k.starts_with(MEMBER)) {
         if let Some((_, slot)) = doc.get(ROOT, &k).map_err(storage)? {
             if let Some((value, _)) = doc.get(slot, "profile").map_err(storage)? {
-                members.push(
+                members.insert(
+                    k,
                     serde_json::from_str(
                         value
                             .as_str()
@@ -284,7 +311,6 @@ pub fn members(identity: &Identity, group_id: &str) -> Result<Vec<TargetProfile>
             }
         }
     }
-    members.sort_by_cached_key(|p| p.name.to_lowercase());
     Ok(members)
 }
 

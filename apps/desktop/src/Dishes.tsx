@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { AssistantPanel } from "./AssistantPanel";
 import { call, type Dish, type Ingredient, type Nutrient } from "./api";
 import {
   Field,
@@ -311,23 +311,7 @@ function DishEditor({
     groupScope && (dish ? JSON.stringify([groupScope, dish.id]) : groupScope);
   const chatKey = scope && "fit.dish-assistant.v1." + scope;
   const formKey = scope && "fit.new-dish.v1." + scope;
-  const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem("fit.dish-chat.collapsed") === "true",
-  );
   const [chatActions, setChatActions] = useState<HTMLDivElement | null>(null);
-  const [panelWidth, setPanelWidth] = useState(
-    () => Number(localStorage.getItem("fit.dish-chat.width")) || 350,
-  );
-  function resizePanel(width: number, handle: HTMLElement) {
-    const main = handle.closest(".app")?.querySelector("main");
-    const limit = Math.max(
-      200,
-      window.innerWidth - (main?.getBoundingClientRect().left ?? 0) - 320,
-    );
-    const next = Math.round(Math.min(limit, Math.max(200, width)));
-    setPanelWidth(next);
-    localStorage.setItem("fit.dish-chat.width", String(next));
-  }
   const [initial] = useState<Partial<Dish> | undefined>(
     () =>
       (formKey && JSON.parse(localStorage.getItem(formKey) || "null")) ??
@@ -728,97 +712,28 @@ function DishEditor({
             </div>
           </fieldset>
         </form>
-        {chatKey &&
-          createPortal(
-            <div
-              id="dish-assistant-panel"
-              data-collapsed={collapsed}
-              style={{ width: collapsed ? 40 : panelWidth }}
-            >
-              {!collapsed && (
-                <div
-                  className="dish-chat-divider"
-                  role="separator"
-                  tabIndex={0}
-                  aria-label="Resize dish assistant"
-                  aria-orientation="vertical"
-                  aria-valuenow={panelWidth}
-                  onPointerDown={(e) => {
-                    if (e.button !== 0) return;
-                    e.preventDefault();
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                  }}
-                  onPointerMove={(e) => {
-                    if (e.currentTarget.hasPointerCapture(e.pointerId))
-                      resizePanel(
-                        window.innerWidth - e.clientX,
-                        e.currentTarget,
-                      );
-                  }}
-                  onPointerUp={(e) => {
-                    if (e.currentTarget.hasPointerCapture(e.pointerId))
-                      e.currentTarget.releasePointerCapture(e.pointerId);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                      e.preventDefault();
-                      resizePanel(
-                        (e.currentTarget.parentElement?.clientWidth ??
-                          panelWidth) + (e.key === "ArrowLeft" ? 16 : -16),
-                        e.currentTarget,
-                      );
-                    }
-                  }}
-                />
-              )}
-              <div className="dish-chat-header">
-                <button
-                  className="dish-chat-toggle"
-                  type="button"
-                  aria-expanded={!collapsed}
-                  aria-controls="dish-chat-body"
-                  onClick={() => {
-                    setCollapsed(!collapsed);
-                    localStorage.setItem(
-                      "fit.dish-chat.collapsed",
-                      String(!collapsed),
-                    );
-                  }}
-                >
-                  <svg
-                    aria-hidden="true"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                  >
-                    <path d={collapsed ? "m10 3-5 5 5 5" : "m6 3 5 5-5 5"} />
-                  </svg>
-                  <span>Dish assistant</span>
-                </button>
-                <div ref={setChatActions} hidden={collapsed} />
-              </div>
-              <div id="dish-chat-body" hidden={collapsed}>
-                <DishAssistant
-                  storageKey={chatKey}
-                  headerActions={chatActions}
-                  onOpenDish={onOpenDish}
-                  draft={draft}
-                  onDraft={applyDraft}
-                  placeholder={
-                    dish
-                      ? "Would you like to make any changes?"
-                      : "What kind of dish did you have in mind?"
-                  }
-                  onWaiting={setWaiting}
-                  disabled={action.busy}
-                />
-              </div>
-            </div>,
-            document.querySelector(".app")!,
-          )}
+        {chatKey && (
+          <AssistantPanel
+            title="Dish assistant"
+            preference="fit.dish-chat"
+            actions={setChatActions}
+          >
+            <DishAssistant
+              storageKey={chatKey}
+              headerActions={chatActions}
+              onOpenDish={onOpenDish}
+              draft={draft}
+              onDraft={applyDraft}
+              placeholder={
+                dish
+                  ? "Would you like to make any changes?"
+                  : "What kind of dish did you have in mind?"
+              }
+              onWaiting={setWaiting}
+              disabled={action.busy}
+            />
+          </AssistantPanel>
+        )}
       </div>
     </section>
   );

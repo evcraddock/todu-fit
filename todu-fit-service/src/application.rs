@@ -422,6 +422,130 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
             dishes.remove_ingredient(d.id, name).map_err(failure)?;
             Ok(V::Dish(convert(resolve_dish(&dishes, identifier)?)?))
         }
+        Op::PlanningContext {
+            root_id,
+            group_id,
+            week,
+        }
+        | Op::SavePlanningProposal {
+            root_id,
+            group_id,
+            week,
+            ..
+        } => {
+            if identity
+                .root_doc_id()
+                .map_err(failure)?
+                .map(|id| id.to_bs58check())
+                .as_ref()
+                != Some(root_id)
+                || !groups(path, &identity)?
+                    .iter()
+                    .any(|g| g.selected && &g.id == group_id)
+            {
+                return Err(error(
+                    Code::Conflict,
+                    "Your active identity or group changed. Reopen Meal plans.",
+                ));
+            }
+            let start = week_start(*week)?;
+            let end = start + Duration::days(6);
+            let mut available: Vec<_> = dishes
+                .list()
+                .map_err(failure)?
+                .into_iter()
+                .map(|d| {
+                    Ok(api::PlanningDish {
+                        id: d.id,
+                        name: d.name,
+                        nutrients: convert(d.nutrients)?,
+                    })
+                })
+                .collect::<Result<_, api::ApiError>>()?;
+            available.sort_by_key(|d| d.id);
+            let mut existing = plans.list_range(start, end).map_err(failure)?;
+            existing.sort_by_key(|p| p.id);
+            let mut data = api::PlanningContext {
+                dishes: available,
+                people: crate::targets::planning_people(&identity, group_id, &context.created_by)?,
+                existing: convert(existing)?,
+                fingerprint: String::new(),
+            };
+            use sha2::{Digest, Sha256};
+            data.fingerprint = format!(
+                "{:x}",
+                Sha256::digest(serde_json::to_vec(&data).map_err(crate::internal)?)
+            );
+            let Op::SavePlanningProposal {
+                fingerprint, meals, ..
+            } = operation
+            else {
+                return Ok(V::PlanningContext(data));
+            };
+            if fingerprint != &data.fingerprint {
+                return Err(error(
+                    Code::Conflict,
+                    "The week, dishes or targets changed. Review a fresh proposal before saving.",
+                ));
+            }
+            if meals.is_empty() || meals.len() > 28 {
+                return Err(invalid("Propose 1 to 28 meals in the selected week"));
+            }
+            let mut saved = Vec::new();
+            for meal in meals {
+                let ids: std::collections::BTreeSet<_> = meal.dish_ids.iter().copied().collect();
+                if !(start..=end).contains(&meal.date)
+                    || meal.title.trim().is_empty()
+                    || ids.is_empty()
+                    || ids.len() != meal.dish_ids.len()
+                    || !ids.iter().all(|id| data.dishes.iter().any(|d| d.id == *id))
+                {
+                    return Err(invalid(
+                        "A proposed meal has an invalid date, title or dish",
+                    ));
+                }
+                let mut p = core::MealPlan::new(
+                    meal.date,
+                    convert(meal.meal_type)?,
+                    meal.title.trim(),
+                    &context.created_by,
+                )
+                .with_cook(&context.created_by)
+                .with_dish_ids(meal.dish_ids.clone());
+                let mut assigned = std::collections::BTreeSet::new();
+                for (key, servings) in &meal.portions {
+                    let person = data
+                        .people
+                        .get(key)
+                        .ok_or_else(|| invalid("Unknown participant"))?;
+                    if servings.is_empty()
+                        || !servings
+                            .iter()
+                            .all(|(id, n)| ids.contains(id) && n.is_finite() && *n > 0.)
+                    {
+                        return Err(invalid(
+                            "Each portion must be a positive number of servings of a planned dish",
+                        ));
+                    }
+                    assigned.extend(servings.keys().copied());
+                    p.portions.insert(
+                        key.clone(),
+                        core::models::PersonPortions {
+                            name: person.name.clone(),
+                            servings: servings.clone(),
+                        },
+                    );
+                }
+                if assigned != ids {
+                    return Err(invalid("Assign each dish to at least one person"));
+                }
+                saved.push(p);
+            }
+            for p in &saved {
+                plans.create(p).map_err(failure)?;
+            }
+            Ok(V::Plans(convert(saved)?))
+        }
         Op::PlanCreate {
             date,
             meal_type,

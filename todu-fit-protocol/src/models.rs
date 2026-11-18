@@ -39,6 +39,12 @@ pub struct Nutrient {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PersonPortions {
+    pub name: String,
+    pub servings: std::collections::BTreeMap<Uuid, f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MealPlan {
     pub id: Uuid,
     pub date: NaiveDate,
@@ -47,6 +53,9 @@ pub struct MealPlan {
     pub cook: String,
     /// References to dishes by UUID (resolved at display time)
     pub dish_ids: Vec<Uuid>,
+    /// Per-dish servings by group-scoped participant ID.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub portions: std::collections::BTreeMap<String, PersonPortions>,
     /// When true, this meal is using leftovers and should not contribute
     /// fresh dish ingredients to shared shopping-list generation.
     #[serde(default)]

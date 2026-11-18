@@ -256,6 +256,13 @@ impl MealPlanRepository {
     pub fn update(&self, plan: &MealPlan) -> Result<MealPlan, MealPlanError> {
         let (mut doc, doc_id) = self.load_or_create_doc()?;
 
+        let mut plan = plan.clone();
+        for person in plan.portions.values_mut() {
+            person.servings.retain(|id, _| plan.dish_ids.contains(id));
+        }
+        plan.portions
+            .retain(|_, person| !person.servings.is_empty());
+        let plan = &plan;
         // Write updated plan to Automerge (overwrites existing)
         writer::write_mealplan_with_references(&mut doc, plan, &self.dish_reference_keys()?);
 

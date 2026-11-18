@@ -165,6 +165,14 @@ pub(crate) fn write_mealplan_with_references(
     doc.put(&plan_id, "cook", mealplan.cook.as_str()).unwrap();
     doc.put(&plan_id, "uses_leftovers", mealplan.uses_leftovers)
         .unwrap();
+    if !mealplan.portions.is_empty() {
+        doc.put(
+            &plan_id,
+            "portions",
+            serde_json::to_string(&mealplan.portions).expect("finite servings"),
+        )
+        .unwrap();
+    }
     doc.put(&plan_id, "created_by", mealplan.created_by.as_str())
         .unwrap();
     doc.put(

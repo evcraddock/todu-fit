@@ -17,6 +17,8 @@ const allowed = new Set([
   "dish_update",
   "dish_delete",
   "plans_list",
+  "planning_context",
+  "save_planning_proposal",
   "plan_get",
   "plan_create",
   "plan_update",

@@ -83,3 +83,63 @@ test("a deleted dish does not hide its plan or other dishes in the week", async 
   assert.deepEqual(result.plans, plans);
   assert.deepEqual(result.dishes, [{ id: "remaining" }]);
 });
+
+import { parseReply, comparison } from "../src/planning.ts";
+test("planning uses scoped IDs, rejects invented dishes and compares daily servings", () => {
+  const data = {
+    dishes: [
+      {
+        id: "dish",
+        name: "Soup",
+        nutrients: [{ name: "Protein", unit: "g", amount: 12 }],
+      },
+    ],
+    people: { person: { name: "Sam", targets: {} } },
+    existing: [],
+  };
+  const meal = {
+    date: "2026-11-10",
+    meal_type: "lunch",
+    title: "Soup",
+    dish_ids: ["d1"],
+    portions: { p1: { d1: 1.5 } },
+  };
+  const parse = (m) =>
+    parseReply(
+      JSON.stringify({ message: "Lunch", meals: [m] }),
+      data,
+      "2026-11-08",
+      "2026-11-14",
+    ).meals;
+  const meals = parse(meal);
+  assert.deepEqual(meals[0].portions, { person: { dish: 1.5 } });
+  assert.deepEqual(comparison(data, meals, meal.date, "person", "protein_g"), {
+    total: 18,
+    partial: false,
+  });
+  assert.equal(
+    comparison(data, meals, meal.date, "person", "fiber_g").partial,
+    true,
+  );
+  data.existing.push({
+    ...meals[0],
+    portions: { person: { servings: { dish: 0.5 } } },
+  });
+  assert.equal(
+    comparison(data, meals, meal.date, "person", "protein_g").total,
+    24,
+  );
+  data.existing[0].portions = {};
+  assert.equal(
+    comparison(data, meals, meal.date, "person", "protein_g").partial,
+    true,
+  );
+  for (const change of [
+    { dish_ids: ["unknown"] },
+    { date: "2026-11-18" },
+    { portions: { p1: { d1: 0 } } },
+    { portions: { p2: { d1: 1 } } },
+  ]) {
+    assert.throws(() => parse({ ...meal, ...change }));
+  }
+});
