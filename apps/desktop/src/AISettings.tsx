@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { MODEL_CHANGED_EVENT } from "./ModelStatus";
 import { Field, LoadError } from "./ui";
 import type { Operation } from "./api";
 
@@ -25,6 +26,8 @@ type Prompt = {
 type Login = {
   id: string;
   provider: string;
+  method: string;
+  flow?: string;
   status: string;
   prompt?: Prompt;
   error?: string;
@@ -46,10 +49,11 @@ async function request<T>(operation: Operation): Promise<T> {
 export function AISettings() {
   const [settings, setSettings] = useState<Settings>();
   const [providerId, setProvider] = useState("");
-  const [modelId, setModel] = useState("");
   const [authMethod, setAuthMethod] = useState("");
+  const [systemProviders, setSystemProviders] = useState<string[]>([]);
+  const [addingProvider, setAddingProvider] = useState(false);
   const [changingConnection, setChangingConnection] = useState(false);
-  const [models, setModels] = useState<Model[]>([]);
+  const [models, setModels] = useState<(Model & { provider: string })[]>([]);
   const [login, setLogin] = useState<Login | null>(null);
   const [auth, setAuth] = useState<string>("");
   const [error, setError] = useState("");
@@ -57,11 +61,115 @@ export function AISettings() {
   const [busy, setBusy] = useState(false);
   const provider = settings?.providers.find((p) => p.id === providerId);
   const pending = login?.status === "pending";
-  const method =
-    provider?.methods.find((m) => m.id === authMethod) ??
-    provider?.methods.find((m) => m.id === "oauth") ??
-    provider?.methods[0];
+  const restoringLogin = useRef(false);
+  const openedLogin = useRef<string | null>(null);
+  const browserEvent =
+    pending &&
+    login.events.find((event) => event.type === "auth_url" && event.url);
+  const browserUrl = browserEvent ? browserEvent.url : undefined;
+  const deviceEvent =
+    pending && login.events.find((event) => event.type === "device_code");
+  const browserFallback = Boolean(
+    browserUrl &&
+      login?.provider === "openai-codex" &&
+      login.prompt?.placeholder?.includes("/auth/callback"),
+  );
+  useEffect(() => {
+    if (!pending || !browserUrl || !login || openedLogin.current === login.id)
+      return;
+    openedLogin.current = login.id;
+    void request({ type: "login_open_link", url: browserUrl }).catch(() => {
+      setError("Could not open your browser. Use Reopen browser to try again.");
+    });
+  }, [pending, browserUrl, login?.id]);
+  const method = provider?.methods.find((m) => m.id === authMethod);
   const connected = auth.startsWith("Connected");
+  const connectedProviders =
+    settings?.providers.filter(
+      (p) => p.stored || systemProviders.includes(p.id),
+    ) ?? [];
+  const connectedIds = connectedProviders
+    .map((p) => p.id)
+    .sort()
+    .join(",");
+  async function loadModels(refresh = false) {
+    const groups = await Promise.allSettled(
+      connectedProviders.map(async (p) =>
+        (
+          await request<Model[]>({
+            type: refresh ? "models_refresh" : "models",
+            provider: p.id,
+          })
+        ).map((m) => ({ ...m, provider: p.id })),
+      ),
+    );
+    return {
+      models: groups.flatMap((result) =>
+        result.status === "fulfilled" ? result.value : [],
+      ),
+      failed: groups.flatMap((result, index) =>
+        result.status === "rejected" ? [connectedProviders[index].name] : [],
+      ),
+    };
+  }
+  useEffect(() => {
+    let active = true;
+    void loadModels()
+      .then((value) => {
+        if (active) {
+          setModels(value.models);
+          if (value.failed.length)
+            setError(
+              `Could not load models from ${value.failed.join(", ")}. Try Refresh models.`,
+            );
+        }
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [connectedIds, settings]);
+  useEffect(() => {
+    let active = true;
+    const candidates = settings?.providers.filter((p) => !p.stored) ?? [];
+    void Promise.allSettled(
+      candidates.map((p) =>
+        request<{ type: string } | null>({
+          type: "auth_status",
+          provider: p.id,
+        }),
+      ),
+    ).then((results) => {
+      if (!active) return;
+      setSystemProviders(
+        results.flatMap((result, index) =>
+          result.status === "fulfilled" && result.value
+            ? [candidates[index].id]
+            : [],
+        ),
+      );
+      const failed = results.flatMap((result, index) =>
+        result.status === "rejected" ? [candidates[index].name] : [],
+      );
+      if (failed.length)
+        setError(`Could not check connections for ${failed.join(", ")}.`);
+    });
+    return () => {
+      active = false;
+    };
+  }, [settings]);
+  function selectProvider(p: Provider) {
+    const nextMethod =
+      p.stored ??
+      (p.methods.some((m) => m.id === "api_key") ? "api_key" : "oauth");
+    if (p.id !== providerId || nextMethod !== authMethod) setAuth("");
+    setProvider(p.id);
+    setAuthMethod(nextMethod);
+    setMessage("");
+    setError("");
+  }
   const loadSettings = async () => {
     const value = await request<Settings>({ type: "settings" });
     setSettings(value);
@@ -73,8 +181,19 @@ export function AISettings() {
       .then((value) => {
         if (!active) return;
         setSettings(value);
+        if (restoringLogin.current) return;
+        const selected = value.providers.find(
+          (p) => p.id === value.model?.provider,
+        );
+        setAuthMethod(
+          selected
+            ? (selected.stored ??
+                (selected.methods.some((m) => m.id === "api_key")
+                  ? "api_key"
+                  : "oauth"))
+            : "",
+        );
         setProvider(value.model?.provider ?? "");
-        setModel(value.model?.modelId ?? "");
       })
       .catch((e) => {
         if (active) setError(e.message);
@@ -85,24 +204,17 @@ export function AISettings() {
   }, []);
   useEffect(() => {
     let active = true;
-    setModels([]);
+
     setAuth("");
     if (providerId) {
-      request<Model[]>({ type: "models", provider: providerId })
-        .then((value) => {
-          if (active) setModels(value);
-        })
-        .catch((e) => {
-          if (active) setError(e.message);
-        });
-      request<{ source?: string } | null>({
+      request<{ source?: string; type: string } | null>({
         type: "auth_status",
         provider: providerId,
       })
         .then((value) => {
           if (active)
             setAuth(
-              value
+              value && value.type === authMethod
                 ? `Connected${value.source ? ` · ${value.source}` : ""}`
                 : "Not connected",
             );
@@ -114,7 +226,7 @@ export function AISettings() {
     return () => {
       active = false;
     };
-  }, [providerId, settings]);
+  }, [providerId, settings, authMethod]);
   // Poll the small login state only; no tokens are returned by the host.
   useEffect(() => {
     let active = true;
@@ -123,10 +235,16 @@ export function AISettings() {
       try {
         const value = await request<Login | null>({ type: "login_status" });
         if (!active) return;
+        restoringLogin.current = value?.status === "pending";
         setLogin(value);
-        if (value?.status === "pending") timer = setTimeout(poll, 300);
-        else if (value?.status === "done") {
+        if (value?.status === "pending") {
+          setAddingProvider(true);
+          setProvider(value.provider);
+          setAuthMethod(value.method);
+          timer = setTimeout(poll, 300);
+        } else if (value?.status === "done") {
           setChangingConnection(false);
+          setAddingProvider(false);
           setMessage("Connected.");
           await loadSettings();
         }
@@ -152,6 +270,16 @@ export function AISettings() {
       setBusy(false);
     }
   }
+  const startApiKeyLogin = (id: string) =>
+    run(async () => {
+      setLogin(
+        await request<Login>({
+          type: "login_start",
+          provider: id,
+          method: "api_key",
+        }),
+      );
+    });
   const openLink = (url: string) =>
     run(() => request({ type: "login_open_link", url }));
   return (
@@ -161,188 +289,358 @@ export function AISettings() {
         <p role="status">Loading providers…</p>
       ) : (
         <>
-          <section className="ai-section" aria-labelledby="ai-connection-title">
+          <section className="ai-section" aria-labelledby="ai-providers-title">
             <div className="ai-section-heading">
-              <h2 id="ai-connection-title">Connection</h2>
-              {provider && (
-                <span
-                  role="status"
-                  className={`ai-connection-status${connected ? " connected" : ""}`}
-                >
-                  <span aria-hidden="true" />
-                  {connected
-                    ? "Connected"
-                    : auth
-                      ? "Not connected"
-                      : "Checking…"}
-                </span>
-              )}
-            </div>
-            <Field label="Provider">
-              <select
-                aria-label="Provider"
-                value={providerId}
-                disabled={busy || pending}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setAuth("");
-                  setProvider(next);
-                  setModel(
-                    settings.model?.provider === next
-                      ? settings.model.modelId
-                      : "",
-                  );
-                  setAuthMethod("");
+              <h2 id="ai-providers-title">Connected providers</h2>
+              <button
+                disabled={busy || pending || addingProvider}
+                onClick={() => {
+                  setAddingProvider(true);
                   setChangingConnection(false);
+                  setProvider("");
+                  setAuthMethod("");
+                  setAuth("");
                   setMessage("");
                   setError("");
                 }}
               >
-                <option value="">Select a provider</option>
-                {[...settings.providers]
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-              </select>
-            </Field>
-            {provider && (
-              <div className="ai-account">
-                {(!connected || changingConnection) && method && (
-                  <>
-                    {provider.methods.length > 1 ? (
-                      <Field label="Sign-in method">
-                        <select
-                          aria-label="Sign-in method"
-                          value={method.id}
-                          disabled={busy || pending}
-                          onChange={(e) => setAuthMethod(e.target.value)}
-                        >
-                          {provider.methods.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.label}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                    ) : (
-                      <p className="muted ai-auth-description">
-                        {method.label}
-                      </p>
-                    )}
+                Add provider
+              </button>
+            </div>
+            {connectedProviders.length === 0 ? (
+              <p className="muted">No providers connected yet.</p>
+            ) : (
+              <ul className="ai-provider-list">
+                {connectedProviders.map((p) => (
+                  <li key={p.id}>
+                    <div>
+                      <strong>{p.name}</strong>
+                      <span className="muted">
+                        {p.stored === "oauth"
+                          ? "Account"
+                          : p.stored === "api_key"
+                            ? "API key"
+                            : "System credentials"}
+                      </span>
+                    </div>
                     <button
-                      className="primary"
-                      disabled={busy || pending || !settings.secureStorage}
+                      disabled={busy || pending}
+                      aria-label={`Manage ${p.name}`}
+                      onClick={() => {
+                        selectProvider(p);
+                        setAddingProvider(true);
+                        setChangingConnection(true);
+                        if (
+                          p.stored === "api_key" ||
+                          (!p.stored &&
+                            p.methods.some((m) => m.id === "api_key"))
+                        )
+                          void startApiKeyLogin(p.id);
+                      }}
+                    >
+                      Manage
+                    </button>
+                    {p.stored && (
+                      <button
+                        disabled={busy || pending}
+                        aria-label={`Sign out of ${p.name}`}
+                        onClick={() =>
+                          run(async () => {
+                            await request({ type: "logout", provider: p.id });
+                            if (providerId === p.id) {
+                              setAuth("");
+                              setProvider("");
+                            }
+                            await loadSettings();
+                            setMessage("Signed out.");
+                          })
+                        }
+                      >
+                        Sign out
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          {addingProvider && (
+            <section
+              className="ai-section"
+              aria-labelledby="ai-connection-title"
+            >
+              <div className="ai-section-heading">
+                <h2 id="ai-connection-title">
+                  {changingConnection ? "Manage provider" : "Add provider"}
+                </h2>
+                {provider && (
+                  <span
+                    role="status"
+                    className={`ai-connection-status${connected ? " connected" : ""}`}
+                  >
+                    <span aria-hidden="true" />
+                    {connected
+                      ? "Connected"
+                      : auth
+                        ? "Not connected"
+                        : "Checking…"}
+                  </span>
+                )}
+              </div>
+              {!pending && (
+                <button
+                  className="ai-close-provider"
+                  onClick={() => {
+                    setAddingProvider(false);
+                    setChangingConnection(false);
+                    const saved =
+                      settings.providers.find(
+                        (p) => p.id === settings.model?.provider,
+                      ) ?? connectedProviders[0];
+                    if (saved) selectProvider(saved);
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+              <fieldset className="ai-auth-options" disabled={busy || pending}>
+                <legend>Connect using</legend>
+                {[
+                  { id: "oauth", label: "Account" },
+                  { id: "api_key", label: "API key" },
+                ].map((option) => (
+                  <label
+                    key={option.id}
+                    className={authMethod === option.id ? "selected" : ""}
+                  >
+                    <input
+                      type="radio"
+                      name="ai-auth-method"
+                      value={option.id}
+                      checked={authMethod === option.id}
+                      onChange={() => {
+                        setAuthMethod(option.id);
+                        setProvider("");
+
+                        setAuth("");
+
+                        setChangingConnection(false);
+                        setMessage("");
+                        setError("");
+                      }}
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </fieldset>
+              <Field label="Provider">
+                <select
+                  aria-label="Provider"
+                  value={providerId}
+                  disabled={busy || pending || !authMethod}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setAuth("");
+                    setProvider(next);
+                    setChangingConnection(false);
+                    setMessage("");
+                    setError("");
+                    if (
+                      next &&
+                      authMethod === "api_key" &&
+                      settings.secureStorage
+                    )
+                      void startApiKeyLogin(next);
+                  }}
+                >
+                  <option value="">
+                    {authMethod
+                      ? "Select a provider"
+                      : "Choose account or API key first"}
+                  </option>
+                  {settings.providers
+                    .filter((p) => p.methods.some((m) => m.id === authMethod))
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                </select>
+              </Field>
+              {provider && (
+                <div className="ai-account">
+                  {pending && login.method === "api_key" && (
+                    <div className="ai-api-key-form">
+                      {login.prompt ? (
+                        <LoginPrompt
+                          key={login.prompt.id}
+                          prompt={login.prompt}
+                          busy={busy}
+                          submitLabel="Save API key"
+                          submit={(answer) =>
+                            run(() =>
+                              request({
+                                type: "login_answer",
+                                id: login.id,
+                                promptId: login.prompt!.id,
+                                answer,
+                              }),
+                            )
+                          }
+                        />
+                      ) : (
+                        <p role="status">Preparing connection…</p>
+                      )}
+                      <button
+                        disabled={busy}
+                        onClick={() =>
+                          run(async () => {
+                            await request({ type: "login_cancel" });
+                            setAddingProvider(false);
+                            setChangingConnection(false);
+                            const saved =
+                              settings.providers.find(
+                                (p) => p.id === settings.model?.provider,
+                              ) ?? connectedProviders[0];
+                            if (saved) selectProvider(saved);
+                          })
+                        }
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+
+                  {(!connected || changingConnection) &&
+                    method?.id === "oauth" && (
+                      <>
+                        <p className="muted ai-auth-description">
+                          {method.label}
+                        </p>
+                        <button
+                          className="primary"
+                          disabled={busy || pending || !settings.secureStorage}
+                          onClick={() =>
+                            run(async () => {
+                              setLogin(
+                                await request<Login>({
+                                  type: "login_start",
+                                  provider: providerId,
+                                  method: method.id,
+                                }),
+                              );
+                            })
+                          }
+                        >
+                          {pending
+                            ? "Signing in…"
+                            : method.id === "oauth"
+                              ? "Sign in"
+                              : "Connect"}
+                        </button>
+                      </>
+                    )}
+                  {connected && (
+                    <p className="muted ai-auth-description">
+                      {auth.replace(/^Connected[ ·]*/, "") || provider.name}
+                    </p>
+                  )}
+                  {connected &&
+                    !changingConnection &&
+                    provider.methods.length > 0 && (
+                      <button
+                        disabled={busy || pending}
+                        onClick={() => setChangingConnection(true)}
+                      >
+                        Change connection
+                      </button>
+                    )}
+                  {changingConnection && !pending && (
+                    <button
+                      disabled={busy}
+                      onClick={() => setChangingConnection(false)}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  {provider.stored && (
+                    <button
+                      disabled={busy || pending}
                       onClick={() =>
                         run(async () => {
-                          setLogin(
-                            await request<Login>({
-                              type: "login_start",
-                              provider: providerId,
-                              method: method.id,
-                            }),
-                          );
+                          await request({
+                            type: "logout",
+                            provider: providerId,
+                          });
+                          await loadSettings();
+                          setMessage("Signed out.");
                         })
                       }
                     >
-                      {pending
-                        ? "Signing in…"
-                        : method.id === "oauth"
-                          ? "Sign in"
-                          : "Connect"}
-                    </button>
-                  </>
-                )}
-                {connected && (
-                  <p className="muted ai-auth-description">
-                    {auth.replace(/^Connected[ ·]*/, "") || provider.name}
-                  </p>
-                )}
-                {connected &&
-                  !changingConnection &&
-                  provider.methods.length > 0 && (
-                    <button
-                      disabled={busy || pending}
-                      onClick={() => setChangingConnection(true)}
-                    >
-                      Change connection
+                      Sign out
                     </button>
                   )}
-                {changingConnection && !pending && (
-                  <button
-                    disabled={busy}
-                    onClick={() => setChangingConnection(false)}
-                  >
-                    Cancel
-                  </button>
-                )}
-                {provider.stored && (
-                  <button
-                    disabled={busy || pending}
-                    onClick={() =>
-                      run(async () => {
-                        await request({ type: "logout", provider: providerId });
-                        await loadSettings();
-                        setMessage("Signed out.");
-                      })
-                    }
-                  >
-                    Sign out
-                  </button>
-                )}
-                {!provider.methods.length && !connected && (
-                  <p className="muted">
-                    Uses this provider’s environment or system credentials.
-                  </p>
-                )}
-                {!settings.secureStorage && !connected && (
-                  <p role="alert">
-                    Unlock your system keychain to save a connection.
-                  </p>
-                )}
-              </div>
-            )}
-          </section>
-          {pending && (
-            <section className="ai-login" aria-label="Provider sign-in">
-              <h3>
-                Connect{" "}
-                {settings.providers.find((p) => p.id === login.provider)
-                  ?.name ?? login.provider}
-              </h3>
-              {login.events.map((event, index) => (
-                <div key={index}>
-                  {event.message && <p>{event.message}</p>}
-                  {event.instructions && <p>{event.instructions}</p>}
-                  {event.userCode && (
-                    <p>
-                      Code: <strong>{event.userCode}</strong>
+                  {!provider.methods.length && !connected && (
+                    <p className="muted">
+                      Uses this provider’s environment or system credentials.
                     </p>
                   )}
-                  {(event.url || event.verificationUri) && (
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        openLink((event.url ?? event.verificationUri)!)
-                      }
-                    >
-                      Open sign-in page
-                    </button>
+                  {!settings.secureStorage && !connected && (
+                    <p role="alert">
+                      Unlock your system keychain to save a connection.
+                    </p>
                   )}
-                  {event.links?.map((link) => (
-                    <button
-                      key={link.url}
-                      disabled={busy}
-                      onClick={() => openLink(link.url)}
-                    >
-                      {link.label ?? "Open provider instructions"}
-                    </button>
-                  ))}
                 </div>
-              ))}
-              {login.prompt && (
+              )}
+            </section>
+          )}
+          {pending && login.method !== "api_key" && (
+            <section className="ai-login" aria-label="Provider sign-in">
+              <h3>
+                {deviceEvent
+                  ? "Sign in with a device code"
+                  : browserUrl
+                    ? "Waiting for sign-in…"
+                    : "Connect your account"}
+              </h3>
+              {browserUrl && (
+                <p className="muted" role="status">
+                  Finish in your browser. We’ll update this page when you’re
+                  connected.
+                </p>
+              )}
+              {deviceEvent && (
+                <div className="ai-device-code">
+                  <p className="muted">
+                    Open this address in any browser and enter the code.
+                  </p>
+                  <p className="ai-verification-url">
+                    {deviceEvent.verificationUri}
+                  </p>
+                  <strong>{deviceEvent.userCode}</strong>
+                </div>
+              )}
+              {login.events
+                .filter(
+                  (event) => !["auth_url", "device_code"].includes(event.type),
+                )
+                .map((event, index) => (
+                  <div key={index}>
+                    {event.message && <p>{event.message}</p>}
+                    {event.instructions && <p>{event.instructions}</p>}
+                    {event.links?.map((link) => (
+                      <button
+                        key={link.url}
+                        disabled={busy}
+                        onClick={() => openLink(link.url)}
+                      >
+                        {link.label ?? "Open provider instructions"}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              {login.prompt && !browserFallback && (
                 <LoginPrompt
                   key={login.prompt.id}
                   prompt={login.prompt}
@@ -359,12 +657,80 @@ export function AISettings() {
                   }
                 />
               )}
-              <button
-                disabled={busy}
-                onClick={() => run(() => request({ type: "login_cancel" }))}
-              >
-                Cancel sign-in
-              </button>
+              <div className="ai-login-actions">
+                {browserUrl && (
+                  <button disabled={busy} onClick={() => openLink(browserUrl)}>
+                    Reopen browser
+                  </button>
+                )}
+                {deviceEvent && deviceEvent.verificationUri && (
+                  <button
+                    disabled={busy}
+                    onClick={() => openLink(deviceEvent.verificationUri!)}
+                  >
+                    Open sign-in page
+                  </button>
+                )}
+                <button
+                  disabled={busy}
+                  onClick={() => run(() => request({ type: "login_cancel" }))}
+                >
+                  Cancel
+                </button>
+              </div>
+              {(browserFallback ||
+                (login.provider === "openai-codex" &&
+                  login.method === "oauth")) && (
+                <details className="ai-login-options" key={login.id}>
+                  <summary>Other sign-in options</summary>
+                  {login.provider === "openai-codex" &&
+                    login.method === "oauth" && (
+                      <button
+                        disabled={busy}
+                        onClick={() =>
+                          run(async () => {
+                            await request({ type: "login_cancel" });
+                            setLogin(
+                              await request<Login>({
+                                type: "login_start",
+                                provider: login.provider,
+                                method: "oauth",
+                                flow:
+                                  login.flow === "device_code"
+                                    ? "browser"
+                                    : "device_code",
+                              }),
+                            );
+                          })
+                        }
+                      >
+                        {login.flow === "device_code"
+                          ? "Use browser instead"
+                          : "Use device code instead"}
+                      </button>
+                    )}
+                  {browserFallback && login.prompt && (
+                    <details className="ai-login-manual">
+                      <summary>Enter a redirect URL manually</summary>
+                      <LoginPrompt
+                        key={login.prompt.id}
+                        prompt={login.prompt}
+                        busy={busy}
+                        submit={(answer) =>
+                          run(() =>
+                            request({
+                              type: "login_answer",
+                              id: login.id,
+                              promptId: login.prompt!.id,
+                              answer,
+                            }),
+                          )
+                        }
+                      />
+                    </details>
+                  )}
+                </details>
+              )}
             </section>
           )}
           {login?.error && <LoadError error={login.error} />}
@@ -381,51 +747,75 @@ export function AISettings() {
             <div className="ai-model-control">
               <select
                 aria-label="Default model"
-                value={connected ? modelId : ""}
-                disabled={busy || pending || !connected}
+                value={
+                  settings.model &&
+                  models.some(
+                    (m) =>
+                      m.provider === settings.model!.provider &&
+                      m.id === settings.model!.modelId,
+                  )
+                    ? JSON.stringify([
+                        settings.model.provider,
+                        settings.model.modelId,
+                      ])
+                    : ""
+                }
+                disabled={busy || pending || models.length === 0}
                 onChange={(e) => {
                   const next = e.target.value;
                   if (!next) return;
                   void run(async () => {
                     await request({
                       type: "settings_save",
-                      model: { provider: providerId, modelId: next },
+                      model: {
+                        provider: JSON.parse(next)[0],
+                        modelId: JSON.parse(next)[1],
+                      },
                     });
-                    setModel(next);
                     await loadSettings();
+                    window.dispatchEvent(new Event(MODEL_CHANGED_EVENT));
                     setMessage("Model saved.");
                   });
                 }}
               >
                 <option value="">
-                  {!provider
-                    ? "Choose a provider first"
-                    : !connected
-                      ? "Connect this provider first"
-                      : "Select a model"}
+                  {models.length
+                    ? "Select a model"
+                    : "Connect a provider to choose a model"}
                 </option>
-                {[...models]
+                {connectedProviders
+                  .slice()
                   .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
+                  .map((p) => (
+                    <optgroup key={p.id} label={p.name}>
+                      {models
+                        .filter((m) => m.provider === p.id)
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((m) => (
+                          <option
+                            key={m.id}
+                            value={JSON.stringify([p.id, m.id])}
+                          >
+                            {m.name}
+                          </option>
+                        ))}
+                    </optgroup>
                   ))}
               </select>
               <button
                 className="ai-refresh"
                 aria-label="Refresh models"
                 title="Refresh models"
-                disabled={busy || pending || !connected}
+                disabled={busy || pending || connectedProviders.length === 0}
                 onClick={() =>
                   run(async () => {
-                    setModels(
-                      await request<Model[]>({
-                        type: "models_refresh",
-                        provider: providerId,
-                      }),
-                    );
-                    setMessage("Models refreshed.");
+                    const result = await loadModels(true);
+                    setModels(result.models);
+                    if (result.failed.length)
+                      setError(
+                        `Could not refresh models from ${result.failed.join(", ")}.`,
+                      );
+                    else setMessage("Models refreshed.");
                   })
                 }
               >
@@ -458,10 +848,12 @@ function LoginPrompt({
   prompt,
   busy,
   submit,
+  submitLabel = "Continue",
 }: {
   prompt: Prompt;
   busy: boolean;
   submit: (answer: string) => Promise<void>;
+  submitLabel?: string;
 }) {
   const [answer, setAnswer] = useState("");
   return (
@@ -496,8 +888,8 @@ function LoginPrompt({
           />
         )}
       </Field>
-      <button type="submit" disabled={busy}>
-        Continue
+      <button type="submit" disabled={busy || !answer.trim()}>
+        {submitLabel}
       </button>
     </form>
   );

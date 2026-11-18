@@ -532,3 +532,84 @@ test("model listing and selection honor provider credential filters", async (t) 
     await runtime.close();
   }
 });
+
+test("ChatGPT sign-in chooses Pi browser login without an extra prompt", async (t) => {
+  const f = await fixture(t);
+  const models = createModels({ credentials: credentialStore(f.vault) });
+  let chosen;
+  models.setProvider({
+    ...f.faux.provider,
+    id: "openai-codex",
+    auth: {
+      oauth: {
+        name: "ChatGPT",
+        login: async (interaction) => {
+          chosen = await interaction.prompt({
+            type: "select",
+            message: "Login method",
+            options: [
+              { id: "browser", label: "Browser" },
+              { id: "device_code", label: "Device code" },
+            ],
+          });
+          interaction.notify({
+            type: "auth_url",
+            url: "https://example.com/login",
+          });
+          await interaction.prompt({
+            type: "text",
+            message: "Callback",
+            placeholder: "http://localhost:1455/auth/callback",
+            signal: interaction.signal,
+          });
+          throw Error("test cancelled");
+        },
+        refresh: async (credential) => credential,
+        toAuth: async (credential) => ({ apiKey: credential.access }),
+      },
+    },
+  });
+  const runtime = await openAssistant({ ...f, models });
+  try {
+    await runtime.request({
+      type: "login_start",
+      provider: "openai-codex",
+      method: "oauth",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const state = await runtime.request({ type: "login_status" });
+    assert.equal(chosen, "browser");
+    assert.equal(state.prompt.type, "text");
+    assert.equal(state.events[0].type, "auth_url");
+    await runtime.request({ type: "login_cancel" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(
+      (await runtime.request({ type: "login_status" })).status,
+      "cancelled",
+    );
+    await runtime.request({
+      type: "login_start",
+      provider: "openai-codex",
+      method: "oauth",
+      flow: "device_code",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(chosen, "device_code");
+    assert.equal(
+      (await runtime.request({ type: "login_status" })).flow,
+      "device_code",
+    );
+    await runtime.request({ type: "login_cancel" });
+    await assert.rejects(
+      runtime.request({
+        type: "login_start",
+        provider: "openai-codex",
+        method: "oauth",
+        flow: "invalid",
+      }),
+      /Unsupported sign-in flow/,
+    );
+  } finally {
+    await runtime.close();
+  }
+});

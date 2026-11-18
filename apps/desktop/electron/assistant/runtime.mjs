@@ -139,6 +139,8 @@ export async function openAssistant({
     return {
       id: login.id,
       provider: login.provider,
+      method: login.method,
+      flow: login.flow,
       status: login.status,
       events: login.events,
       prompt: login.prompt,
@@ -154,10 +156,19 @@ export async function openAssistant({
       throw Error("Unsupported sign-in method");
     if (login?.status === "pending")
       throw Error("Finish or cancel the current sign-in first");
+    if (
+      op.flow !== undefined &&
+      (p.id !== "openai-codex" ||
+        op.method !== "oauth" ||
+        !["browser", "device_code"].includes(op.flow))
+    )
+      throw Error("Unsupported sign-in flow");
     const controller = new AbortController();
     const state = {
       id: randomUUID(),
       provider: p.id,
+      method: op.method,
+      flow: op.flow ?? "browser",
       status: "pending",
       events: [],
       controller,
@@ -173,6 +184,15 @@ export async function openAssistant({
             state.events = [...state.events.slice(-19), structuredClone(event)];
           },
           prompt(prompt) {
+            // Pi owns OAuth; a desktop uses its browser flow by default.
+            if (
+              p.id === "openai-codex" &&
+              op.method === "oauth" &&
+              prompt.type === "select" &&
+              prompt.options?.some((option) => option.id === "browser") &&
+              prompt.options?.some((option) => option.id === "device_code")
+            )
+              return Promise.resolve(state.flow);
             const id = randomUUID();
             const { signal, ...fields } = prompt;
             state.prompt = { ...fields, id };
@@ -335,6 +355,7 @@ export async function openAssistant({
         }
         case "login_cancel":
           login?.controller.abort();
+          await login?.finished;
           return null;
         case "logout":
           provider(op.provider);
