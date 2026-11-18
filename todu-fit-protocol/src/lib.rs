@@ -162,6 +162,18 @@ pub enum Operation {
         identifier: String,
         name: String,
     },
+    GuidedDayContext {
+        root_id: String,
+        group_id: String,
+        day: NaiveDate,
+    },
+    SaveGuidedDay {
+        root_id: String,
+        group_id: String,
+        day: NaiveDate,
+        fingerprint: String,
+        meals: Vec<ProposedMeal>,
+    },
     PlanningContext {
         root_id: String,
         group_id: String,
@@ -310,6 +322,7 @@ impl Operation {
                 | Self::DishGet { .. }
                 | Self::PlansList { .. }
                 | Self::PlanningContext { .. }
+                | Self::GuidedDayContext { .. }
                 | Self::PlanGet { .. }
                 | Self::MealsHistory { .. }
                 | Self::ShoppingList { .. }
@@ -329,6 +342,10 @@ impl Operation {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProposedMeal {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uses_leftovers: Option<bool>,
     pub date: NaiveDate,
     pub meal_type: MealType,
     pub title: String,

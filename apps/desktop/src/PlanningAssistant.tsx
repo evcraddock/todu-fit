@@ -1,3 +1,5 @@
+import { GuidedDay } from "./GuidedDay";
+import { ai, type Reply } from "./planningWorker";
 import { useEffect, useRef, useState } from "react";
 import { call, type Operation } from "./api";
 import { AssistantPanel } from "./AssistantPanel";
@@ -13,23 +15,6 @@ import {
 } from "./planning";
 
 type Scope = { root_id: string; group_id: string };
-async function ai<T>(operation: Operation): Promise<T> {
-  const result = await window.fit.assistant(operation);
-  if (!result.ok) throw Error(result.error);
-  return result.value as T;
-}
-type Reply = {
-  status: string;
-  reason?: string;
-  detail?: string;
-  answer?: {
-    model?: {
-      role: string;
-      errorMessage?: string;
-      content: { type: string; text?: string }[];
-    }[];
-  };
-};
 type Turn = { role: string; text: string };
 type Session = {
   messages: Turn[];
@@ -47,6 +32,7 @@ export function PlanningAssistant({
   week: string;
   refresh: () => void;
 }) {
+  const [guided, setGuided] = useState(false);
   const key = JSON.stringify([
     "fit.planning",
     scope.root_id,
@@ -250,154 +236,167 @@ export function PlanningAssistant({
   }
   return (
     <AssistantPanel title="Meal planning assistant" preference="fit.plan-chat">
-      <section className="dish-chat" aria-label="Meal planning assistant">
-        <div className="recipe-messages planning-messages">
-          {!session.messages.length && (
-            <>
-              <h3>What meals would you like to plan?</h3>
-              <p>
-                Ask for one meal, a day, or the week. Your selected AI provider
-                receives the group’s dishes, planned meals, your targets and any
-                targets shared with this group.
-              </p>
-            </>
-          )}
-          {session.messages.map((m, i) => (
-            <div key={i}>
-              <strong>{m.role}</strong>
-              <Markdown>{m.text}</Markdown>
-            </div>
-          ))}
-          {data && meals.length > 0 && (
-            <fieldset disabled={busy || !!session.approval}>
-              <legend>Proposed meals</legend>
-              {meals.map((m, i) => (
-                <article key={i}>
-                  <small>
-                    {m.date} · {m.meal_type}
-                  </small>
-                  <h3>{m.title}</h3>
-                  {m.dish_ids.map((d) => (
-                    <div key={d}>
-                      <strong>
-                        {data.dishes.find((x) => x.id === d)?.name}
-                      </strong>
-                      {Object.entries(data.people).map(([p, person]) => (
-                        <label className="portion-input" key={p}>
-                          {person.name}
-                          <input
-                            type="number"
-                            min="0"
-                            step="any"
-                            aria-label={
-                              person.name +
-                              " servings of " +
-                              data.dishes.find((x) => x.id === d)?.name
-                            }
-                            value={m.portions[p]?.[d] ?? ""}
-                            placeholder="0"
-                            onChange={(e) =>
-                              portion(i, p, d, e.target.valueAsNumber)
-                            }
-                          />{" "}
-                          servings
-                        </label>
-                      ))}
-                    </div>
-                  ))}
-                </article>
-              ))}
-              <h3>Daily target comparison</h3>
-              {[...new Set(meals.map((m) => m.date))].sort().map((day) => (
-                <div key={day}>
-                  <strong>{day}</strong>
-                  {Object.entries(data.people).map(([p, person]) => (
-                    <details key={p} open>
-                      <summary>{person.name}</summary>
-                      {!Object.keys(person.targets).length && (
-                        <p>No targets set.</p>
-                      )}
-                      {Object.entries(person.targets).map(([k, b]) => {
-                        const [name, unit] = metrics[k as keyof typeof metrics];
-                        const { total, partial } = comparison(
-                          data,
-                          meals,
-                          day,
-                          p,
-                          k,
-                        );
-                        const status = partial
-                          ? "Incomplete data"
-                          : b.min != null && total < b.min
-                            ? "Below target"
-                            : b.max != null && total > b.max
-                              ? "Above target"
-                              : "Within target";
-                        return (
-                          <p key={k}>
-                            {name} · {+total.toFixed(1)} {unit} /{" "}
-                            {range(b.min, b.max)} {unit}
-                            <br />
-                            <small>{status}</small>
-                          </p>
-                        );
-                      })}
-                    </details>
-                  ))}
-                </div>
-              ))}
-            </fieldset>
-          )}
-          {meals.length > 0 && (
+      {guided ? (
+        <GuidedDay
+          scope={scope}
+          week={week}
+          refresh={refresh}
+          onBack={() => setGuided(false)}
+        />
+      ) : (
+        <section className="dish-chat" aria-label="Meal planning assistant">
+          <div className="recipe-messages planning-messages">
+            <button onClick={() => setGuided(true)}>Plan a day with me</button>
+            {!session.messages.length && (
+              <>
+                <h3>What meals would you like to plan?</h3>
+                <p>
+                  Ask for one meal, a day, or the week. Your selected AI
+                  provider receives the group’s dishes, planned meals, your
+                  targets and any targets shared with this group.
+                </p>
+              </>
+            )}
+            {session.messages.map((m, i) => (
+              <div key={i}>
+                <strong>{m.role}</strong>
+                <Markdown>{m.text}</Markdown>
+              </div>
+            ))}
+            {data && meals.length > 0 && (
+              <fieldset disabled={busy || !!session.approval}>
+                <legend>Proposed meals</legend>
+                {meals.map((m, i) => (
+                  <article key={i}>
+                    <small>
+                      {m.date} · {m.meal_type}
+                    </small>
+                    <h3>{m.title}</h3>
+                    {m.dish_ids.map((d) => (
+                      <div key={d}>
+                        <strong>
+                          {data.dishes.find((x) => x.id === d)?.name}
+                        </strong>
+                        {Object.entries(data.people).map(([p, person]) => (
+                          <label className="portion-input" key={p}>
+                            {person.name}
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              aria-label={
+                                person.name +
+                                " servings of " +
+                                data.dishes.find((x) => x.id === d)?.name
+                              }
+                              value={m.portions[p]?.[d] ?? ""}
+                              placeholder="0"
+                              onChange={(e) =>
+                                portion(i, p, d, e.target.valueAsNumber)
+                              }
+                            />{" "}
+                            servings
+                          </label>
+                        ))}
+                      </div>
+                    ))}
+                  </article>
+                ))}
+                <h3>Daily target comparison</h3>
+                {[...new Set(meals.map((m) => m.date))].sort().map((day) => (
+                  <div key={day}>
+                    <strong>{day}</strong>
+                    {Object.entries(data.people).map(([p, person]) => (
+                      <details key={p} open>
+                        <summary>{person.name}</summary>
+                        {!Object.keys(person.targets).length && (
+                          <p>No targets set.</p>
+                        )}
+                        {Object.entries(person.targets).map(([k, b]) => {
+                          const [name, unit] =
+                            metrics[k as keyof typeof metrics];
+                          const { total, partial } = comparison(
+                            data,
+                            meals,
+                            day,
+                            p,
+                            k,
+                          );
+                          const status = partial
+                            ? "Incomplete data"
+                            : b.min != null && total < b.min
+                              ? "Below target"
+                              : b.max != null && total > b.max
+                                ? "Above target"
+                                : "Within target";
+                          return (
+                            <p key={k}>
+                              {name} · {+total.toFixed(1)} {unit} /{" "}
+                              {range(b.min, b.max)} {unit}
+                              <br />
+                              <small>{status}</small>
+                            </p>
+                          );
+                        })}
+                      </details>
+                    ))}
+                  </div>
+                ))}
+              </fieldset>
+            )}
+            {meals.length > 0 && (
+              <button
+                className="primary"
+                disabled={
+                  busy ||
+                  meals.some((m) =>
+                    m.dish_ids.some(
+                      (id) => !Object.values(m.portions).some((s) => s[id] > 0),
+                    ),
+                  )
+                }
+                onClick={save}
+              >
+                {session.approval
+                  ? "Retry approved save"
+                  : "Save approved meals"}
+              </button>
+            )}
+            {busy && !error && <p role="status">Working…</p>}
+            {session.pending && error && (
+              <button
+                onClick={() => {
+                  setError("");
+                  setRetry((n) => n + 1);
+                }}
+              >
+                Retry response
+              </button>
+            )}
+            <LoadError error={error} />
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void send();
+            }}
+          >
+            <Field label="Message">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Plan meals for this week…"
+              />
+            </Field>
             <button
               className="primary"
-              disabled={
-                busy ||
-                meals.some((m) =>
-                  m.dish_ids.some(
-                    (id) => !Object.values(m.portions).some((s) => s[id] > 0),
-                  ),
-                )
-              }
-              onClick={save}
+              disabled={busy || !input.trim() || !!session.approval}
             >
-              {session.approval ? "Retry approved save" : "Save approved meals"}
+              Send
             </button>
-          )}
-          {busy && !error && <p role="status">Working…</p>}
-          {session.pending && error && (
-            <button
-              onClick={() => {
-                setError("");
-                setRetry((n) => n + 1);
-              }}
-            >
-              Retry response
-            </button>
-          )}
-          <LoadError error={error} />
-        </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send();
-          }}
-        >
-          <Field label="Message">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Plan meals for this week…"
-            />
-          </Field>
-          <button
-            className="primary"
-            disabled={busy || !input.trim() || !!session.approval}
-          >
-            Send
-          </button>
-        </form>
-      </section>
+          </form>
+        </section>
+      )}
     </AssistantPanel>
   );
 }

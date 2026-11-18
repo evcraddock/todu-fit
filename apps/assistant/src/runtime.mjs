@@ -372,6 +372,7 @@ export async function openAssistant({
             throw Error("Finish or cancel sign-in first");
           await models.logout(op.provider);
           return null;
+        case "guided_conversation_create":
         case "planning_conversation_create":
         case "dish_conversation_create":
         case "conversation_create": {
@@ -385,9 +386,16 @@ export async function openAssistant({
                 model: selected,
                 ...(op.type === "dish_conversation_create"
                   ? { instructions: DISH_INSTRUCTIONS }
-                  : op.type === "planning_conversation_create"
-                    ? { instructions: PLANNING_INSTRUCTIONS }
-                    : {}),
+                  : op.type === "guided_conversation_create"
+                    ? {
+                        instructions: await fs.readFile(
+                          new URL("./guided-day.md", import.meta.url),
+                          "utf8",
+                        ),
+                      }
+                    : op.type === "planning_conversation_create"
+                      ? { instructions: PLANNING_INSTRUCTIONS }
+                      : {}),
               },
             },
             context,

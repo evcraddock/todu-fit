@@ -422,7 +422,18 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
             dishes.remove_ingredient(d.id, name).map_err(failure)?;
             Ok(V::Dish(convert(resolve_dish(&dishes, identifier)?)?))
         }
-        Op::PlanningContext {
+        Op::GuidedDayContext {
+            root_id,
+            group_id,
+            day: week,
+        }
+        | Op::SaveGuidedDay {
+            root_id,
+            group_id,
+            day: week,
+            ..
+        }
+        | Op::PlanningContext {
             root_id,
             group_id,
             week,
@@ -450,8 +461,16 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                     "Your active identity or group changed. Reopen Meal plans.",
                 ));
             }
-            let start = week_start(*week)?;
-            let end = start + Duration::days(6);
+            let guided = matches!(
+                operation,
+                Op::GuidedDayContext { .. } | Op::SaveGuidedDay { .. }
+            );
+            let (start, end) = if guided {
+                (*week, *week)
+            } else {
+                let start = week_start(*week)?;
+                (start, start + Duration::days(6))
+            };
             let mut available: Vec<_> = dishes
                 .list()
                 .map_err(failure)?
@@ -466,6 +485,15 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                 .collect::<Result<_, api::ApiError>>()?;
             available.sort_by_key(|d| d.id);
             let mut existing = plans.list_range(start, end).map_err(failure)?;
+            if guided {
+                if let Some(previous) = start.pred_opt() {
+                    existing.extend(
+                        plans
+                            .list_range_filtered(previous, previous, Some(core::MealType::Dinner))
+                            .map_err(failure)?,
+                    );
+                }
+            }
             existing.sort_by_key(|p| p.id);
             let mut data = api::PlanningContext {
                 dishes: available,
@@ -485,6 +513,7 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                         p.date,
                         p.meal_type,
                         &p.title,
+                        p.uses_leftovers,
                         &p.dish_ids,
                         &p.portions,
                     )
@@ -497,11 +526,14 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                         .map_err(crate::internal)?
                 )
             );
-            let Op::SavePlanningProposal {
-                fingerprint, meals, ..
-            } = operation
-            else {
-                return Ok(V::PlanningContext(data));
+            let (fingerprint, meals) = match operation {
+                Op::SaveGuidedDay {
+                    fingerprint, meals, ..
+                }
+                | Op::SavePlanningProposal {
+                    fingerprint, meals, ..
+                } => (fingerprint, meals),
+                _ => return Ok(V::PlanningContext(data)),
             };
             if fingerprint != &data.fingerprint {
                 return Err(error(
@@ -509,10 +541,11 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                     "The week, dishes or targets changed. Review a fresh proposal before saving.",
                 ));
             }
-            if meals.is_empty() || meals.len() > 28 {
+            if (!guided && meals.is_empty()) || meals.len() > 28 {
                 return Err(invalid("Propose 1 to 28 meals in the selected week"));
             }
             let mut saved = Vec::new();
+            let mut replacements = std::collections::BTreeSet::new();
             for meal in meals {
                 let ids: std::collections::BTreeSet<_> = meal.dish_ids.iter().copied().collect();
                 if !(start..=end).contains(&meal.date)
@@ -533,6 +566,25 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                 )
                 .with_cook(&context.created_by)
                 .with_dish_ids(meal.dish_ids.clone());
+                if let Some(id) = meal.replaces {
+                    if !guided || !replacements.insert(id) {
+                        return Err(invalid("Invalid replacement meal"));
+                    }
+                    let original = plan(&plans, id)?;
+                    if original.date != meal.date || original.meal_type != p.meal_type {
+                        return Err(invalid(
+                            "Replacement must match the original day and meal type",
+                        ));
+                    }
+                    p.id = original.id;
+                    p.cook = original.cook;
+                    p.created_by = original.created_by;
+                    p.created_at = original.created_at;
+                    p.uses_leftovers = original.uses_leftovers;
+                }
+                if let Some(leftovers) = meal.uses_leftovers {
+                    p.uses_leftovers = leftovers;
+                }
                 let mut assigned = std::collections::BTreeSet::new();
                 for (key, servings) in &meal.portions {
                     let person = data
@@ -563,7 +615,25 @@ pub fn execute(path: &Path, context: &Context, operation: &Op) -> Result<V, api:
                 saved.push(p);
             }
             for p in &saved {
-                plans.create(p).map_err(failure)?;
+                let stored = if replacements.contains(&p.id) {
+                    plans.update(p)
+                } else {
+                    plans.create(p)
+                }
+                .map_err(failure)?;
+                if stored.id != p.id
+                    || stored.date != p.date
+                    || stored.meal_type != p.meal_type
+                    || stored.title != p.title
+                    || stored.uses_leftovers != p.uses_leftovers
+                    || stored.dish_ids != p.dish_ids
+                    || stored.portions != p.portions
+                {
+                    return Err(error(
+                        Code::Storage,
+                        "Saved meal did not match the approved proposal",
+                    ));
+                }
             }
             Ok(V::Plans(convert(saved)?))
         }
