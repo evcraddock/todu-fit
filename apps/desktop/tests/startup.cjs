@@ -650,3 +650,63 @@ test(
     }
   },
 );
+
+test("planning proposals commit together in the approved group and retry once", async () => {
+  const f = await fresh();
+  let bridge;
+  try {
+    bridge = openApplicationBridge(await connectOrStart(f.options));
+    const request = (op, id) => bridge.request(op, id).then((r) => r.data);
+    await request({ type: "setup_start", group_name: "Test kitchen" });
+    assert.equal((await finish(bridge)).state, "ready");
+    const identity = await request({ type: "identity_get" });
+    const scope = {
+      root_id: identity.root_id,
+      group_id: identity.groups[0].id,
+      week: "2026-11-08",
+    };
+    const duplicate = await request({
+      type: "group_create",
+      name: "TEST KITCHEN",
+    });
+    await assert.rejects(
+      request({ type: "planning_context", ...scope, group_id: duplicate.id }),
+      /group changed/,
+    );
+    const dish = await request({ type: "dish_create", name: "Soup" });
+    const context = await request({ type: "planning_context", ...scope });
+    assert.equal(context.existing.length, 0);
+    const member = Object.keys(context.people)[0];
+    const meal = {
+      title: "Soup for lunch",
+      date: "2026-11-10",
+      meal_type: "lunch",
+      dish_ids: [dish.id],
+      portions: { [member]: { [dish.id]: 1.5 } },
+    };
+    const operation = {
+      type: "save_planning_proposal",
+      ...scope,
+      fingerprint: context.fingerprint,
+      meals: [meal, { ...meal, date: "2026-11-11" }],
+    };
+    await assert.rejects(
+      request({ ...operation, group_id: "wrong" }),
+      /group changed/,
+    );
+    await assert.rejects(
+      request({ ...operation, meals: [meal, { ...meal, portions: {} }] }),
+      /Assign each/,
+    );
+    const id = randomUUID(),
+      saved = await request(operation, id);
+    assert.deepEqual(await request(operation, id), saved);
+    await assert.rejects(request(operation), /changed/);
+    const after = await request({ type: "planning_context", ...scope });
+    assert.equal(after.existing.length, 2);
+    assert.equal(after.existing[0].portions[member].servings[dish.id], 1.5);
+  } finally {
+    await bridge?.close();
+    await f.close();
+  }
+});

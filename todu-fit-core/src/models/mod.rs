@@ -16,7 +16,7 @@ pub use hydration::{
 };
 pub use ingredient::Ingredient;
 pub use meal_log::MealLog;
-pub use meal_plan::MealPlan;
+pub use meal_plan::{MealPlan, PersonPortions};
 pub use meal_type::MealType;
 pub use nutrient::Nutrient;
 pub use shopping_cart::{

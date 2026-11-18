@@ -123,6 +123,11 @@ fn read_mealplan(
         meal_type,
         title,
         cook,
+        portions: get_string(doc, obj_id, "portions")?
+            .map(|s| serde_json::from_str(&s))
+            .transpose()
+            .map_err(|e| ReaderError::ParseError(e.to_string()))?
+            .unwrap_or_default(),
         dish_ids,
         uses_leftovers,
         created_by,

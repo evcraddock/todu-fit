@@ -5,6 +5,12 @@ use uuid::Uuid;
 
 use super::meal_type::MealType;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PersonPortions {
+    pub name: String,
+    pub servings: std::collections::BTreeMap<Uuid, f64>,
+}
+
 /// A meal plan represents a planned meal for a specific date.
 ///
 /// Meal plans reference dishes by ID (live lookup) rather than embedding
@@ -19,6 +25,9 @@ pub struct MealPlan {
     pub cook: String,
     /// References to dishes by UUID (resolved at display time)
     pub dish_ids: Vec<Uuid>,
+    /// Per-dish servings by group-scoped participant ID.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub portions: std::collections::BTreeMap<String, PersonPortions>,
     /// When true, this meal is using leftovers and should not contribute
     /// fresh dish ingredients to shared shopping-list generation.
     #[serde(default)]
@@ -43,6 +52,7 @@ impl MealPlan {
             title: title.into(),
             cook: "Unknown".to_string(),
             dish_ids: Vec::new(),
+            portions: Default::default(),
             uses_leftovers: false,
             created_by: created_by.into(),
             created_at: now,

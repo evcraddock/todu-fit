@@ -280,7 +280,16 @@ function App() {
               ) : page === "Dishes" ? (
                 <Dishes revision={revision} refresh={refresh} />
               ) : page === "Meal plans" ? (
-                <Meals key="plans" revision={revision} refresh={refresh} />
+                <Meals
+                  key="plans"
+                  planningScope={
+                    identity.root_id
+                      ? { root_id: identity.root_id, group_id: group.id }
+                      : undefined
+                  }
+                  revision={revision}
+                  refresh={refresh}
+                />
               ) : (
                 <Shopping revision={revision} refresh={refresh} />
               )}

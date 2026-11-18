@@ -14,6 +14,9 @@ Otherwise return a JSON object with a brief conversational "message" and a "draf
 name (string), servings (positive integer), ingredients (array of {name, quantity: number, unit}), instructions (Markdown cooking steps), prep_time and cook_time (whole minutes, zero for no cooking, null if unknown), and nutrients (array of {name, amount: number, unit}, per serving).
 Use kcal for calories and grams for protein, carbs and fat. Put times and nutrients in their form fields. Identify estimates in your message. Only describe changes included in your draft. The user reviews the form and chooses Save dish. Never claim that a dish has been saved.`;
 
+const PLANNING_INSTRUCTIONS = `Help plan meals for the selected week. Use only the supplied dishes and participants. Consider existing meals, per-serving nutrients and each person's daily targets. Suggest practical portions, distinguish missing nutrition from zero, and ask questions when necessary. The user may request one meal, a day or a week. Existing saved meals are context; propose additions only. Each turn includes the current editable proposal. Apply feedback to that proposal and preserve unaffected meals.
+Return JSON { "message": "brief explanation", "meals": null } for conversation, or replace meals with the full revised proposal array. Each meal has date (YYYY-MM-DD in the selected week), meal_type (breakfast, lunch, dinner, snack), title, dish_ids (unique IDs from dishes), and portions (object keyed by participant ID, with an object mapping dish ID to positive servings for that person). Assign every dish to at least one person. Use exact IDs. Never claim to have saved a plan. Only the user can approve saving.`;
+
 function text(value, label, maximum = 200) {
   if (typeof value !== "string" || !value.trim() || value.length > maximum)
     throw Error(`Invalid ${label}`);
@@ -369,6 +372,7 @@ export async function openAssistant({
             throw Error("Finish or cancel sign-in first");
           await models.logout(op.provider);
           return null;
+        case "planning_conversation_create":
         case "dish_conversation_create":
         case "conversation_create": {
           const selected = await requireAvailableModel(
@@ -381,7 +385,9 @@ export async function openAssistant({
                 model: selected,
                 ...(op.type === "dish_conversation_create"
                   ? { instructions: DISH_INSTRUCTIONS }
-                  : {}),
+                  : op.type === "planning_conversation_create"
+                    ? { instructions: PLANNING_INSTRUCTIONS }
+                    : {}),
               },
             },
             context,

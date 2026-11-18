@@ -23,6 +23,7 @@ export type Plan = {
   cook: string;
   dish_ids: string[];
   uses_leftovers: boolean;
+  portions?: Record<string, { name: string; servings: Record<string, number> }>;
 };
 export type Meal = {
   log: {

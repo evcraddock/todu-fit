@@ -2,7 +2,7 @@ import { useState } from "react";
 import { call, type Group } from "./api";
 import { Field, LoadError, useAction, useLoad } from "./ui";
 
-const metrics = {
+export const metrics = {
   calories_kcal: ["Calories", "kcal"],
   protein_g: ["Protein", "g"],
   carbohydrates_g: ["Carbohydrates", "g"],
@@ -21,7 +21,10 @@ type Bounds = {
   reference_min: number | null;
   reference_max: number | null;
 };
-type Profile = { name: string; targets: Partial<Record<Metric, Bounds>> };
+export type Profile = {
+  name: string;
+  targets: Partial<Record<Metric, Bounds>>;
+};
 type Personal = { profile: Profile | null; shared_groups: string[] };
 const empty = (): Bounds => ({
   min: null,
@@ -29,7 +32,7 @@ const empty = (): Bounds => ({
   reference_min: null,
   reference_max: null,
 });
-function range(lo: number | null, hi: number | null) {
+export function range(lo: number | null, hi: number | null) {
   if (lo != null && hi != null) return lo === hi ? String(lo) : `${lo}–${hi}`;
   if (lo != null) return `At least ${lo}`;
   if (hi != null) return `At most ${hi}`;
