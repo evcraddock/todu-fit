@@ -2399,3 +2399,15 @@ a {
   color: var(--muted);
   font-size: .85rem;
 }
+
+.food-log-chat { display: flex; flex-direction: column; gap: 14px; }
+.food-log-item { display: grid; gap: 8px; padding-block: 12px; border-bottom: 1px solid var(--border); }
+.food-log-item-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.food-log-item select { max-width: 100%; }
+.food-log-plans { display: grid; gap: 8px; }
+.food-log-plans button { display: grid; gap: 4px; padding: 10px 12px; text-align: left; }
+.food-log-plans small { color: var(--muted); }
+
+.linked-meal-plan { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-block: 12px; }
+.linked-meal-plan > div { display: grid; gap: 3px; }
+.linked-meal-plan small { color: var(--muted); }

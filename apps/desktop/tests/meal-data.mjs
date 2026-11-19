@@ -207,3 +207,33 @@ test("a guided revision replaces only its accepted meal in the projected tally",
   assert.deepEqual(dayWrites(slots, accepted), []);
   assert.equal(dayWrites(slots, revised)[0].replaces, plan.id);
 });
+
+test("food log draft keeps existing dishes through missing-dish creation and portion revisions", async () => {
+  const { applyLogReply, selectLogDish } = await import("../src/foodLogging.ts");
+  const soup = { id: "soup", name: "Tomato Soup" };
+  const search = async () => [soup, { id: "other", name: "Turkey Sandwich" }];
+  const { draft } = await applyLogReply(JSON.stringify({
+    message: "Review your lunch.", meal: "lunch",
+    changes: [{ name: "Tomato soup", servings: 1.5 }, { name: "New toast", servings: 2 }]
+  }), { date: "2026-11-18", meal: "", items: [] }, search);
+  assert.equal(draft.items[0].dish.id, "soup");
+  assert.deepEqual(draft.items[1].matches, []);
+  const completed = selectLogDish(draft, 1, {id: "toast", name: "Pepper Toast"});
+  const revised = await applyLogReply(JSON.stringify({
+    message: "Updated.", changes: [{ name: "Pepper Toast", servings: 0.5 }]
+  }), completed, () => { throw Error("Selected dishes should not be searched again"); });
+  assert.deepEqual(revised.draft.items.map(i => [i.dish.id, i.servings]), [["soup",1.5], ["toast",0.5]]);
+});
+
+test("food log suggests only the selected slot and keeps each person's planned servings", async () => {
+  const { plannedLogs } = await import("../src/foodLogging.ts");
+  const dishes = [{ id: "soup", name: "Soup" }, { id: "toast", name: "Toast" }];
+  const lunch = {
+    id: "p1", title: "Soup lunch", date: "2026-11-18", meal_type: "lunch", dish_ids: ["soup", "toast"],
+    portions: { a: {name: "Alex", servings: {soup: 1}}, b: {name: "Sam", servings: {soup: 1.5, toast: 2}} }
+  };
+  const options = plannedLogs([lunch, {...lunch, date:"2026-11-17"}, {...lunch,meal_type:"dinner"}], dishes, lunch.date, "lunch");
+  assert.deepEqual(options.map(p => [p.title, p.items.map(i=>[i.name,i.servings])]), [
+    ["Soup lunch · Alex", [["Soup",1]]], ["Soup lunch · Sam", [["Soup",1.5],["Toast",2]]]
+  ]);
+});
