@@ -2,7 +2,12 @@ import fs from "node:fs/promises";
 import { modelCatalog, writeJson } from "./catalog.mjs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import {
+  builtinProviders,
+  getBuiltinModelDataGeneratedAt,
+} from "@earendil-works/pi-ai/providers/all";
+import { createModels } from "@earendil-works/pi-ai/models";
+import { withRemoteCatalog } from "./remote-catalog.mjs";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { Harness, createRegistry } from "@earendil-works/pi-durable";
 import { openNodeSqliteDatabase } from "@earendil-works/chord/sqlite/node";
@@ -88,7 +93,12 @@ export async function openAssistant({
   const credentials = credentialStore(vault);
   const models =
     suppliedModels ??
-    builtinModels({ credentials, modelsStore: await modelCatalog(directory) });
+    createModels({ credentials, modelsStore: await modelCatalog(directory) });
+  if (!suppliedModels) {
+    const generatedAt = getBuiltinModelDataGeneratedAt();
+    for (const provider of builtinProviders())
+      models.setProvider(withRemoteCatalog(provider, generatedAt));
+  }
   const restored = await models.refresh({
     allowNetwork: false,
     signal: AbortSignal.timeout(10_000),
@@ -294,6 +304,16 @@ export async function openAssistant({
         }
         case "models":
           provider(op.provider);
+          {
+            const refreshed = await models.refresh({
+              providers: [op.provider],
+              signal: AbortSignal.timeout(10_000),
+            });
+            if (refreshed.aborted || refreshed.errors.size)
+              console.warn(
+                `Using cached model catalog for ${op.provider}; refresh failed.`,
+              );
+          }
           return (await availableModels(op.provider)).map((m) => ({
             id: m.id,
             name: m.name,
@@ -302,6 +322,7 @@ export async function openAssistant({
           provider(op.provider);
           const result = await models.refresh({
             providers: [op.provider],
+            force: true,
             signal: AbortSignal.timeout(15_000),
           });
           if (result.aborted || result.errors.size)
