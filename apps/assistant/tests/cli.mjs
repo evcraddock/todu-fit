@@ -91,7 +91,7 @@ test("Rust CLI launches and shares the independent packaged Node service", async
   }
 });
 
-test("desktop explicitly upgrades an old shared worker and leaves it running on client close", async () => {
+test("desktop explicitly upgrades an old shared worker and leaves it running on client close", async (t) => {
   const { spawn } = await import("node:child_process");
   const { once } = await import("node:events");
   const { createRequire } = await import("node:module");
@@ -122,7 +122,25 @@ test("desktop explicitly upgrades an old shared worker and leaves it running on 
       bundle: path.join(root, "apps/desktop/assistant-worker"),
     });
     await assert.rejects(host.start(), /Assistant update is ready/);
-    await host.request({ type: "worker_restart" });
+    const upgradeStarted = Date.now();
+    try {
+      await host.request({ type: "worker_restart" });
+    } finally {
+      // The launcher atomically renames the staged runtime into this directory.
+      // Report the last completed phase even when the launcher itself was killed.
+      const runtimes = path.join(directory, "runtimes");
+      const entries = await fs.readdir(runtimes).catch((error) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      });
+      const elapsed = Date.now() - upgradeStarted;
+      if (entries.some((name) => /^[a-f0-9]{64}$/.test(name))) {
+        const { mtimeMs } = await fs.stat(runtimes);
+        t.diagnostic(`Upgrade: runtime staged after ${Math.round(mtimeMs - upgradeStarted)} ms; restart returned after ${elapsed} ms.`);
+      } else {
+        t.diagnostic(`Upgrade: ${entries.length ? "runtime staging started but did not finish" : "no staged runtime found"} after ${elapsed} ms.`);
+      }
+    }
     const updated = await request(directory, { type: "worker_status" });
     assert.notEqual(updated.pid, child.pid);
     assert.notEqual(updated.version, "development");

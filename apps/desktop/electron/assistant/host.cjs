@@ -32,7 +32,8 @@ function createAssistantHost({
           binary,
           [path.join(bundle, "src/launcher.mjs"), directory, legacyDirectory],
           {
-            timeout: 30000,
+            // A cold launch stages the runtime before the launcher starts its
+            // worker-readiness timeout. Let staging finish on slower disks.
             maxBuffer: 1024 * 1024,
             windowsHide: true,
             env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
