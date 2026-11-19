@@ -19,7 +19,7 @@ Local-first meal planning and nutrition tracking with cross-device sync.
 | **todu-fit-cli** | Command-line interface (`fit` binary) |
 | **[Fit Desktop](apps/desktop/README.md)** | Electron desktop client |
 | **todu-fit-core** | Shared Rust library (models, sync) |
-| **[todu-sync](https://github.com/evcraddock/todu-sync)** | Automerge sync server (separate repo) |
+| **[automerge-repo-sync-server](https://github.com/automerge/automerge-repo-sync-server)** | Automerge sync server (separate repo) |
 
 ## How It Works
 
