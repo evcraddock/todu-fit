@@ -30,12 +30,7 @@ document.documentElement.dataset.theme =
     : initialAppearance;
 
 type Page =
-  | "Dishes"
-  | "Meal plans"
-  | "Food log"
-  | "Shopping"
-  | "Water"
-  | "Settings";
+  "Dishes" | "Meal plans" | "Food log" | "Shopping" | "Water" | "Settings";
 function App() {
   const [appearance, setAppearance] = useState<Appearance>(initialAppearance);
   useEffect(() => applyAppearance(appearance), [appearance]);
@@ -281,7 +276,7 @@ function App() {
                 <Dishes revision={revision} refresh={refresh} />
               ) : page === "Meal plans" ? (
                 <Meals
-                  key="plans"
+                  key={JSON.stringify(["plans", identity.root_id, group.id])}
                   planningScope={
                     identity.root_id
                       ? { root_id: identity.root_id, group_id: group.id }

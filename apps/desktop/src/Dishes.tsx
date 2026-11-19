@@ -17,10 +17,14 @@ export function Dishes({
   revision,
   refresh,
   initialDish,
+  initialRequest,
+  onCreated,
   onBack,
   backLabel = "Back to day",
 }: {
   initialDish?: Dish;
+  initialRequest?: string;
+  onCreated?: (dish: Dish) => void;
   onBack?: () => void;
   backLabel?: string;
   revision: number;
@@ -32,7 +36,7 @@ export function Dishes({
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Dish | undefined>(initialDish);
   const [saveNotice, setSaveNotice] = useState("");
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(initialRequest !== undefined);
   const [deleting, setDeleting] = useState<Dish>();
   const loaded = useLoad(
     () =>
@@ -77,13 +81,24 @@ export function Dishes({
     return (
       <DishEditor
         groupScope={assistantScope}
+        initialRequest={selected ? undefined : initialRequest}
         onOpenDish={(d) => {
           setSelected(d);
           setEditing(false);
         }}
         dish={selected}
-        onCancel={() => setEditing(false)}
+        onCancel={() =>
+          initialRequest !== undefined && !selected
+            ? onBack?.()
+            : setEditing(false)
+        }
         onSaved={(d, notice) => {
+          if (initialRequest !== undefined && !notice && !selected) {
+            onCreated?.(d);
+            refresh();
+            onBack?.();
+            return;
+          }
           setSaveNotice(notice ?? "");
           setSelected(d);
           setEditing(false);
@@ -295,12 +310,14 @@ export function Dishes({
 }
 // Fields and nutrient/ingredient editor follow web/src/dishes/DishForm.
 function DishEditor({
+  initialRequest,
   groupScope,
   onOpenDish,
   dish,
   onSaved,
   onCancel,
 }: {
+  initialRequest?: string;
   groupScope?: string;
   onOpenDish: (dish: Dish) => void;
   dish?: Dish;
@@ -308,7 +325,12 @@ function DishEditor({
   onCancel: () => void;
 }) {
   const scope =
-    groupScope && (dish ? JSON.stringify([groupScope, dish.id]) : groupScope);
+    groupScope &&
+    (dish
+      ? JSON.stringify([groupScope, dish.id])
+      : initialRequest !== undefined
+        ? JSON.stringify([groupScope, "meal-planning-new-dish"])
+        : groupScope);
   const chatKey = scope && "fit.dish-assistant.v1." + scope;
   const formKey = scope && "fit.new-dish.v1." + scope;
   const [chatActions, setChatActions] = useState<HTMLDivElement | null>(null);
@@ -460,7 +482,10 @@ function DishEditor({
                 servings: servings === "" ? undefined : Number(servings),
                 source_url: source,
                 ingredients,
-                nutrients,
+                nutrients: nutrients.map((n) => ({
+                  ...n,
+                  name: n.name.trim().toLowerCase(),
+                })),
                 add_tags: parsedTags,
                 remove_tags: (dish?.tags ?? []).filter(
                   (t) => !parsedTags.includes(t),
@@ -573,11 +598,13 @@ function DishEditor({
                     <Field label="Nutrient">
                       <input
                         required
-                        value={n.name}
+                        value={n.name.toLowerCase()}
                         onChange={(e) =>
                           setNutrients(
                             nutrients.map((v, j) =>
-                              i === j ? { ...v, name: e.target.value } : v,
+                              i === j
+                                ? { ...v, name: e.target.value.toLowerCase() }
+                                : v,
                             ),
                           )
                         }
@@ -617,7 +644,7 @@ function DishEditor({
                     <button
                       className="editor-remove"
                       aria-label="Remove nutrient"
-                      title={`Remove ${n.name || "nutrient"}`}
+                      title={`Remove ${n.name.toLowerCase() || "nutrient"}`}
                       type="button"
                       onClick={() =>
                         setNutrients(nutrients.filter((_, j) => i !== j))
@@ -716,10 +743,12 @@ function DishEditor({
           <AssistantPanel
             title="Dish assistant"
             preference="fit.dish-chat"
+            openOnMount={initialRequest !== undefined}
             actions={setChatActions}
           >
             <DishAssistant
               storageKey={chatKey}
+              initialRequest={initialRequest}
               headerActions={chatActions}
               onOpenDish={onOpenDish}
               draft={draft}

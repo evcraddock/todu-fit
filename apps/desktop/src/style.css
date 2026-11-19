@@ -2172,9 +2172,52 @@ a {
 #dish-assistant-panel[data-collapsed="true"] span {writing-mode:vertical-rl;}
 #dish-chat-body:not([hidden]), .dish-chat { flex:1; min-height:0; display:flex; flex-direction:column; }
 .recipe-messages { flex:1; min-height:0; overflow:auto; overflow-wrap:anywhere; padding:0 16px; }
-.dish-chat form { border-top:1px solid var(--border); padding:12px; display:flex; align-items:end; gap:8px; }
-.dish-chat form .field { flex:1; min-width:0; margin:0; }
-.dish-chat textarea { width:100%; resize:vertical; max-height:35vh; }
+.assistant-activity {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--foreground);
+  font-size: 0.875rem;
+}
+.assistant-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: assistant-spin 800ms linear infinite;
+}
+@keyframes assistant-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) {
+  .assistant-spinner { animation: none; }
+}
+.assistant-composer {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 8px 12px 12px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-soft);
+}
+.assistant-composer:focus-within { border-color: var(--accent); }
+.assistant-composer textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  max-height: 30vh;
+  field-sizing: content;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 5px 6px;
+  line-height: 1.45;
+}
 @container (max-width: 650px) {
   .dish-with-chat .editor-layout { grid-template-columns:minmax(0,1fr); }
 }
@@ -2204,6 +2247,7 @@ a {
 .target-share, .shared-targets div { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-block: 6px; max-width: 42rem; }
 .shared-targets dd { margin: 0; }
 
+.missing-dish-action { margin-top: 8px; }
 .planning-messages { padding-top: 16px; }
 .planning-messages fieldset { margin: 16px 0; padding: 12px; border: 1px solid var(--border); }
 .planning-messages article { padding-block: 12px; border-bottom: 1px solid var(--border); }
@@ -2212,7 +2256,146 @@ a {
 .portion-input input { width: 5em; margin-left: auto; }
 .planned-portion { display: block; }
 
-.guided-day fieldset { display: grid; gap: 8px; min-width: 0; }
+.guided-day fieldset {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.guided-day { container: guided-planner / inline-size; }
+.guided-day .guided-meal-card {
+  margin: 0;
+  padding: 16px;
+}
+.guided-meal-card > small, .guided-saved-dish > div {
+  color: var(--muted);
+}
+.guided-saved-dish, .guided-edit-dish {
+  display: grid;
+  gap: 4px;
+  padding-block: 8px;
+}
+.guided-saved-dish + .guided-saved-dish, .guided-edit-dish + .guided-edit-dish {
+  border-top: 1px solid var(--border);
+}
+.proposal-dish-name { display: flex; align-items: center; gap: 8px; }
+.proposal-dish-name button { flex: none; }
+.guided-edit-dish .portion-input {
+  margin: 0;
+}
+.guided-meal-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+.guided-day .guided-summary-card {
+  display: grid;
+  gap: 12px;
+  margin-block: 12px;
+  padding: 16px;
+}
+.guided-summary-card .guided-saved-dish:first-child { padding-top: 0; }
+.guided-summary-card .guided-saved-dish:last-child { padding-bottom: 0; }
+.guided-summary-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.guided-summary-footer:empty { display: none; }
+.guided-summary-footer small { color: var(--muted); }
+.guided-summary-footer button { margin-inline-start: auto; }
+.guided-leftovers {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+.guided-leftovers input { margin: 0; }
+.guided-message p { margin: 3px 0 0; line-height: 1.45; }
+@container guided-planner (min-width: 29rem) {
+  .guided-saved-dish, .guided-edit-dish {
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, auto);
+    align-items: baseline;
+    column-gap: 16px;
+  }
+  .guided-edit-dish .portion-input { grid-column: 2; }
+}
 .guided-day table { border-collapse: collapse; width: 100%; font-size: .85em; }
 .guided-day th, .guided-day td { padding: 5px 3px; text-align: left; border-bottom: 1px solid var(--border); }
 .guided-day details { margin-block: 10px; overflow-x: auto; }
+
+.meal-participants label { display: inline-flex; align-items: center; gap: 6px; margin: 6px 12px 6px 0; }
+.dish-portions summary, .meal-participants summary { cursor: pointer; }
+
+.weekly-nutrition h4 { margin: 18px 0 8px; }
+.weekly-nutrition details {
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  overflow: visible;
+}
+.weekly-nutrition summary {
+  display: grid;
+  grid-template-columns: 8px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 4px;
+  cursor: pointer;
+  font-size: .9rem;
+}
+.weekly-nutrition summary::before {
+  content: "";
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  border: solid var(--muted);
+  border-width: 1.5px 1.5px 0 0;
+  transform: rotate(45deg);
+}
+.weekly-nutrition details[open] > summary::before { transform: rotate(135deg); }
+.weekly-nutrition .nutrition-day { font-weight: 600; }
+.weekly-nutrition summary span:last-child { font-size: .78rem; text-align: right; }
+.weekly-nutrition table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .84rem;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 12px;
+}
+.weekly-nutrition :is(th, td) {
+  padding: 7px 8px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+.weekly-nutrition thead th {
+  background: var(--surface-soft);
+  font-size: .76rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.weekly-nutrition tbody th { font-weight: 500; }
+.weekly-nutrition tr > :nth-child(2) { text-align: right; }
+.weekly-nutrition tr > :last-child { padding-left: clamp(8px, 3%, 24px); }
+.weekly-nutrition tbody tr:last-child > * { border-bottom: 0; }
+.weekly-nutrition small { color: var(--muted); font-weight: 400; font-size: .75rem; }
+.weekly-nutrition .nutrition-detail { display: block; }
+.weekly-nutrition .target-missed { color: var(--danger); font-weight: 600; }
+
+.finished-week-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin: 20px 0;
+}
+.finished-week-picker label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: .85rem;
+}

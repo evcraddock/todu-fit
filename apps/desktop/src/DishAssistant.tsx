@@ -1,7 +1,9 @@
+import { AssistantComposer } from "./AssistantComposer";
+import { AssistantActivity } from "./AssistantActivity";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { call, type Dish, type Nutrient, type Operation } from "./api";
-import { Confirm, Field, LoadError } from "./ui";
+import { Confirm, LoadError } from "./ui";
 import { Markdown } from "./Markdown";
 
 export type Draft = Pick<
@@ -108,6 +110,7 @@ function reply(text: string): {
 }
 export function DishAssistant({
   storageKey: key,
+  initialRequest,
   headerActions,
   draft,
   onDraft,
@@ -117,6 +120,7 @@ export function DishAssistant({
   disabled,
 }: {
   storageKey: string;
+  initialRequest?: string;
   headerActions: HTMLElement | null;
   draft: Draft;
   onDraft: (draft: Draft) => void;
@@ -138,7 +142,7 @@ export function DishAssistant({
     current.current = next;
     set(next);
   }
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(initialRequest ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -371,11 +375,10 @@ export function DishAssistant({
           </div>
         ))}
       </div>
-      {s.pending && (
-        <p role="status">
-          {paused ? "Waiting to reconnect" : "Working on your recipe…"}
-        </p>
+      {(busy || s.pending) && !paused && !error && (
+        <AssistantActivity text="Working on your recipe…" />
       )}
+      {paused && <p role="status">Waiting to reconnect</p>}
       {paused && (
         <button
           onClick={() => {
@@ -387,27 +390,13 @@ export function DishAssistant({
           Retry
         </button>
       )}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send();
-        }}
-      >
-        <Field label="Message">
-          <textarea
-            rows={3}
-            placeholder={placeholder}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-          />
-        </Field>
-        <button
-          className="primary"
-          disabled={disabled || busy || !!s.pending || !input.trim()}
-        >
-          Send
-        </button>
-      </form>
+      <AssistantComposer
+        value={input}
+        onChange={setInput}
+        placeholder={placeholder}
+        disabled={disabled || busy || !!s.pending}
+        onSend={() => void send()}
+      />
     </section>
   );
 }

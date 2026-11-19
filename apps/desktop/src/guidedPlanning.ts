@@ -17,6 +17,18 @@ export function daySlots(data: Context, date: string): Slot[] {
     },
   );
 }
+export function restoreDayChoices(
+  data: Context,
+  date: string,
+  choices: Choices,
+): Choices {
+  const restored: Choices = {};
+  for (const slot of daySlots(data, date)) {
+    if (choices[slot.key]) restored[slot.key] = choices[slot.key];
+    else if (slot.original) restored[slot.key] = { kind: "keep" };
+  }
+  return restored;
+}
 export function savedProposal(p: Plan): Proposal {
   return {
     date: p.date,

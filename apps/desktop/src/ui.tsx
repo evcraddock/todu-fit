@@ -251,9 +251,10 @@ export function Nutrition({ values }: { values: Record<string, number> }) {
 export function dishNutrition(dishes: Dish[]) {
   const total: Record<string, number> = {};
   for (const d of dishes)
-    for (const n of d.nutrients ?? [])
-      total[`${n.name} (${n.unit})`] =
-        (total[`${n.name} (${n.unit})`] ?? 0) + n.amount;
+    for (const n of d.nutrients ?? []) {
+      const key = `${n.name.trim().toLowerCase()} (${n.unit})`;
+      total[key] = (total[key] ?? 0) + n.amount;
+    }
   return total;
 }
 export function Confirm({

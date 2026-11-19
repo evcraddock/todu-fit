@@ -6,15 +6,18 @@ export function AssistantPanel({
   actions,
   children,
   initiallyCollapsed = false,
+  openOnMount = false,
 }: {
   title: string;
   preference: string;
   actions?: (el: HTMLDivElement | null) => void;
   children: ReactNode;
   initiallyCollapsed?: boolean;
+  openOnMount?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(
     () =>
+      !openOnMount &&
       (localStorage.getItem(preference + ".collapsed") ??
         String(initiallyCollapsed)) === "true",
   );

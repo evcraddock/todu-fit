@@ -27,6 +27,21 @@ test("meal plans fetch only the week and unique referenced dishes", async () => 
   assert.deepEqual(result.history, []);
 });
 
+test("large weeks do not open a connection for every dish at once", async () => {
+  let active = 0;
+  const ids = Array.from({ length: 32 }, (_, i) => String(i));
+  const result = await loadReferencedDishes(async ({ identifier }) => {
+    assert.equal(++active, 1);
+    await Promise.resolve();
+    active--;
+    return { id: identifier };
+  }, ids);
+  assert.deepEqual(
+    result.map((dish) => dish.id),
+    ids,
+  );
+});
+
 test("food log uses snapshots without fetching plans or dishes, even without a group", async () => {
   const calls = [];
   const history = [{ log: { dishes: [{ id: "historic" }] } }];
