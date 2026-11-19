@@ -11,6 +11,110 @@ import {
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { openAssistant, credentialStore } from "../src/runtime.mjs";
 import { credentialVault } from "../../desktop/electron/assistant/credentials.cjs";
+import { withRemoteCatalog } from "../src/remote-catalog.mjs";
+import { modelCatalog } from "../src/catalog.mjs";
+
+test("remote models reach the picker, persist offline, and force refresh revalidates", async (t) => {
+  const f = await fixture(t);
+  let calls = 0;
+  let fail = false;
+  const fetchCatalog = async (url, options) => {
+    calls++;
+    assert.equal(url.origin, "https://pi.dev");
+    assert.equal(url.pathname, "/api/models/providers/test");
+    assert.equal(url.searchParams.get("types"), "chat,image,classifier");
+    assert.equal(options.headers.authorization, undefined);
+    if (fail) throw Error("offline");
+    if (calls > 1) {
+      assert.equal(options.headers["if-none-match"], '"catalog-v1"');
+      return new Response(null, { status: 304 });
+    }
+    return Response.json(
+      [
+        {
+          ...f.faux.provider.getModels()[0],
+          id: "gpt-6.2-sol",
+          name: "GPT-6.2 Sol",
+        },
+      ],
+      {
+        headers: {
+          "last-modified": "Thu, 19 Nov 2026 12:00:00 GMT",
+          etag: '"catalog-v1"',
+        },
+      },
+    );
+  };
+  const build = async () => {
+    const models = createModels({
+      modelsStore: await modelCatalog(f.directory),
+    });
+    models.setProvider(withRemoteCatalog(f.faux.provider, 0, fetchCatalog));
+    return openAssistant({ ...f, models });
+  };
+  let runtime = await build();
+  try {
+    const list = await runtime.request({ type: "models", provider: "test" });
+    assert.ok(list.some((model) => model.id === "gpt-6.2-sol"));
+    await runtime.request({
+      type: "settings_save",
+      model: { provider: "test", modelId: "gpt-6.2-sol" },
+    });
+    await runtime.request({ type: "models", provider: "test" });
+    assert.equal(calls, 1);
+    await runtime.request({ type: "models_refresh", provider: "test" });
+    assert.equal(calls, 2);
+    await runtime.close();
+    fail = true;
+    runtime = await build();
+    assert.ok(
+      (await runtime.request({ type: "models", provider: "test" })).some(
+        (model) => model.id === "gpt-6.2-sol",
+      ),
+    );
+    assert.equal(calls, 2);
+    await assert.rejects(
+      runtime.request({ type: "models_refresh", provider: "test" }),
+      /Unable to refresh/,
+    );
+    assert.ok(
+      (await runtime.request({ type: "models", provider: "test" })).some(
+        (model) => model.id === "gpt-6.2-sol",
+      ),
+    );
+  } finally {
+    await runtime.close();
+  }
+});
+
+test("remote catalogs cannot replace newer bundled data or native discovery", async () => {
+  const { provider } = fauxProvider({
+    provider: "test",
+    models: [{ id: "builtin" }],
+  });
+  const native = { ...provider, refreshModels: async () => {} };
+  assert.equal(withRemoteCatalog(native, 0), native);
+  const wrapped = withRemoteCatalog(
+    provider,
+    Date.parse("2026-11-19"),
+    async () =>
+      Response.json([{ ...provider.getModels()[0], id: "old" }], {
+        headers: { "last-modified": "Wed, 18 Nov 2026 12:00:00 GMT" },
+      }),
+  );
+  await wrapped.refreshModels({
+    allowNetwork: true,
+    signal: new AbortController().signal,
+    publish: async ({ update }) => {
+      update?.();
+      return true;
+    },
+  });
+  assert.deepEqual(
+    wrapped.getModels().map((model) => model.id),
+    ["builtin"],
+  );
+});
 
 async function fixture(t) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "fit-assistant-"));

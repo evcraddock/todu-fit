@@ -69,3 +69,7 @@ Default packaged paths are `out/mac-arm64/todufit.app` (Apple Silicon), `out/mac
 The preload exposes only `request(operation, requestId?)`. Main validates sender/frame/URL, allowlisted application operation types, request size and IDs. The daemon strictly validates the full operation schema. No renderer filesystem access, arbitrary IPC, raw CLI execution, identity replacement or configuration-path operations are exposed. Errors, sync state and revision polling remain visible.
 
 The old native addon/worker and v1 dish bridge remain historical proof code, with their separate tests.
+
+### Assistant model catalogs
+
+Static AI providers load updated model definitions from the public pi.dev catalog when the model picker loads, with a four-hour cache and ETag revalidation. Refresh models forces a network check. Cached catalogs persist in the shared assistant directory for offline use, and newer bundled definitions take precedence over older remote catalogs. Providers with native model discovery retain their existing implementation. Catalog requests do not send provider credentials.
