@@ -1,6 +1,13 @@
 import { usePreferences } from "./preferences";
 import { PlanningAssistant } from "./PlanningAssistant";
 import { ActionIcon } from "./ActionIcon";
+import { FoodLogAssistant } from "./FoodLogAssistant";
+import {
+  plannedLogs,
+  selectLogDish,
+  type LogDraft,
+  type LogItem,
+} from "./foodLogging";
 import { Dishes } from "./Dishes";
 import { loadMealWeek, loadReferencedDishes } from "./mealData";
 import { useState } from "react";
@@ -121,7 +128,7 @@ export function Meals({
         refresh={refresh}
         initialRequest={dishRequest}
         onCreated={setCreatedDish}
-        backLabel="Back to meal plans"
+        backLabel={logs ? "Back to food log" : "Back to meal plans"}
         onBack={() => setDishRequest(undefined)}
       />
     );
@@ -631,6 +638,12 @@ function MealEditor({
   );
   const [planId, setPlanId] = useState(meal?.log.mealplan_id ?? "");
   const action = useAction(onSaved);
+  const { timezone } = usePreferences();
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [unmatched, setUnmatched] = useState<LogItem[]>([]);
+  const [newDish, setNewDish] = useState<{ index: number; name: string }>();
+  const [matchedNames, setMatchedNames] = useState<Record<string, string>>({});
+  const savingDisabled = action.busy || assistantBusy || unmatched.length > 0;
   const selectedKey = JSON.stringify([...selected].sort());
   const selectedDishes = useLoad(
     () =>
@@ -646,20 +659,121 @@ function MealEditor({
     ...(meal?.log.dishes ?? []),
     ...(selectedDishes.data ?? dishes),
   ];
-  const editorWeek = sunday(date);
+  const logDraft: LogDraft = {
+    date,
+    meal: mealType,
+    items: [
+      ...selected.map((id) => {
+        const name =
+          choices.find((d) => d.id === id)?.name ?? matchedNames[id] ?? id;
+        return {
+          name,
+          servings: portions[id] ?? 1,
+          dish: { id, name },
+          matches: [],
+        };
+      }),
+      ...unmatched,
+    ],
+  };
+  function applyLogDraft(next: LogDraft, linkedPlan?: string) {
+    if (linkedPlan) setPlanId(linkedPlan);
+    setDate(next.date);
+    if (next.meal) setMealType(next.meal);
+    const resolved = next.items.flatMap((item) =>
+      item.dish ? [{ ...item.dish, servings: item.servings }] : [],
+    );
+    setSelected(resolved.map((d) => d.id));
+    setPortions(Object.fromEntries(resolved.map((d) => [d.id, d.servings])));
+    setMatchedNames(Object.fromEntries(resolved.map((d) => [d.id, d.name])));
+    setUnmatched(next.items.filter((item) => !item.dish));
+  }
+  const slotKey = date + ":" + mealType;
   const plannedMeals = useLoad(
     () =>
       call<Plan[]>(
-        { type: "plans_list", from: editorWeek, to: shift(editorWeek, 6) },
+        { type: "plans_list", from: date, to: date, meal_type: mealType },
         "plans",
       ),
-    `${editorWeek}:${revision}`,
-    editorWeek,
-    logs && hasGroup && !openedDish,
+    `${slotKey}:${revision}`,
+    slotKey,
+    logs && !meal && hasGroup && !!date && !openedDish && !newDish,
   );
   const plans = plannedMeals.data ?? [];
+  const suggestedPlan = plans.find((p) => p.id === planId);
+  const linkedPlan = useLoad(
+    () =>
+      call<{ plan: Plan; dishes: Dish[] }[]>(
+        { type: "plan_get", identifier: planId },
+        "plan_matches",
+      ),
+    planId + revision,
+    planId,
+    logs && hasGroup && !!planId && !suggestedPlan,
+  );
+  const linkedDetails = linkedPlan.data?.[0];
+  const planName =
+    suggestedPlan?.title ||
+    linkedDetails?.plan.title ||
+    linkedDetails?.dishes.map((d) => d.name).join(", ") ||
+    (suggestedPlan
+      ? suggestedPlan.meal_type + " plan"
+      : linkedPlan.error || !hasGroup
+        ? "Unavailable meal plan"
+        : "Loading meal plan…");
+  const matchingIds = [
+    ...new Set(
+      plans
+        .filter((p) => p.date === date && p.meal_type === mealType)
+        .flatMap((p) => p.dish_ids),
+    ),
+  ].sort();
+  const planDishKey = JSON.stringify(matchingIds);
+  const planDishes = useLoad(
+    () => loadReferencedDishes(call, matchingIds),
+    planDishKey + revision,
+    planDishKey,
+    logs &&
+      !meal &&
+      hasGroup &&
+      !openedDish &&
+      !newDish &&
+      matchingIds.length > 0,
+  );
   return (
     <>
+      {logs && !meal && hasGroup && (
+        <FoodLogAssistant
+          today={today(timezone)}
+          draft={logDraft}
+          plans={plannedLogs(plans, planDishes.data ?? [], date, mealType)}
+          selectedPlan={planId}
+          onChange={applyLogDraft}
+          hidden={!!openedDish || !!newDish}
+          disabled={
+            action.busy ||
+            selected.some(
+              (id) => !matchedNames[id] && !choices.some((d) => d.id === id),
+            )
+          }
+          onBusy={setAssistantBusy}
+          onCreate={(index) =>
+            setNewDish({ index, name: logDraft.items[index].name })
+          }
+        />
+      )}
+      {newDish && (
+        <Dishes
+          initialRequest={"Create a dish called " + newDish.name + "."}
+          revision={revision}
+          refresh={refresh}
+          backLabel="Back to meal log"
+          onBack={() => setNewDish(undefined)}
+          onCreated={(dish) =>
+            applyLogDraft(selectLogDish(logDraft, newDish.index, dish))
+          }
+        />
+      )}
       {openedDish && (
         <Dishes
           initialDish={openedDish}
@@ -669,7 +783,7 @@ function MealEditor({
           onBack={() => setOpenedDish(undefined)}
         />
       )}
-      <div hidden={!!openedDish}>
+      <div hidden={!!openedDish || !!newDish}>
         <section className="dish-editor meal-plan-editor">
           <header className="editor-header">
             <div>
@@ -689,7 +803,7 @@ function MealEditor({
                 type="submit"
                 form="meal-editor-form"
                 className="primary"
-                disabled={action.busy}
+                disabled={savingDisabled}
               >
                 {action.busy
                   ? "Saving…"
@@ -702,6 +816,7 @@ function MealEditor({
           <LoadError
             error={
               action.error ||
+              planDishes.error ||
               selectedDishes.error ||
               (logs ? plannedMeals.error : "")
             }
@@ -710,6 +825,7 @@ function MealEditor({
             id="meal-editor-form"
             onSubmit={(e) => {
               e.preventDefault();
+              if (savingDisabled) return;
               action.run(() =>
                 action.mutate(
                   logs
@@ -751,7 +867,10 @@ function MealEditor({
               );
             }}
           >
-            <fieldset className="editor-layout" disabled={action.busy}>
+            <fieldset
+              className="editor-layout"
+              disabled={action.busy || assistantBusy}
+            >
               <div className="editor-main">
                 <div className="editor-panel meal-plan-details">
                   <h2>Meal details</h2>
@@ -805,30 +924,17 @@ function MealEditor({
                       </p>
                     </>
                   ) : (
-                    <Field label="Use a planned meal">
-                      <select
-                        value={planId}
-                        onChange={(e) => {
-                          setPlanId(e.target.value);
-                          const p = plans.find((p) => p.id === e.target.value);
-                          if (p) {
-                            setDate(p.date);
-                            setMealType(p.meal_type);
-                            setSelected(p.dish_ids);
-                          }
-                        }}
-                      >
-                        <option value="">Unplanned meal</option>
-                        {plans.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.date} · {p.title}
-                          </option>
-                        ))}
-                        {planId && !plans.some((p) => p.id === planId) && (
-                          <option value={planId}>Original meal plan</option>
-                        )}
-                      </select>
-                    </Field>
+                    planId && (
+                      <div className="linked-meal-plan">
+                        <div>
+                          <small>From meal plan</small>
+                          <strong>{planName}</strong>
+                        </div>
+                        <button type="button" onClick={() => setPlanId("")}>
+                          Unlink
+                        </button>
+                      </div>
+                    )
                   )}
                   {logs && (
                     <Field label="Notes">
