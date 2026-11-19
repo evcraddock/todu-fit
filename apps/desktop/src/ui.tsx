@@ -1,3 +1,4 @@
+import { nutrientLabel } from "./planning";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { call, mutate, type Operation, type Dish, type MealType } from "./api";
 export const mealTypes: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
@@ -252,7 +253,7 @@ export function dishNutrition(dishes: Dish[]) {
   const total: Record<string, number> = {};
   for (const d of dishes)
     for (const n of d.nutrients ?? []) {
-      const key = `${n.name.trim().toLowerCase()} (${n.unit})`;
+      const key = `${nutrientLabel(n.name)} (${n.unit})`;
       total[key] = (total[key] ?? 0) + n.amount;
     }
   return total;

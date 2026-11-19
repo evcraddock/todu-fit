@@ -212,6 +212,16 @@ const aliases: Record<string, string> = {
   sodium: "sodium_mg",
   water: "water_fl_oz",
 };
+const macroLabels: Record<string, string> = {
+  calories_kcal: "calories",
+  protein_g: "protein",
+  carbohydrates_g: "carbs",
+  fat_g: "fat",
+};
+export function nutrientLabel(name: string) {
+  const normalized = name.trim().toLowerCase();
+  return macroLabels[aliases[normalized]] ?? normalized;
+}
 export function comparison(
   data: Context,
   meals: Proposal[],
