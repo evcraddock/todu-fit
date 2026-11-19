@@ -70,10 +70,7 @@ export function PlanningAssistant({
   const [input, setInput] = useState(""),
     [working, setBusy] = useState(false),
     [error, setError] = useState("");
-  const [showGuidedSummary, setShowGuidedSummary] = useState(false);
-  const viewingFinished = guided
-    ? showGuidedSummary
-    : hasFinishedWeek(scope, week);
+  const viewingFinished = !guided && hasFinishedWeek(scope, week);
   const [retry, setRetry] = useState(0);
   const busy = working || !!session.pending;
   const end = shift(week, 6);
@@ -275,13 +272,13 @@ export function PlanningAssistant({
   const { data, meals } = session;
   return (
     <AssistantPanel title="Meal planning assistant" preference="fit.plan-chat">
-      {guided && !viewingFinished ? (
+      {guided ? (
         <GuidedDay
           revision={revision}
           scope={scope}
           week={week}
           refresh={refresh}
-          onViewFinishedWeek={() => setShowGuidedSummary(true)}
+          onViewFinishedWeek={() => onGuidedChange(false)}
           onAdvanceWeek={onAdvanceWeek}
           onNewDish={onNewDish}
           createdDish={createdDish}
@@ -305,7 +302,6 @@ export function PlanningAssistant({
                     if (
                       await loadPlanningDay(scope, day, () => active.current)
                     ) {
-                      setShowGuidedSummary(false);
                       onAdvanceWeek(day);
                     }
                   } catch (e) {

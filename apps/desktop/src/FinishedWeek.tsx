@@ -13,18 +13,28 @@ export function finishedWeekKey(scope: Scope, week: string) {
   ]);
 }
 
+export function markDayFinished(scope: Scope, date: string) {
+  localStorage.setItem(
+    JSON.stringify([
+      "fit.guided-day-complete",
+      scope.root_id,
+      scope.group_id,
+      date,
+    ]),
+    "true",
+  );
+}
+
 export function hasFinishedWeek(scope: Scope, week: string) {
   if (localStorage.getItem(finishedWeekKey(scope, week))) return true;
-  // Older versions recorded a completed Saturday in its day note or session draft.
-  const saturday = shift(week, 6);
-  const key = (name: string, date: string) =>
-    JSON.stringify([name, scope.root_id, scope.group_id, date]);
-  if (localStorage.getItem(key("fit.guided-day-exception", saturday)))
-    return true;
-  const draft = JSON.parse(
-    sessionStorage.getItem(key("fit.guided-day", week)) || "null",
+  return Array.from({ length: 7 }, (_, i) => shift(week, i)).every((date) =>
+    ["fit.guided-day-complete", "fit.guided-day-exception"].some(
+      (name) =>
+        localStorage.getItem(
+          JSON.stringify([name, scope.root_id, scope.group_id, date]),
+        ) !== null,
+    ),
   );
-  return draft?.saved === true && draft.date === saturday;
 }
 
 export function FinishedWeek({

@@ -1,4 +1,9 @@
-import { FinishedWeek, finishedWeekKey, hasFinishedWeek } from "./FinishedWeek";
+import {
+  FinishedWeek,
+  finishedWeekKey,
+  hasFinishedWeek,
+  markDayFinished,
+} from "./FinishedWeek";
 import { MealParticipants, DishPortions } from "./MealPortions";
 import { ActionIcon } from "./ActionIcon";
 import { AssistantComposer } from "./AssistantComposer";
@@ -148,11 +153,7 @@ export function GuidedDay({
     };
   });
   const lastDay = shift(week, 6);
-  const weekFinished = draft?.saved && draft.date === lastDay;
-  useEffect(() => {
-    if (weekFinished)
-      localStorage.setItem(finishedWeekKey(scope, week), "true");
-  }, [weekFinished, scope.root_id, scope.group_id, week]);
+  const weekFinished = draft?.saved && hasFinishedWeek(scope, week);
   const [choosingAnotherDay, setChoosingAnotherDay] = useState(false);
   const [date, setDate] = useState(week),
     [input, updateInput] = useState(
@@ -200,6 +201,8 @@ export function GuidedDay({
     const portions = structuredClone(base?.portions ?? {});
     if (isNew)
       for (const id of Object.keys(draft.data.people)) {
+        if (base && !Object.values(portions[id] ?? {}).some((n) => n > 0))
+          continue;
         (portions[id] ??= {})[dish.id] = 1;
       }
     store({
@@ -602,13 +605,15 @@ export function GuidedDay({
           }),
         );
       else localStorage.removeItem(exceptionKey);
-      if (draft.date === lastDay)
+      markDayFinished(scope, draft.date);
+      const completedWeek = hasFinishedWeek(scope, week);
+      if (completedWeek)
         localStorage.setItem(finishedWeekKey(scope, week), "true");
       store({ ...draft, exception, approval: undefined, saved: true });
       setChoosingAnotherDay(false);
       if (mounted.current) {
         refresh();
-        if (draft.date === lastDay) {
+        if (completedWeek || draft.date === lastDay) {
           setDate(draft.date);
           return;
         }
@@ -1097,9 +1102,10 @@ export function GuidedDay({
                   className="primary"
                   disabled={
                     busy ||
-                    Object.values(draft.choices).some(
-                      (c) => c.kind === "proposal",
-                    )
+                    (!draft.approval &&
+                      Object.values(draft.choices).some(
+                        (c) => c.kind === "proposal",
+                      ))
                   }
                   onClick={save}
                 >
