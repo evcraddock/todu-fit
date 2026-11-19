@@ -43,8 +43,47 @@ export function Meals({
   hasGroup?: boolean;
 }) {
   const { timezone } = usePreferences();
-  const [date, setDate] = useState(() => today(timezone));
+  const viewKey =
+    planningScope &&
+    JSON.stringify([
+      "fit.meal-planning-view",
+      planningScope.root_id,
+      planningScope.group_id,
+    ]);
+  const [view, setView] = useState<{ date: string; guided: boolean }>(() => {
+    const date = today(timezone);
+    if (viewKey && planningScope) {
+      const saved = sessionStorage.getItem(viewKey);
+      if (saved) return JSON.parse(saved);
+      // Recover a guided session created before the calendar remembered its view.
+      const prefix =
+        JSON.stringify([
+          "fit.guided-day",
+          planningScope.root_id,
+          planningScope.group_id,
+        ]).slice(0, -1) + ",";
+      const drafts = Object.keys(sessionStorage)
+        .filter((k) => k.startsWith(prefix))
+        .map((k) => JSON.parse(sessionStorage.getItem(k)!))
+        .filter((d) => !d.saved);
+      const draft =
+        drafts.find((d) => sunday(d.date) === sunday(date)) ?? drafts.at(-1);
+      if (draft) return { date: draft.date, guided: true };
+    }
+    return { date, guided: false };
+  });
+  const { date, guided } = view;
+  function showWeek(day: string, guided: boolean) {
+    const next = { date: day, guided };
+    if (viewKey) sessionStorage.setItem(viewKey, JSON.stringify(next));
+    setView(next);
+  }
+  function navigateWeek(day: string) {
+    showWeek(day, false);
+  }
   const [selectedDay, setSelectedDay] = useState<string>();
+  const [createdDish, setCreatedDish] = useState<Dish>();
+  const [dishRequest, setDishRequest] = useState<string>();
   const [openedDish, setOpenedDish] = useState<Dish>();
   const [edit, setEdit] = useState<Plan | Meal | "new">();
   const [newSlot, setNewSlot] = useState<{
@@ -60,7 +99,7 @@ export function Meals({
     () => loadMealWeek(call, logs, hasGroup, from, to),
     `${from}:${to}:${revision}:${logs}:${hasGroup}`,
     `${from}:${to}`,
-    !edit && !openedDish,
+    !edit && !openedDish && dishRequest === undefined,
   );
   const dishes = week.data?.dishes ?? [];
   const action = useAction(refresh);
@@ -74,6 +113,17 @@ export function Meals({
             amount: n.amount * (m.log.dish_portions[d.id] ?? 1),
           })) ?? null,
       })),
+    );
+  if (dishRequest !== undefined)
+    return (
+      <Dishes
+        revision={revision}
+        refresh={refresh}
+        initialRequest={dishRequest}
+        onCreated={setCreatedDish}
+        backLabel="Back to meal plans"
+        onBack={() => setDishRequest(undefined)}
+      />
     );
   if (openedDish)
     return (
@@ -116,9 +166,16 @@ export function Meals({
     >
       {planningScope && !logs && !selectedDay && (
         <PlanningAssistant
+          revision={revision}
           key={start}
           scope={planningScope}
           week={start}
+          guided={guided}
+          onNewDish={setDishRequest}
+          createdDish={createdDish}
+          consumeDish={() => setCreatedDish(undefined)}
+          onGuidedChange={(enabled) => showWeek(date, enabled)}
+          onAdvanceWeek={(day) => showWeek(day, true)}
           refresh={refresh}
         />
       )}
@@ -176,7 +233,7 @@ export function Meals({
             <button
               aria-label="Previous week"
               title="Previous week"
-              onClick={() => setDate(shift(start, -7))}
+              onClick={() => navigateWeek(shift(start, -7))}
             >
               ←
             </button>
@@ -187,13 +244,13 @@ export function Meals({
               required
               value={start}
               onChange={(e) => {
-                if (e.target.value) setDate(sunday(e.target.value));
+                if (e.target.value) navigateWeek(sunday(e.target.value));
               }}
             />
             <button
               aria-label="Next week"
               title="Next week"
-              onClick={() => setDate(shift(start, 7))}
+              onClick={() => navigateWeek(shift(start, 7))}
             >
               →
             </button>
@@ -201,6 +258,7 @@ export function Meals({
         </div>
       )}
       <LoadError error={week.error || action.error} />
+      {week.error && <button onClick={refresh}>Retry calendar load</button>}
       {!week.data && <p>Loading meals…</p>}
       {(selectedDay
         ? [selectedDay]
@@ -274,7 +332,8 @@ export function Meals({
                         ))}
                     </div>
                   ))}
-                  {!logs &&
+                  {selectedDay &&
+                    !logs &&
                     Object.entries(totals)
                       .filter(
                         ([key]) =>

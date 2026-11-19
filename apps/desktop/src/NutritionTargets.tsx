@@ -3,15 +3,15 @@ import { call, type Group } from "./api";
 import { Field, LoadError, useAction, useLoad } from "./ui";
 
 export const metrics = {
-  calories_kcal: ["Calories", "kcal"],
-  protein_g: ["Protein", "g"],
-  carbohydrates_g: ["Carbohydrates", "g"],
-  fat_g: ["Fat", "g"],
-  saturated_fat_g: ["Saturated fat", "g"],
-  fiber_g: ["Fiber", "g"],
-  added_sugar_g: ["Added sugar", "g"],
-  sodium_mg: ["Sodium", "mg"],
-  water_fl_oz: ["Water", "fl oz"],
+  calories_kcal: ["calories", "kcal"],
+  protein_g: ["protein", "g"],
+  carbohydrates_g: ["carbohydrates", "g"],
+  fat_g: ["fat", "g"],
+  saturated_fat_g: ["saturated fat", "g"],
+  fiber_g: ["fiber", "g"],
+  added_sugar_g: ["added sugar", "g"],
+  sodium_mg: ["sodium", "mg"],
+  water_fl_oz: ["water", "fl oz"],
 } as const;
 type Metric = keyof typeof metrics;
 const keys = Object.keys(metrics) as Metric[];

@@ -11,6 +11,43 @@ export type Context = {
   people: Record<string, Profile>;
   existing: Plan[];
 };
+export function removeProposedDish(
+  meal: Proposal,
+  id: string,
+  dishes: Context["dishes"],
+): Proposal | undefined {
+  const remaining = meal.dish_ids.filter((d) => d !== id);
+  if (!remaining.length) return undefined;
+  const portions = structuredClone(meal.portions);
+  for (const [person, servings] of Object.entries(portions)) {
+    delete servings[id];
+    if (!Object.keys(servings).length) delete portions[person];
+  }
+  const removed = dishes.find((d) => d.id === id)?.name;
+  const title =
+    remaining.length === 1 ||
+    (removed && meal.title.toLowerCase().includes(removed.toLowerCase()))
+      ? remaining
+          .map(
+            (d) => dishes.find((item) => item.id === d)?.name ?? "Missing dish",
+          )
+          .join(" with ")
+      : meal.title;
+  return { ...meal, title, dish_ids: remaining, portions };
+}
+export function mealWithServings(
+  meal: Proposal,
+  dishes: Context["dishes"],
+): Proposal | undefined {
+  let result: Proposal | undefined = meal;
+  for (const id of meal.dish_ids) {
+    if (!Object.values(meal.portions).some((servings) => servings[id] > 0)) {
+      result = removeProposedDish(result, id, dishes);
+      if (!result) return undefined;
+    }
+  }
+  return result.dish_ids.length ? result : undefined;
+}
 export function modelContext(data: Context) {
   const dishKeys = new Map(data.dishes.map((d, i) => [d.id, "d" + (i + 1)]));
   const personKeys = new Map(
@@ -59,7 +96,12 @@ export function parseReply(
   data: Context,
   start: string,
   end: string,
-): { message: string; meals?: Proposal[] } {
+): {
+  message: string;
+  meals?: Proposal[];
+  missingDish?: string;
+  replaceWithMissingDish?: boolean;
+} {
   const trimmed = text
     .trim()
     .replace(/^\x60\x60\x60(?:json)?\s*/i, "")
@@ -70,7 +112,20 @@ export function parseReply(
     throw Error(
       "The assistant returned an unreadable reply. Ask it to try again.",
     );
-  if (reply.meals == null) return { message: reply.message };
+  const name =
+    typeof reply.missingDish === "string" ? reply.missingDish.trim() : "";
+  const missing =
+    name &&
+    name.length <= 200 &&
+    !data.dishes.some((d) => d.name.trim().toLowerCase() === name.toLowerCase())
+      ? {
+          missingDish: name,
+          ...(reply.replaceWithMissingDish === true
+            ? { replaceWithMissingDish: true }
+            : {}),
+        }
+      : {};
+  if (reply.meals == null) return { message: reply.message, ...missing };
   const valid = (ok: unknown) => {
     if (!ok)
       throw Error(
@@ -120,11 +175,12 @@ export function parseReply(
       );
       const translated: Record<string, number> = {};
       for (const [id, n] of Object.entries(servings)) {
-        valid(m.dish_ids.includes(id) && Number.isFinite(n) && n > 0);
+        valid(m.dish_ids.includes(id) && Number.isFinite(n) && n >= 0);
+        if (n === 0) continue;
         translated[dishes.get(id)!] = n;
         assigned.add(id);
       }
-      portions[people.get(p)!] = translated;
+      if (Object.keys(translated).length) portions[people.get(p)!] = translated;
     }
     valid(assigned.size === m.dish_ids.length);
     return {
@@ -135,7 +191,7 @@ export function parseReply(
       portions,
     };
   });
-  return { message: reply.message, meals };
+  return { message: reply.message, meals, ...missing };
 }
 
 const aliases: Record<string, string> = {
@@ -156,6 +212,16 @@ const aliases: Record<string, string> = {
   sodium: "sodium_mg",
   water: "water_fl_oz",
 };
+const macroLabels: Record<string, string> = {
+  calories_kcal: "calories",
+  protein_g: "protein",
+  carbohydrates_g: "carbs",
+  fat_g: "fat",
+};
+export function nutrientLabel(name: string) {
+  const normalized = name.trim().toLowerCase();
+  return macroLabels[aliases[normalized]] ?? normalized;
+}
 export function comparison(
   data: Context,
   meals: Proposal[],

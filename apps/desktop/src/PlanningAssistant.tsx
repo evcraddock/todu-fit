@@ -1,21 +1,29 @@
-import { GuidedDay } from "./GuidedDay";
+import { MealParticipants, DishPortions } from "./MealPortions";
+import { ActionIcon } from "./ActionIcon";
+import { AssistantComposer } from "./AssistantComposer";
+import { AssistantActivity } from "./AssistantActivity";
+import { CreateMissingDish } from "./CreateMissingDish";
+import { FinishedWeek, hasFinishedWeek } from "./FinishedWeek";
+import { GuidedDay, loadPlanningDay } from "./GuidedDay";
 import { ai, type Reply } from "./planningWorker";
 import { useEffect, useRef, useState } from "react";
-import { call, type Operation } from "./api";
+import { call, type Dish, type Operation } from "./api";
 import { AssistantPanel } from "./AssistantPanel";
 import { Markdown } from "./Markdown";
-import { Field, LoadError, shift } from "./ui";
+import { LoadError, shift } from "./ui";
 import { metrics, range } from "./NutritionTargets";
 import {
   comparison,
   modelContext,
   parseReply,
+  removeProposedDish,
+  mealWithServings,
   type Context,
   type Proposal,
 } from "./planning";
 
 type Scope = { root_id: string; group_id: string };
-type Turn = { role: string; text: string };
+type Turn = { role: string; text: string; missingDish?: string };
 type Session = {
   messages: Turn[];
   meals: Proposal[];
@@ -25,14 +33,27 @@ type Session = {
 };
 export function PlanningAssistant({
   scope,
+  revision,
   week,
+  guided,
+  onNewDish,
+  createdDish,
+  consumeDish,
+  onGuidedChange,
+  onAdvanceWeek,
   refresh,
 }: {
   scope: Scope;
+  revision: number;
   week: string;
+  guided: boolean;
+  onNewDish: (request: string) => void;
+  createdDish?: Dish;
+  consumeDish: () => void;
+  onGuidedChange: (guided: boolean) => void;
+  onAdvanceWeek: (day: string) => void;
   refresh: () => void;
 }) {
-  const [guided, setGuided] = useState(false);
   const key = JSON.stringify([
     "fit.planning",
     scope.root_id,
@@ -49,6 +70,7 @@ export function PlanningAssistant({
   const [input, setInput] = useState(""),
     [working, setBusy] = useState(false),
     [error, setError] = useState("");
+  const viewingFinished = !guided && hasFinishedWeek(scope, week);
   const [retry, setRetry] = useState(0);
   const busy = working || !!session.pending;
   const end = shift(week, 6);
@@ -64,8 +86,26 @@ export function PlanningAssistant({
     sessionStorage.setItem(key, JSON.stringify(next));
     if (active.current) setSession(next);
   }
-  async function send() {
-    if (!input.trim() || running.current || session.approval || session.pending)
+  function planWithDish(dish: Dish) {
+    const original =
+      session.messages.filter((m) => m.role === "You").at(-1)?.text ?? "";
+    const message = `Use the saved dish "${dish.name}" for my meal plan. ${original}`;
+    setInput(message);
+    void send(message);
+  }
+  useEffect(() => {
+    if (!guided && createdDish) {
+      planWithDish(createdDish);
+      consumeDish();
+    }
+  }, [createdDish]);
+  async function send(message = input) {
+    if (
+      !message.trim() ||
+      running.current ||
+      session.approval ||
+      session.pending
+    )
       return;
     running.current = true;
     setBusy(true);
@@ -79,8 +119,6 @@ export function PlanningAssistant({
         "planning_context",
       );
       if (!active.current) return;
-      if (!data.dishes.length)
-        throw Error("Add a dish to this group before planning a meal.");
       const catalog = modelContext(data);
       const meals = session.meals.filter(
         (m) =>
@@ -90,7 +128,7 @@ export function PlanningAssistant({
       const content = JSON.stringify({
         week,
         end,
-        message: input.trim(),
+        message: message.trim(),
         previousMessages: messages.slice(-10),
         dishes: catalog.dishes,
         people: catalog.people,
@@ -109,7 +147,7 @@ export function PlanningAssistant({
       store({
         data,
         meals,
-        messages: [...messages, { role: "You", text: input.trim() }],
+        messages: [...messages, { role: "You", text: message.trim() }],
         pending: { id, requestId: crypto.randomUUID(), content },
       });
       setInput("");
@@ -163,7 +201,11 @@ export function PlanningAssistant({
               meals: parsed.meals ?? session.meals,
               messages: [
                 ...session.messages,
-                { role: "Assistant", text: parsed.message },
+                {
+                  role: "Assistant",
+                  text: parsed.message,
+                  missingDish: parsed.missingDish,
+                },
               ],
             });
             return;
@@ -189,6 +231,10 @@ export function PlanningAssistant({
       !session.meals.length
     )
       return;
+    const prepared = session.meals.flatMap(
+      (meal) => mealWithServings(meal, session.data!.dishes) ?? [],
+    );
+    if (prepared.length !== session.meals.length) return;
     running.current = true;
     setBusy(true);
     setError("");
@@ -199,7 +245,7 @@ export function PlanningAssistant({
         ...scope,
         week,
         fingerprint: session.data.fingerprint,
-        meals: session.meals,
+        meals: prepared,
       },
     };
     try {
@@ -224,43 +270,71 @@ export function PlanningAssistant({
     }
   }
   const { data, meals } = session;
-  function portion(index: number, person: string, dish: string, n: number) {
-    const revised = structuredClone(meals),
-      portions = revised[index].portions;
-    const entries = portions[person] ?? {};
-    if (n > 0) entries[dish] = n;
-    else delete entries[dish];
-    if (Object.keys(entries).length) portions[person] = entries;
-    else delete portions[person];
-    store({ ...session, meals: revised });
-  }
   return (
     <AssistantPanel title="Meal planning assistant" preference="fit.plan-chat">
       {guided ? (
         <GuidedDay
+          revision={revision}
           scope={scope}
           week={week}
           refresh={refresh}
-          onBack={() => setGuided(false)}
+          onViewFinishedWeek={() => onGuidedChange(false)}
+          onAdvanceWeek={onAdvanceWeek}
+          onNewDish={onNewDish}
+          createdDish={createdDish}
+          consumeDish={consumeDish}
         />
       ) : (
         <section className="dish-chat" aria-label="Meal planning assistant">
           <div className="recipe-messages planning-messages">
-            <button onClick={() => setGuided(true)}>Plan a day with me</button>
-            {!session.messages.length && (
+            {viewingFinished ? (
+              <FinishedWeek
+                scope={scope}
+                week={week}
+                revision={revision}
+                disabled={busy}
+                onChooseDay={async (day) => {
+                  if (running.current) return;
+                  running.current = true;
+                  setBusy(true);
+                  setError("");
+                  try {
+                    if (
+                      await loadPlanningDay(scope, day, () => active.current)
+                    ) {
+                      onAdvanceWeek(day);
+                    }
+                  } catch (e) {
+                    if (active.current) setError((e as Error).message);
+                  } finally {
+                    running.current = false;
+                    if (active.current) setBusy(false);
+                  }
+                }}
+              />
+            ) : (
+              <button onClick={() => onGuidedChange(true)}>
+                Plan a day with me
+              </button>
+            )}
+            {!viewingFinished && !session.messages.length && (
               <>
                 <h3>What meals would you like to plan?</h3>
-                <p>
-                  Ask for one meal, a day, or the week. Your selected AI
-                  provider receives the group’s dishes, planned meals, your
-                  targets and any targets shared with this group.
-                </p>
+                <p>Ask for one meal, a day, or the whole week.</p>
               </>
             )}
             {session.messages.map((m, i) => (
               <div key={i}>
                 <strong>{m.role}</strong>
                 <Markdown>{m.text}</Markdown>
+                {m.missingDish && i === session.messages.length - 1 && (
+                  <CreateMissingDish
+                    name={m.missingDish}
+                    request={session.messages[i - 1]?.text ?? ""}
+                    onCreate={onNewDish}
+                    onUse={planWithDish}
+                  />
+                )}
               </div>
             ))}
             {data && meals.length > 0 && (
@@ -272,32 +346,64 @@ export function PlanningAssistant({
                       {m.date} · {m.meal_type}
                     </small>
                     <h3>{m.title}</h3>
+                    <MealParticipants
+                      meal={m}
+                      people={data.people}
+                      onChange={(next) =>
+                        store({
+                          ...session,
+                          meals: meals.map((meal, index) =>
+                            index === i ? next : meal,
+                          ),
+                        })
+                      }
+                    />
                     {m.dish_ids.map((d) => (
                       <div key={d}>
-                        <strong>
-                          {data.dishes.find((x) => x.id === d)?.name}
-                        </strong>
-                        {Object.entries(data.people).map(([p, person]) => (
-                          <label className="portion-input" key={p}>
-                            {person.name}
-                            <input
-                              type="number"
-                              min="0"
-                              step="any"
-                              aria-label={
-                                person.name +
-                                " servings of " +
-                                data.dishes.find((x) => x.id === d)?.name
-                              }
-                              value={m.portions[p]?.[d] ?? ""}
-                              placeholder="0"
-                              onChange={(e) =>
-                                portion(i, p, d, e.target.valueAsNumber)
-                              }
-                            />{" "}
-                            servings
-                          </label>
-                        ))}
+                        <div className="proposal-dish-name">
+                          <strong>
+                            {data.dishes.find((x) => x.id === d)?.name}
+                          </strong>
+                          <button
+                            type="button"
+                            className="plan-icon-button"
+                            title="Remove from meal"
+                            aria-label={`Remove ${data.dishes.find((item) => item.id === d)?.name ?? "dish"} from meal`}
+                            onClick={() =>
+                              store({
+                                ...session,
+                                meals: meals.flatMap((meal, index) =>
+                                  index === i
+                                    ? (removeProposedDish(
+                                        meal,
+                                        d,
+                                        data.dishes,
+                                      ) ?? [])
+                                    : meal,
+                                ),
+                              })
+                            }
+                          >
+                            <ActionIcon action="delete" />
+                          </button>
+                        </div>
+                        <DishPortions
+                          meal={m}
+                          people={data.people}
+                          onChange={(next) =>
+                            store({
+                              ...session,
+                              meals: meals.map((meal, index) =>
+                                index === i ? next : meal,
+                              ),
+                            })
+                          }
+                          dishId={d}
+                          dishName={
+                            data.dishes.find((item) => item.id === d)?.name ??
+                            "Missing dish"
+                          }
+                        />
                       </div>
                     ))}
                   </article>
@@ -349,11 +455,7 @@ export function PlanningAssistant({
                 className="primary"
                 disabled={
                   busy ||
-                  meals.some((m) =>
-                    m.dish_ids.some(
-                      (id) => !Object.values(m.portions).some((s) => s[id] > 0),
-                    ),
-                  )
+                  meals.some((m) => !mealWithServings(m, data?.dishes ?? []))
                 }
                 onClick={save}
               >
@@ -362,7 +464,6 @@ export function PlanningAssistant({
                   : "Save approved meals"}
               </button>
             )}
-            {busy && !error && <p role="status">Working…</p>}
             {session.pending && error && (
               <button
                 onClick={() => {
@@ -375,26 +476,23 @@ export function PlanningAssistant({
             )}
             <LoadError error={error} />
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void send();
-            }}
-          >
-            <Field label="Message">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Plan meals for this week…"
-              />
-            </Field>
-            <button
-              className="primary"
-              disabled={busy || !input.trim() || !!session.approval}
-            >
-              Send
-            </button>
-          </form>
+
+          {busy && !error && (
+            <AssistantActivity
+              text={
+                session.approval
+                  ? "Saving meal plan…"
+                  : "Working on your meal plan…"
+              }
+            />
+          )}
+          <AssistantComposer
+            value={input}
+            onChange={setInput}
+            placeholder="Plan meals for this week…"
+            disabled={busy || !!session.approval}
+            onSend={() => void send()}
+          />
         </section>
       )}
     </AssistantPanel>
