@@ -243,26 +243,16 @@ export function FoodLogAssistant({
                     <ActionIcon action="delete" />
                   </button>
                 </div>
-                {item.matches.length > 0 && (
-                  <select
+                {item.matches.map((dish) => (
+                  <button
+                    type="button"
+                    key={dish.id}
                     disabled={busy || disabled}
-                    aria-label={"Match " + item.name}
-                    value=""
-                    onChange={(e) => {
-                      const dish = item.matches.find(
-                        (d) => d.id === e.target.value,
-                      );
-                      if (dish) onChange(selectLogDish(draft, index, dish));
-                    }}
+                    onClick={() => onChange(selectLogDish(draft, index, dish))}
                   >
-                    <option value="">Choose saved dish</option>
-                    {item.matches.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                    {dish.name}
+                  </button>
+                ))}
                 <button
                   disabled={busy || disabled}
                   onClick={() => onCreate(index)}
