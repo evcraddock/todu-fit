@@ -70,11 +70,6 @@ export function FoodLogAssistant({
         throw Error(
           "Choose a model in Settings → AI to use the food logging assistant.",
         );
-      const { id } = await ai<{ id: number }>({
-        type: "conversation_create",
-        model: settings.model,
-      });
-      if (!active.current) return;
       const content =
         logInstructions +
         "\n" +
@@ -97,6 +92,15 @@ export function FoodLogAssistant({
           recentMessages: session.messages.slice(-8),
           message,
         });
+      if (content.length > 100_000)
+        throw Error(
+          "This meal and message are too long for the assistant. Shorten your message or continue editing the form.",
+        );
+      const { id } = await ai<{ id: number }>({
+        type: "conversation_create",
+        model: settings.model,
+      });
+      if (!active.current) return;
       store({
         ...session,
         messages: [...session.messages, { role: "You", text: message }],
@@ -270,14 +274,24 @@ export function FoodLogAssistant({
           )}
           <LoadError error={error} />
           {pending && error && (
-            <button
-              onClick={() => {
-                setError("");
-                setRetry((r) => r + 1);
-              }}
-            >
-              Retry response
-            </button>
+            <div className="actions">
+              <button
+                onClick={() => {
+                  setError("");
+                  setRetry((r) => r + 1);
+                }}
+              >
+                Retry response
+              </button>
+              <button
+                onClick={() => {
+                  store({ ...session, pending: undefined });
+                  setError("");
+                }}
+              >
+                Continue manually
+              </button>
+            </div>
           )}
         </div>
         {busy && !error && <AssistantActivity text="Working on your meal…" />}
